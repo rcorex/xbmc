@@ -834,7 +834,17 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
   const bool allowPassthrough = CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
                                     CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH) ||
                                 audioHint.cryptoSession;
-  const bool supported = Supports(audioHint.codec, audioHint.profile);
+  bool supported = Supports(audioHint.codec, audioHint.profile);
+
+  // webOS TV's downmixer has a bug where 7.1 formats passed through will be mapped incorrectly.
+  // Force transcoding for 7.1 formats if downmixing.
+  if (audioHint.channels > 6 && !audioHint.cryptoSession)
+  {
+    const int configuredChannels = CServiceBroker::GetSettingsComponent()->GetSettings()->GetInt(
+        CSettings::SETTING_AUDIOOUTPUT_CHANNELS);
+    if (configuredChannels <= 2)
+      supported = false;
+  }
 
   if (!supported && audioHint.cryptoSession)
   {
