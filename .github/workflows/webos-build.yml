@@ -51,7 +51,7 @@ jobs:
         run: |
           cd tools/depends
           ./bootstrap
-          ./configure --with-toolchain=$HOME/kodi-dev/arm-webos-linux-gnueabi_sdk-buildroot --host=arm-webos-linux-gnueabi
+          ./configure --prefix=$HOME/kodi-deps --with-toolchain=$HOME/kodi-dev/arm-webos-linux-gnueabi_sdk-buildroot --host=arm-webos-linux-gnueabi
           make -j$(nproc)
 
       - name: Generate Kodi build system
