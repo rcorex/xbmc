@@ -881,14 +881,6 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
     if (audioHint.profile == AV_PROFILE_DTS_EXPRESS)
       codecName = "DTSE";
       
-    // dtsh: DTS-HD High Resolution Audio
-    else if (audioHint.profile == AV_PROFILE_DTS_HD_HRA)
-      codecName = "DTSH";
-      
-    // dtsl: DTS-HD Master Audio (Lossless)
-    else if (audioHint.profile == AV_PROFILE_DTS_HD_MA)
-      codecName = "DTSL";
-      
     // dtsx: DTS:X and IMAX Enhanced DTS:X
     else if (audioHint.profile == AV_PROFILE_DTS_HD_MA_X ||
              audioHint.profile == AV_PROFILE_DTS_HD_MA_X_IMAX)
