@@ -8,6 +8,9 @@
 
 #include "WebOSTVPlatformConfig.h"
 
+#include "ServiceBroker.h"
+#include "settings/Settings.h"
+#include "settings/SettingsComponent.h"
 #include "utils/JSONVariantParser.h"
 #include "utils/JSONVariantWriter.h"
 #include "utils/Variant.h"
@@ -74,7 +77,8 @@ int WebOSTVPlatformConfig::GetWebOSVersion()
 
 bool WebOSTVPlatformConfig::SupportsDTS()
 {
-  return ms_config[EDID_TYPE].asString().find(DTS) != std::string::npos;
+  return CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
+      CSettings::SETTING_AUDIOOUTPUT_DTSPASSTHROUGH);
 }
 
 bool WebOSTVPlatformConfig::SupportsHDR()

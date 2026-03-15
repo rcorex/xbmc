@@ -27,6 +27,10 @@
           <default>true</default>
           <visible>true</visible>
         </setting>
+        <setting id="audiooutput.dtspassthrough">
+          <default>true</default>
+          <visible>true</visible>
+        </setting>
         <setting id="audiooutput.passthroughdevice">
           <visible>false</visible>
         </setting>
