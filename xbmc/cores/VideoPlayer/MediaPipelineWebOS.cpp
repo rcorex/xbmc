@@ -276,6 +276,24 @@ bool CMediaPipelineWebOS::Supports(const AVCodecID codec, const int profile)
   if ((codec == AV_CODEC_ID_H264 || codec == AV_CODEC_ID_AVS || codec == AV_CODEC_ID_CAVS) &&
       profile == AV_PROFILE_H264_HIGH_10)
     return false;
+
+  if (codec == AV_CODEC_ID_DTS)
+  {
+    if (profile == AV_PROFILE_DTS_HD_MA || profile == AV_PROFILE_DTS_HD_HRA ||
+        profile == AV_PROFILE_DTS_HD_MA_X || profile == AV_PROFILE_DTS_HD_MA_X_IMAX)
+    {
+      if (CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
+              CSettings::SETTING_AUDIOOUTPUT_DTSHDPASSTHROUGH))
+        return true;
+    }
+    else
+    {
+      if (CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
+              CSettings::SETTING_AUDIOOUTPUT_DTSPASSTHROUGH))
+        return true;
+    }
+  }
+
   return ms_codecMap.contains(codec);
 }
 
