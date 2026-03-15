@@ -284,13 +284,17 @@ bool CMediaPipelineWebOS::Supports(const AVCodecID codec, const int profile)
     {
       if (CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
               CSettings::SETTING_AUDIOOUTPUT_DTSHDPASSTHROUGH))
+      {
         return true;
+      }
     }
     else
     {
       if (CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
               CSettings::SETTING_AUDIOOUTPUT_DTSPASSTHROUGH))
+      {
         return true;
+      }
     }
   }
 
@@ -341,8 +345,14 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
       m_processInfo.SetAudioSampleRate(audioHint.samplerate);
       m_processInfo.SetAudioBitsPerSample(audioHint.bitspersample);
       if (Supports(audioHint.codec, audioHint.profile))
-        m_processInfo.SetAudioDecoderName("starfish-" +
-                                          std::string(ms_codecMap.at(audioHint.codec).data()));
+      {
+        std::string decName = "starfish-UNKNOWN";
+        if (ms_codecMap.contains(audioHint.codec))
+          decName = "starfish-" + std::string(ms_codecMap.at(audioHint.codec).data());
+        else if (audioHint.codec == AV_CODEC_ID_DTS)
+          decName = "starfish-DTS";
+        m_processInfo.SetAudioDecoderName(decName);
+      }
       else if (m_audioEncoder)
       {
         m_processInfo.SetAudioDecoderName((m_audioEncoder->GetCodecID() == AV_CODEC_ID_EAC3)
@@ -793,8 +803,14 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
     m_processInfo.SetAudioSampleRate(audioHint.samplerate);
     m_processInfo.SetAudioBitsPerSample(audioHint.bitspersample);
     if (Supports(audioHint.codec, audioHint.profile))
-      m_processInfo.SetAudioDecoderName(std::string("starfish-") +
-                                        ms_codecMap.at(audioHint.codec).data());
+    {
+      std::string decName = "starfish-UNKNOWN";
+      if (ms_codecMap.contains(audioHint.codec))
+        decName = "starfish-" + std::string(ms_codecMap.at(audioHint.codec).data());
+      else if (audioHint.codec == AV_CODEC_ID_DTS)
+        decName = "starfish-DTS";
+      m_processInfo.SetAudioDecoderName(decName);
+    }
     else if (m_audioEncoder)
     {
       m_processInfo.SetAudioDecoderName((m_audioEncoder->GetCodecID() == AV_CODEC_ID_EAC3)
@@ -871,6 +887,9 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
 
   const bool supported = Supports(audioHint.codec, audioHint.profile);
 
+  CLog::LogF(LOGDEBUG, "SetupAudio - DTS Debug: codec={}, profile={}, allowPassthrough={}, supported={}",
+             audioHint.codec, audioHint.profile, allowPassthrough, supported);
+
   if (!supported && audioHint.cryptoSession)
   {
     CLog::LogF(LOGERROR, "Cannot transcode encrypted audio stream");
@@ -897,7 +916,11 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
     return codecName;
   }
 
-  codecName = ms_codecMap.at(audioHint.codec);
+  if (ms_codecMap.contains(audioHint.codec))
+    codecName = ms_codecMap.at(audioHint.codec);
+  else
+    codecName = "UNKNOWN";
+
   if (audioHint.codec == AV_CODEC_ID_EAC3)
   {
     setAC3PlusInfo(audioHint, optInfo);

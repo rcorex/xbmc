@@ -36,10 +36,16 @@
         <setting id="audiooutput.dtspassthrough">
           <default>true</default>
           <visible>true</visible>
+          <dependencies>
+            <dependency type="enable" setting="audiooutput.passthrough" operator="is">true</dependency>
+          </dependencies>
         </setting>
         <setting id="audiooutput.dtshdpassthrough">
           <default>true</default>
           <visible>true</visible>
+          <dependencies>
+            <dependency type="enable" setting="audiooutput.passthrough" operator="is">true</dependency>
+          </dependencies>
         </setting>
       </group>
     </category>
