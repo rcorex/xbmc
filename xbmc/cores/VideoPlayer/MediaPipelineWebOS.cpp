@@ -877,10 +877,21 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
     optInfo["dtsInfo"]["channels"] = audioHint.channels;
     optInfo["dtsInfo"]["frequency"] = audioHint.samplerate / 1000.0;
 
-    if (audioHint.profile == AV_PROFILE_DTS_ES)
+    // dtse: DTS Express (Low Bit Rate / LBR)
+    if (audioHint.profile == AV_PROFILE_DTS_EXPRESS)
       codecName = "DTSE";
-    if (audioHint.profile == AV_PROFILE_DTS_HD_MA_X ||
-        audioHint.profile == AV_PROFILE_DTS_HD_MA_X_IMAX)
+      
+    // dtsh: DTS-HD High Resolution Audio
+    else if (audioHint.profile == AV_PROFILE_DTS_HD_HRA)
+      codecName = "DTSH";
+      
+    // dtsl: DTS-HD Master Audio (Lossless)
+    else if (audioHint.profile == AV_PROFILE_DTS_HD_MA)
+      codecName = "DTSL";
+      
+    // dtsx: DTS:X and IMAX Enhanced DTS:X
+    else if (audioHint.profile == AV_PROFILE_DTS_HD_MA_X ||
+             audioHint.profile == AV_PROFILE_DTS_HD_MA_X_IMAX)
       codecName = "DTSX";
   }
   else if (audioHint.codec == AV_CODEC_ID_OPUS)
