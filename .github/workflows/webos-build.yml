@@ -42,7 +42,10 @@ jobs:
       - name: Install Ubuntu dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ccache cmake gperf npm default-jdk libcurl4-openssl-dev ant
+          sudo apt-get install -y ccache cmake gperf npm default-jdk libcurl4-openssl-dev
+          wget -q https://downloads.apache.org/ant/binaries/apache-ant-1.10.15-bin.tar.gz
+          sudo tar xzf apache-ant-1.10.15-bin.tar.gz -C /opt
+          echo "/opt/apache-ant-1.10.15/bin" >> $GITHUB_PATH
 
       - name: Install LG webOS CLI
         run: sudo npm install -g @webos-tools/cli
