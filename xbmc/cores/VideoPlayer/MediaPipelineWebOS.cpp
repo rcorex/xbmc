@@ -831,9 +831,26 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
   };
 
   std::string codecName = "AC3";
-  const bool allowPassthrough = CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
-                                    CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH) ||
-                                audioHint.cryptoSession;
+  bool allowPassthrough = CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
+                              CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH) ||
+                          audioHint.cryptoSession;
+
+  if (allowPassthrough && audioHint.codec == AV_CODEC_ID_DTS)
+  {
+    if (audioHint.profile == AV_PROFILE_DTS_HD_MA || audioHint.profile == AV_PROFILE_DTS_HD_HRA ||
+        audioHint.profile == AV_PROFILE_DTS_HD_MA_X ||
+        audioHint.profile == AV_PROFILE_DTS_HD_MA_X_IMAX)
+    {
+      allowPassthrough = CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
+          CSettings::SETTING_AUDIOOUTPUT_DTSHDPASSTHROUGH);
+    }
+    else
+    {
+      allowPassthrough = CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
+          CSettings::SETTING_AUDIOOUTPUT_DTSPASSTHROUGH);
+    }
+  }
+
   const bool supported = Supports(audioHint.codec, audioHint.profile);
 
   if (!supported && audioHint.cryptoSession)
@@ -877,11 +894,32 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
     optInfo["dtsInfo"]["channels"] = audioHint.channels;
     optInfo["dtsInfo"]["frequency"] = audioHint.samplerate / 1000.0;
 
-    if (audioHint.profile == AV_PROFILE_DTS_ES)
-      codecName = "DTSE";
-    if (audioHint.profile == AV_PROFILE_DTS_HD_MA_X ||
-        audioHint.profile == AV_PROFILE_DTS_HD_MA_X_IMAX)
-      codecName = "DTSX";
+    switch (audioHint.profile)
+    {
+      // 1. DTS Express (LBR)
+      case AV_PROFILE_DTS_EXPRESS:
+        codecName = "DTSE";
+        break;
+
+      // 2. DTS:X Spatial Profiles (Standard and IMAX Enhanced)
+      case AV_PROFILE_DTS_HD_MA_X:
+      case AV_PROFILE_DTS_HD_MA_X_IMAX:
+        codecName = "DTSX";
+        break;
+
+      // 3. Standard DTS-HD (No spatial objects)
+      case AV_PROFILE_DTS_HD_MA:
+      case AV_PROFILE_DTS_HD_HRA:
+        codecName = "DTS-HD";
+        break;
+
+      // 4. Fallbacks: DTS-ES, Standard DTS 5.1, or unknown cores
+      case AV_PROFILE_DTS_ES:
+      case AV_PROFILE_DTS:
+      default:
+        codecName = "DTS";
+        break;
+    }
   }
   else if (audioHint.codec == AV_CODEC_ID_OPUS)
   {
