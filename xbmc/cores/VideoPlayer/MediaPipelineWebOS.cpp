@@ -880,7 +880,7 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
     // dtse: DTS Express (Low Bit Rate / LBR)
     if (audioHint.profile == AV_PROFILE_DTS_EXPRESS)
       codecName = "DTSE";
-      
+
     // dtsx: DTS:X and IMAX Enhanced DTS:X
     else if (audioHint.profile == AV_PROFILE_DTS_HD_MA_X ||
              audioHint.profile == AV_PROFILE_DTS_HD_MA_X_IMAX)
