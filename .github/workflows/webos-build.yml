@@ -42,7 +42,7 @@ jobs:
       - name: Install Ubuntu dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ccache cmake gperf npm default-jre libcurl4-openssl-dev ant
+          sudo apt-get install -y ccache cmake gperf npm default-jdk libcurl4-openssl-dev ant
 
       - name: Install LG webOS CLI
         run: sudo npm install -g @webos-tools/cli
