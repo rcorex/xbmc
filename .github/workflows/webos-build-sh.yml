@@ -24,7 +24,7 @@ jobs:
       - name: Install Ubuntu dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ccache cmake gperf npm default-jdk libcurl4-openssl-dev flex
+          sudo apt-get install -y ccache cmake gperf npm default-jdk libcurl4-openssl-dev flex unzip
           
           if [ ! -d "/opt/apache-ant-1.10.15" ]; then
             echo "Apache Ant not found. Downloading..."
