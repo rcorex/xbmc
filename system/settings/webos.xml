@@ -33,6 +33,14 @@
         <setting id="audiooutput.ac3passthrough">
           <visible>false</visible>
         </setting>
+        <setting id="audiooutput.dtspassthrough">
+          <default>true</default>
+          <visible>true</visible>
+        </setting>
+        <setting id="audiooutput.dtshdpassthrough">
+          <default>true</default>
+          <visible>true</visible>
+        </setting>
       </group>
     </category>
     <category id="display">
