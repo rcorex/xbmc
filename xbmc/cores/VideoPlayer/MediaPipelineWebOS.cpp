@@ -276,24 +276,6 @@ bool CMediaPipelineWebOS::Supports(const AVCodecID codec, const int profile)
   if ((codec == AV_CODEC_ID_H264 || codec == AV_CODEC_ID_AVS || codec == AV_CODEC_ID_CAVS) &&
       profile == AV_PROFILE_H264_HIGH_10)
     return false;
-
-  if (codec == AV_CODEC_ID_DTS)
-  {
-    if (profile == AV_PROFILE_DTS_HD_MA || profile == AV_PROFILE_DTS_HD_HRA ||
-        profile == AV_PROFILE_DTS_HD_MA_X || profile == AV_PROFILE_DTS_HD_MA_X_IMAX)
-    {
-      if (CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
-              CSettings::SETTING_AUDIOOUTPUT_DTSHDPASSTHROUGH))
-        return true;
-    }
-    else
-    {
-      if (CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
-              CSettings::SETTING_AUDIOOUTPUT_DTSPASSTHROUGH))
-        return true;
-    }
-  }
-
   return ms_codecMap.contains(codec);
 }
 
@@ -849,26 +831,9 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
   };
 
   std::string codecName = "AC3";
-  bool allowPassthrough = CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
-                              CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH) ||
-                          audioHint.cryptoSession;
-
-  if (allowPassthrough && audioHint.codec == AV_CODEC_ID_DTS)
-  {
-    if (audioHint.profile == AV_PROFILE_DTS_HD_MA || audioHint.profile == AV_PROFILE_DTS_HD_HRA ||
-        audioHint.profile == AV_PROFILE_DTS_HD_MA_X ||
-        audioHint.profile == AV_PROFILE_DTS_HD_MA_X_IMAX)
-    {
-      allowPassthrough = CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
-          CSettings::SETTING_AUDIOOUTPUT_DTSHDPASSTHROUGH);
-    }
-    else
-    {
-      allowPassthrough = CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
-          CSettings::SETTING_AUDIOOUTPUT_DTSPASSTHROUGH);
-    }
-  }
-
+  const bool allowPassthrough = CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
+                                    CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH) ||
+                                audioHint.cryptoSession;
   const bool supported = Supports(audioHint.codec, audioHint.profile);
 
   if (!supported && audioHint.cryptoSession)
@@ -912,32 +877,11 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
     optInfo["dtsInfo"]["channels"] = audioHint.channels;
     optInfo["dtsInfo"]["frequency"] = audioHint.samplerate / 1000.0;
 
-    switch (audioHint.profile)
-    {
-      // 1. DTS Express (LBR)
-      case AV_PROFILE_DTS_EXPRESS:
-        codecName = "DTSE";
-        break;
-
-      // 2. DTS:X Spatial Profiles (Standard and IMAX Enhanced)
-      case AV_PROFILE_DTS_HD_MA_X:
-      case AV_PROFILE_DTS_HD_MA_X_IMAX:
-        codecName = "DTSX";
-        break;
-
-      // 3. Standard DTS-HD (No spatial objects)
-      case AV_PROFILE_DTS_HD_MA:
-      case AV_PROFILE_DTS_HD_HRA:
-        codecName = "DTS-HD";
-        break;
-
-      // 4. Fallbacks: DTS-ES, Standard DTS 5.1, or unknown cores
-      case AV_PROFILE_DTS_ES:
-      case AV_PROFILE_DTS:
-      default:
-        codecName = "DTS";
-        break;
-    }
+    if (audioHint.profile == AV_PROFILE_DTS_ES)
+      codecName = "DTSE";
+    if (audioHint.profile == AV_PROFILE_DTS_HD_MA_X ||
+        audioHint.profile == AV_PROFILE_DTS_HD_MA_X_IMAX)
+      codecName = "DTSX";
   }
   else if (audioHint.codec == AV_CODEC_ID_OPUS)
   {
