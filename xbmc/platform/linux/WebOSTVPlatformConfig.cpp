@@ -77,8 +77,23 @@ int WebOSTVPlatformConfig::GetWebOSVersion()
 
 bool WebOSTVPlatformConfig::SupportsDTS()
 {
-  return CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
-      CSettings::SETTING_AUDIOOUTPUT_DTSPASSTHROUGH);
+  const bool edidSupportsDTS = ms_config[EDID_TYPE].asString().find(DTS) != std::string::npos;
+  const bool overrideDTS = CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
+      "audiooutput.webosdtspassthrough");
+
+  if (edidSupportsDTS && !overrideDTS)
+  {
+    CLog::LogF(LOGDEBUG, "DTS is supported by EDID, but disabled via user setting audiooutput.webosdtspassthrough.");
+    return false;
+  }
+
+  if (!edidSupportsDTS && overrideDTS)
+  {
+    CLog::LogF(LOGDEBUG, "DTS is not supported by EDID, but enabled via user setting audiooutput.webosdtspassthrough.");
+    return true;
+  }
+
+  return edidSupportsDTS;
 }
 
 bool WebOSTVPlatformConfig::SupportsHDR()
