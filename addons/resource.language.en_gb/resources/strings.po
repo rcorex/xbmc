@@ -24351,7 +24351,19 @@ msgctxt "#39216"
 msgid "Enable DTS-HD audio passthrough on WebOS. Turn this off if your TV or receiver does not support DTS-HD."
 msgstr ""
 
-#empty strings from id 39217 to 39999
+#. Title of WebOS Starfish EAC3 Transcoding Bitrate
+#: system/settings/webos.xml
+msgctxt "#39217"
+msgid "EAC3 encoding bitrate for Starfish"
+msgstr ""
+
+#. Help text for setting "EAC3 encoding bitrate for Starfish" of label #39217
+#: system/settings/webos.xml
+msgctxt "#39218"
+msgid "Changes the encoding bitrate for EAC3. Requires EAC3 transcoding to be enabled."
+msgstr ""
+
+#empty strings from id 39219 to 39999
 
 # 40000 to 40800 are reserved for Video Versions feature
 
