@@ -24375,7 +24375,19 @@ msgctxt "#39220"
 msgid "Forces downmixing of multichannel audio to stereo when transcoding for Starfish."
 msgstr ""
 
-#empty strings from id 39221 to 39999
+#. Title of Downmix only for 7.1 ch sources
+#: system/settings/settings.xml
+msgctxt "#39221"
+msgid "Downmix only for 7.1 ch sources"
+msgstr ""
+
+#. Help text for setting "Downmix only for 7.1 ch sources" of label #39221
+#: system/settings/settings.xml
+msgctxt "#39222"
+msgid "When enabled, stereo downmixing will only occur if the source has more than 6 channels (e.g., 7.1). Sources with 5.1 or fewer channels will not be downmixed."
+msgstr ""
+
+#empty strings from id 39223 to 39999
 
 # 40000 to 40800 are reserved for Video Versions feature
 

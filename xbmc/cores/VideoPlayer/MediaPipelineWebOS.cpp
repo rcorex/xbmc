@@ -875,10 +875,14 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
         CServiceBroker::GetSettingsComponent()->GetSettings();
     if (settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO))
     {
-      if (codecName == "AC3 PLUS")
-        optInfo["ac3PlusInfo"]["channels"] = 2;
-      else if (codecName == "AC3")
-        optInfo["ac3Info"]["channels"] = 2;
+      bool only71 = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71);
+      if (!only71 || audioHint.channels > 6)
+      {
+        if (codecName == "AC3 PLUS")
+          optInfo["ac3PlusInfo"]["channels"] = 2;
+        else if (codecName == "AC3")
+          optInfo["ac3Info"]["channels"] = 2;
+      }
     }
 
     return codecName;
@@ -1404,7 +1408,11 @@ void CMediaPipelineWebOS::ProcessAudio()
               const std::shared_ptr<CSettings> settings =
                   CServiceBroker::GetSettingsComponent()->GetSettings();
               if (settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO))
-                dstFormat.m_channelLayout = CAEChannelInfo(AE_CH_LAYOUT_2_0);
+              {
+                bool only71 = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71);
+                if (!only71 || dstFormat.m_channelLayout.Count() > 6)
+                  dstFormat.m_channelLayout = CAEChannelInfo(AE_CH_LAYOUT_2_0);
+              }
               m_audioEncoder->Initialize(dstFormat, true);
               auto quality = static_cast<AEQuality>(
                   settings->GetInt(CSettings::SETTING_AUDIOOUTPUT_PROCESSQUALITY));

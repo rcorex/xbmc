@@ -42,6 +42,9 @@
         <setting id="audiooutput.webosstarfishdownmixstereo">
           <visible>true</visible>
         </setting>
+        <setting id="audiooutput.webosstarfishdownmixstereoonly71">
+          <visible>true</visible>
+        </setting>
         <setting id="audiooutput.passthroughdevice">
           <visible>false</visible>
         </setting>
