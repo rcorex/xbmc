@@ -882,8 +882,6 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
 
     if (audioHint.profile == AV_PROFILE_DTS_EXPRESS)
       codecName = "DTSE";
-    else if (audioHint.profile == AV_PROFILE_DTS_HD_MA_X_IMAX)
-      codecName = "DTSX";
   }
   else if (audioHint.codec == AV_CODEC_ID_OPUS)
   {
