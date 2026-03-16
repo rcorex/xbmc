@@ -137,7 +137,10 @@ bool CAEEncoderFFmpeg::Initialize(AEAudioFormat& format, bool allow_planar_input
     }
 
     const int best = format.m_channelLayout.BestMatch(layouts);
+    std::string originalLayout = format.m_channelLayout; // for debug: CAEChannelInfo converts to string
     format.m_channelLayout = layouts[best];
+    std::string newLayout = format.m_channelLayout; // for debug
+    CLog::LogF(LOGDEBUG, "BestMatch: Source: {} -> Target: {}", originalLayout, newLayout); //for debug
     channelLayout = CAEUtil::GetAVChannelLayout(format.m_channelLayout);
   }
 
