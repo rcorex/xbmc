@@ -277,7 +277,15 @@ bool CMediaPipelineWebOS::Supports(const AVCodecID codec, const int profile)
     return false;
 
   if (codec == AV_CODEC_ID_DTS)
+  {
+    if (profile == AV_PROFILE_DTS_HD_HRA ||
+        profile == AV_PROFILE_DTS_HD_MA ||
+        profile == AV_PROFILE_DTS_HD_MA_X ||
+        profile == AV_PROFILE_DTS_HD_MA_X_IMAX)
+      return WebOSTVPlatformConfig::SupportsDTSHD();
+
     return WebOSTVPlatformConfig::SupportsDTS();
+  }
 
   return ms_codecMap.contains(codec);
 }
@@ -880,7 +888,7 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
     optInfo["dtsInfo"]["channels"] = audioHint.channels;
     optInfo["dtsInfo"]["frequency"] = audioHint.samplerate / 1000.0;
 
-    if (audioHint.profile == AV_PROFILE_DTS_EXPRESS)
+    if (audioHint.profile == AV_PROFILE_DTS_EXPRESS) //Corrected to DTS Express
       codecName = "DTSE";
   }
   else if (audioHint.codec == AV_CODEC_ID_OPUS)

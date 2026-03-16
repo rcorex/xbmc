@@ -3446,6 +3446,15 @@
           </dependencies>
           <control type="toggle" />
         </setting>
+        <setting id="audiooutput.webosdtshdpassthrough" type="boolean" label="39215" help="39216">
+          <visible>false</visible>
+          <level>1</level>
+          <default>false</default>
+          <dependencies>
+            <dependency type="enable" setting="audiooutput.passthrough" operator="is">true</dependency>
+          </dependencies>
+          <control type="toggle" />
+        </setting>
         <setting id="audiooutput.webosstarfisheac3" type="boolean" label="39213" help="39214">
           <visible>false</visible>
           <level>1</level>

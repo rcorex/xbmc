@@ -24339,7 +24339,19 @@ msgctxt "#39214"
 msgid "Force audio transcoding to use EAC3 instead of AC3. Enable if your TV does not automatically report eARC EAC3 support to WebOS but is capable."
 msgstr ""
 
-#empty strings from id 39215 to 39999
+#. Title of WebOS DTS-HD passthrough setting
+#: system/settings/webos.xml
+msgctxt "#39215"
+msgid "Enable DTS-HD Passthrough"
+msgstr ""
+
+#. Help text for setting "Enable DTS-HD Passthrough" of label #39215
+#: system/settings/webos.xml
+msgctxt "#39216"
+msgid "Enable DTS-HD audio passthrough on WebOS. Turn this off if your TV or receiver does not support DTS-HD."
+msgstr ""
+
+#empty strings from id 39217 to 39999
 
 # 40000 to 40800 are reserved for Video Versions feature
 

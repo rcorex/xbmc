@@ -96,6 +96,14 @@ bool WebOSTVPlatformConfig::SupportsDTS()
   return edidSupportsDTS;
 }
 
+bool WebOSTVPlatformConfig::SupportsDTSHD()
+{
+  // DTS-HD defaults to false unless explicitly enabled by the user or
+  // via a future EDID check if needed.
+  return CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
+      "audiooutput.webosdtshdpassthrough");
+}
+
 bool WebOSTVPlatformConfig::SupportsHDR()
 {
   return ms_config[SUPPORT_HDR].asBoolean();

@@ -30,6 +30,9 @@
         <setting id="audiooutput.webosdtspassthrough">
           <visible>true</visible>
         </setting>
+        <setting id="audiooutput.webosdtshdpassthrough">
+          <visible>true</visible>
+        </setting>
         <setting id="audiooutput.webosstarfisheac3">
           <visible>true</visible>
         </setting>
