@@ -139,5 +139,13 @@ void WebOSTVPlatformConfig::LoadARCStatus()
 
 bool WebOSTVPlatformConfig::SupportsEAC3()
 {
+  const bool overrideEAC3 = CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
+      "audiooutput.webosstarfisheac3");
+
+  if (overrideEAC3)
+  {
+    return true;
+  }
+
   return m_eAC3Supported;
 }
