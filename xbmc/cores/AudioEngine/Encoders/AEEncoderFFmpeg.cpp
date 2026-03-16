@@ -53,7 +53,8 @@ bool CAEEncoderFFmpeg::IsCompatible(const AEAudioFormat& format)
   if (match)
   {
     CAEChannelInfo layout;
-    BuildChannelLayout(AV_CH_LAYOUT_5POINT1_BACK, layout); /* hard coded for AC3 & DTS currently */
+    //BuildChannelLayout(AV_CH_LAYOUT_5POINT1_BACK, layout); /* hard coded for AC3 & DTS currently */
+    BuildChannelLayout(AV_CH_LAYOUT_STEREO, layout); /* Force target to 2.0 Stereo */
     match = (m_CurrentFormat.m_channelLayout == layout);
   }
 
@@ -121,6 +122,7 @@ bool CAEEncoderFFmpeg::Initialize(AEAudioFormat& format, bool allow_planar_input
   m_CodecCtx->bit_rate = m_BitRate;
   m_CodecCtx->sample_rate = format.m_sampleRate;
 
+  /*
   uint64_t channelLayout = AV_CH_LAYOUT_5POINT1_BACK;
   if (format.m_channelLayout.IsLayoutValid())
   {
@@ -142,7 +144,11 @@ bool CAEEncoderFFmpeg::Initialize(AEAudioFormat& format, bool allow_planar_input
     std::string newLayout = format.m_channelLayout; // for debug
     CLog::LogF(LOGDEBUG, "BestMatch: Source: {} -> Target: {}", originalLayout, newLayout); //for debug
     channelLayout = CAEUtil::GetAVChannelLayout(format.m_channelLayout);
-  }
+  }*/
+  
+  // Bypass BestMatch and force the encoder layout to Stereo
+  uint64_t channelLayout = AV_CH_LAYOUT_STEREO;
+  format.m_channelLayout = CAEUtil::GetAEChannelLayout(channelLayout);
 
   av_channel_layout_uninit(&m_CodecCtx->ch_layout);
   av_channel_layout_from_mask(&m_CodecCtx->ch_layout, channelLayout);
