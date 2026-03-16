@@ -26,6 +26,7 @@
 #include "cores/AudioEngine/Interfaces/AE.h"
 #include "cores/AudioEngine/Utils/AEStreamInfo.h"
 #include "cores/AudioEngine/Utils/AEUtil.h"
+#include "cores/AudioEngine/Utils/AEChannelData.h"
 #include "cores/VideoPlayer/Interface/DemuxCrypto.h"
 #include "settings/SettingUtils.h"
 #include "settings/Settings.h"
@@ -870,6 +871,16 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
       setAC3PlusInfo(audioHint, optInfo);
     }
 
+    const std::shared_ptr<CSettings> settings =
+        CServiceBroker::GetSettingsComponent()->GetSettings();
+    if (settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO))
+    {
+      if (codecName == "AC3 PLUS")
+        optInfo["ac3PlusInfo"]["channels"] = 2;
+      else if (codecName == "AC3")
+        optInfo["ac3Info"]["channels"] = 2;
+    }
+
     return codecName;
   }
 
@@ -1390,9 +1401,11 @@ void CMediaPipelineWebOS::ProcessAudio()
               dstFormat.m_streamInfo.m_type = WebOSTVPlatformConfig::SupportsEAC3()
                                                   ? CAEStreamInfo::DataType::STREAM_TYPE_EAC3
                                                   : CAEStreamInfo::DataType::STREAM_TYPE_AC3;
-              m_audioEncoder->Initialize(dstFormat, true);
               const std::shared_ptr<CSettings> settings =
                   CServiceBroker::GetSettingsComponent()->GetSettings();
+              if (settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO))
+                dstFormat.m_channelLayout = CAEChannelInfo(AE_CH_LAYOUT_2_0);
+              m_audioEncoder->Initialize(dstFormat, true);
               auto quality = static_cast<AEQuality>(
                   settings->GetInt(CSettings::SETTING_AUDIOOUTPUT_PROCESSQUALITY));
               m_audioResample = std::make_unique<ActiveAE::CActiveAEBufferPoolResample>(
