@@ -24387,7 +24387,19 @@ msgctxt "#39222"
 msgid "When enabled, stereo downmixing will only occur if the source has more than 6 channels (e.g., 7.1). Sources with 5.1 or fewer channels will not be downmixed."
 msgstr ""
 
-#empty strings from id 39223 to 39999
+#. Title of Downmix to Dolby Pro Logic II
+#: system/settings/settings.xml
+msgctxt "#39223"
+msgid "Downmix to Dolby Pro Logic II"
+msgstr ""
+
+#. Help text for setting "Downmix to Dolby Pro Logic II" of label #39223
+#: system/settings/settings.xml
+msgctxt "#39224"
+msgid "When enabled, multichannel audio will be downmixed to stereo using Dolby Pro Logic II matrix encoding."
+msgstr ""
+
+#empty strings from id 39225 to 39999
 
 # 40000 to 40800 are reserved for Video Versions feature
 
