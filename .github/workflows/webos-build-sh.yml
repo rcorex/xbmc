@@ -12,8 +12,6 @@ jobs:
         
       - name: Checkout Code
         uses: actions/checkout@v4
-        with:
-          clean: false # Prevents GitHub from nuking your build directory
 
       - name: Download and extract toolchain
         run: |
@@ -53,15 +51,6 @@ jobs:
 
       - name: Generate Kodi build system
         run: make -C tools/depends/target/cmakebuildsys
-        
-      - name: Clean previous build # Manually clean safely before compiling
-        run: |
-          if [ -d "build" ]; then
-            cd build
-            make clean
-          else
-            echo "No build directory found, skipping clean."
-          fi
 
       - name: Compile Kodi
         run: |
