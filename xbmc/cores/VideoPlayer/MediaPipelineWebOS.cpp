@@ -315,8 +315,10 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
       std::string output;
       CJSONVariantWriter::Write(optInfo, output, true);
       CLog::LogF(LOGDEBUG, "changeAudioCodec: {}", output);
+      m_clock.Pause(true);
       if (!m_mediaAPIs->changeAudioCodec(codecName, output))
         CLog::LogF(LOGERROR, "Failed to change audio codec to {}", codecName);
+      m_clock.Pause(false);
       FlushAudioMessages();
 
       m_processInfo.SetAudioChannels(CAEUtil::GetAEChannelLayout(audioHint.channellayout));
