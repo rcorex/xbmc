@@ -1608,6 +1608,8 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
     }
     case PF_EVENT_TYPE_STR_BUFFERFULL:
     {
+      if (!m_mediaAPIs->Play())
+        CLog::LogF(LOGERROR, "Failed to play");
       SStateMsg msg{.syncState = IDVDStreamPlayer::SYNC_INSYNC, .player = VideoPlayer_AUDIO};
       m_messageQueueParent.Put(
           std::make_shared<CDVDMsgType<SStateMsg>>(CDVDMsg::PLAYER_REPORT_STATE, msg));
