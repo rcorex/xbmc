@@ -424,14 +424,21 @@ void CMediaPipelineWebOS::CloseVideoStream(const bool waitForBuffers)
 
 void CMediaPipelineWebOS::Flush(bool sync)
 {
-  if (!m_mediaAPIs->flush())
-    CLog::LogF(LOGDEBUG, "Failed to flush media APIs");
+  Unload(sync);
+
   FlushAudioMessages();
   FlushVideoMessages();
-  std::scoped_lock lock(m_videoCriticalSection);
-  if (m_bitstream)
-    m_bitstream->ResetStartDecode();
+
+  {
+    std::scoped_lock lock(m_videoCriticalSection);
+    if (m_bitstream)
+      m_bitstream->ResetStartDecode();
+  }
+
   m_flushed = true;
+
+  if (m_videoHint.codec)
+    Load(m_videoHint, m_audioHint);
 }
 
 bool CMediaPipelineWebOS::AcceptsAudioData() const
