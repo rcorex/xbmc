@@ -310,12 +310,6 @@ private:
   void Unload(bool sync);
 
   /**
-   * @brief Handles resetting the pipeline clock and starting decode after a flush or seek.
-   * @param pts Presentation timestamp in nanoseconds to decode from.
-   */
-  void HandleFlushedState(std::chrono::nanoseconds pts);
-
-  /**
    * @brief Sets up audio stream parameters and transcoding if necessary.
    * @param audioHint Audio hints from demuxer
    * @param optInfo CVariant to describe audio format in
