@@ -1065,8 +1065,6 @@ void CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
   if (pts < 0ns)
     return;
 
-  HandleFlushedState(pts);
-
   CVariant payload;
   payload["bufferAddr"] = fmt::format("{:#x}", reinterpret_cast<std::uintptr_t>(packet->pData));
   payload["bufferSize"] = packet->iSize;
@@ -1094,42 +1092,6 @@ void CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
   }
 
   CLog::LogF(LOGWARNING, "Buffer submit returned error: {}", result);
-}
-
-void CMediaPipelineWebOS::HandleFlushedState(std::chrono::nanoseconds pts)
-{
-  if (m_flushed.exchange(false))
-  {
-    CVariant time;
-    time["position"] = pts.count();
-    std::string payload;
-    CJSONVariantWriter::Write(time, payload, true);
-
-    auto player = static_cast<mediapipeline::CustomPlayer*>(m_mediaAPIs->player.get());
-    auto pipeline = static_cast<mediapipeline::CustomPipeline*>(player->getPipeline().get());
-    if (!m_mediaAPIs->setTimeToDecode(payload.c_str()))
-    {
-      CLog::LogF(LOGERROR, "setTimeToDecode failed");
-      MEDIA_CUSTOM_CONTENT_INFO_T contentInfo;
-      pipeline->loadSpi_getInfo(&contentInfo);
-      contentInfo.ptsToDecode = pts.count();
-      pipeline->setContentInfo(MEDIA_CUSTOM_SRC_TYPE_ES, &contentInfo);
-    }
-
-    pipeline->sendSegmentEvent();
-
-    m_pts = pts;
-
-    SStartMsg startMsg{.timestamp = GetCurrentPts(),
-                       .player = VideoPlayer_VIDEO,
-                       .cachetime = DVD_MSEC_TO_TIME(50),
-                       .cachetotal = DVD_MSEC_TO_TIME(100)};
-    m_messageQueueParent.Put(
-        std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, startMsg));
-    startMsg.player = VideoPlayer_AUDIO;
-    m_messageQueueParent.Put(
-        std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, startMsg));
-  }
 }
 
 void CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
@@ -1168,7 +1130,39 @@ void CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
     data = m_bitstream->GetConvertBuffer();
   }
 
-  HandleFlushedState(pts);
+  if (m_flushed)
+  {
+    CVariant time;
+    time["position"] = pts.count();
+    std::string payload;
+    CJSONVariantWriter::Write(time, payload, true);
+
+    auto player = static_cast<mediapipeline::CustomPlayer*>(m_mediaAPIs->player.get());
+    auto pipeline = static_cast<mediapipeline::CustomPipeline*>(player->getPipeline().get());
+    if (!m_mediaAPIs->setTimeToDecode(payload.c_str()))
+    {
+      CLog::LogF(LOGERROR, "setTimeToDecode failed");
+      MEDIA_CUSTOM_CONTENT_INFO_T contentInfo;
+      pipeline->loadSpi_getInfo(&contentInfo);
+      contentInfo.ptsToDecode = pts.count();
+      pipeline->setContentInfo(MEDIA_CUSTOM_SRC_TYPE_ES, &contentInfo);
+    }
+
+    pipeline->sendSegmentEvent();
+
+    m_pts = pts;
+
+    SStartMsg startMsg{.timestamp = GetCurrentPts(),
+                       .player = VideoPlayer_VIDEO,
+                       .cachetime = DVD_MSEC_TO_TIME(50),
+                       .cachetotal = DVD_MSEC_TO_TIME(100)};
+    m_messageQueueParent.Put(
+        std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, startMsg));
+    startMsg.player = VideoPlayer_AUDIO;
+    m_messageQueueParent.Put(
+        std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, startMsg));
+    m_flushed = false;
+  }
 
   if (data && size)
   {
