@@ -26,6 +26,7 @@
 #include "cores/AudioEngine/Interfaces/AE.h"
 #include "cores/AudioEngine/Utils/AEStreamInfo.h"
 #include "cores/AudioEngine/Utils/AEUtil.h"
+#include "cores/AudioEngine/Utils/AEChannelData.h"
 #include "cores/VideoPlayer/Interface/DemuxCrypto.h"
 #include "settings/SettingUtils.h"
 #include "settings/Settings.h"
@@ -95,6 +96,7 @@ auto ms_codecMap = std::map<AVCodecID, std::string_view>({{AV_CODEC_ID_VP8, "VP8
                                                           {AV_CODEC_ID_AC3, "AC3"},
                                                           {AV_CODEC_ID_EAC3, "AC3 PLUS"},
                                                           {AV_CODEC_ID_AC4, "AC4"},
+                                                          {AV_CODEC_ID_DTS, "DTS"},
                                                           {AV_CODEC_ID_OPUS, "OPUS"},
                                                           {AV_CODEC_ID_MP3, "MP3"},
                                                           {AV_CODEC_ID_AAC, "AAC"},
@@ -193,14 +195,18 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
   m_picture.videoBuffer = new CStarfishVideoBuffer();
 
   m_webOSVersion = WebOSTVPlatformConfig::GetWebOSVersion();
-  if (WebOSTVPlatformConfig::SupportsDTS())
-    ms_codecMap.emplace(AV_CODEC_ID_DTS, "DTS");
   m_processInfo.GetVideoBufferManager().ReleasePools();
 }
 
 CMediaPipelineWebOS::~CMediaPipelineWebOS()
 {
   Unload(false);
+
+  const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
+  if (buffer)
+  {
+    buffer->ResetAcbHandle();
+  }
 }
 
 int CMediaPipelineWebOS::GetVideoBitrate() const
@@ -276,6 +282,18 @@ bool CMediaPipelineWebOS::Supports(const AVCodecID codec, const int profile)
   if ((codec == AV_CODEC_ID_H264 || codec == AV_CODEC_ID_AVS || codec == AV_CODEC_ID_CAVS) &&
       profile == AV_PROFILE_H264_HIGH_10)
     return false;
+
+  if (codec == AV_CODEC_ID_DTS)
+  {
+    if (profile == AV_PROFILE_DTS_HD_HRA ||
+        profile == AV_PROFILE_DTS_HD_MA ||
+        profile == AV_PROFILE_DTS_HD_MA_X ||
+        profile == AV_PROFILE_DTS_HD_MA_X_IMAX)
+      return WebOSTVPlatformConfig::SupportsDTSHD();
+
+    return WebOSTVPlatformConfig::SupportsDTS();
+  }
+
   return ms_codecMap.contains(codec);
 }
 
@@ -418,14 +436,21 @@ void CMediaPipelineWebOS::CloseVideoStream(const bool waitForBuffers)
 
 void CMediaPipelineWebOS::Flush(bool sync)
 {
-  if (!m_mediaAPIs->flush())
-    CLog::LogF(LOGDEBUG, "Failed to flush media APIs");
+  Unload(sync);
+
   FlushAudioMessages();
   FlushVideoMessages();
-  std::scoped_lock lock(m_videoCriticalSection);
-  if (m_bitstream)
-    m_bitstream->ResetStartDecode();
+
+  {
+    std::scoped_lock lock(m_videoCriticalSection);
+    if (m_bitstream)
+      m_bitstream->ResetStartDecode();
+  }
+
   m_flushed = true;
+
+  if (m_videoHint.codec || m_audioHint.codec)
+    Load(m_videoHint, m_audioHint);
 }
 
 bool CMediaPipelineWebOS::AcceptsAudioData() const
@@ -495,6 +520,8 @@ void CMediaPipelineWebOS::SendVideoMessage(const std::shared_ptr<CDVDMsg>& msg, 
 
 void CMediaPipelineWebOS::SetSpeed(const int speed)
 {
+  m_speed = speed;
+
   if (!m_loaded)
     return;
 
@@ -625,12 +652,15 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
   else
   {
     auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
-    const std::unique_ptr<AcbHandle>& acb = buffer->CreateAcbHandle();
-    if (acb->Id())
+    if (!buffer->GetAcbHandle())
     {
-      if (!AcbAPI_initialize(acb->Id(), PLAYER_TYPE_MSE, getenv("APPID"), &AcbCallback))
+      const std::unique_ptr<AcbHandle>& acb = buffer->CreateAcbHandle();
+      if (acb && acb->Id())
       {
-        buffer->ResetAcbHandle();
+        if (!AcbAPI_initialize(acb->Id(), PLAYER_TYPE_MSE, getenv("APPID"), &AcbCallback))
+        {
+          buffer->ResetAcbHandle();
+        }
       }
     }
   }
@@ -801,9 +831,6 @@ void CMediaPipelineWebOS::Unload(const bool sync)
   if (!m_mediaAPIs->Unload())
     CLog::LogF(LOGERROR, "Unload failed");
 
-  const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
-  buffer->ResetAcbHandle();
-
   if (sync)
   {
     // wait until m_loaded is false
@@ -859,6 +886,20 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
       setAC3PlusInfo(audioHint, optInfo);
     }
 
+    const std::shared_ptr<CSettings> settings =
+        CServiceBroker::GetSettingsComponent()->GetSettings();
+    if (settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO))
+    {
+      bool only71 = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71);
+      if (!only71 || audioHint.channels > 6)
+      {
+        if (codecName == "AC3 PLUS")
+          optInfo["ac3PlusInfo"]["channels"] = 2;
+        else if (codecName == "AC3")
+          optInfo["ac3Info"]["channels"] = 2;
+      }
+    }
+
     return codecName;
   }
 
@@ -877,11 +918,8 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
     optInfo["dtsInfo"]["channels"] = audioHint.channels;
     optInfo["dtsInfo"]["frequency"] = audioHint.samplerate / 1000.0;
 
-    if (audioHint.profile == AV_PROFILE_DTS_ES)
+    if (audioHint.profile == AV_PROFILE_DTS_EXPRESS)
       codecName = "DTSE";
-    if (audioHint.profile == AV_PROFILE_DTS_HD_MA_X ||
-        audioHint.profile == AV_PROFILE_DTS_HD_MA_X_IMAX)
-      codecName = "DTSX";
   }
   else if (audioHint.codec == AV_CODEC_ID_OPUS)
   {
@@ -1064,6 +1102,37 @@ void CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
 
   if (pts < 0ns)
     return;
+
+  if (m_flushed && m_videoHint.codec == AV_CODEC_ID_NONE)
+  {
+    CVariant time;
+    time["position"] = pts.count();
+    std::string payload;
+    CJSONVariantWriter::Write(time, payload, true);
+
+    auto player = static_cast<mediapipeline::CustomPlayer*>(m_mediaAPIs->player.get());
+    auto pipeline = static_cast<mediapipeline::CustomPipeline*>(player->getPipeline().get());
+    if (!m_mediaAPIs->setTimeToDecode(payload.c_str()))
+    {
+      CLog::LogF(LOGERROR, "setTimeToDecode failed");
+      MEDIA_CUSTOM_CONTENT_INFO_T contentInfo;
+      pipeline->loadSpi_getInfo(&contentInfo);
+      contentInfo.ptsToDecode = pts.count();
+      pipeline->setContentInfo(MEDIA_CUSTOM_SRC_TYPE_ES, &contentInfo);
+    }
+
+    pipeline->sendSegmentEvent();
+
+    m_pts = pts;
+
+    SStartMsg startMsg{.timestamp = GetCurrentPts(),
+                       .player = VideoPlayer_AUDIO,
+                       .cachetime = DVD_MSEC_TO_TIME(50),
+                       .cachetotal = DVD_MSEC_TO_TIME(100)};
+    m_messageQueueParent.Put(
+        std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, startMsg));
+    m_flushed = false;
+  }
 
   CVariant payload;
   payload["bufferAddr"] = fmt::format("{:#x}", reinterpret_cast<std::uintptr_t>(packet->pData));
@@ -1354,6 +1423,11 @@ void CMediaPipelineWebOS::ProcessAudio()
   m_audioStats.Start();
   while (!m_bStop)
   {
+    while (m_flushed && m_videoHint.codec != AV_CODEC_ID_NONE && !m_bStop)
+    {
+      std::this_thread::sleep_for(10ms);
+    }
+
     std::shared_ptr<CDVDMsg> msg = nullptr;
     int priority = 0;
     m_messageQueueAudio.Get(msg, 10ms, priority);
@@ -1382,9 +1456,15 @@ void CMediaPipelineWebOS::ProcessAudio()
               dstFormat.m_streamInfo.m_type = WebOSTVPlatformConfig::SupportsEAC3()
                                                   ? CAEStreamInfo::DataType::STREAM_TYPE_EAC3
                                                   : CAEStreamInfo::DataType::STREAM_TYPE_AC3;
-              m_audioEncoder->Initialize(dstFormat, true);
               const std::shared_ptr<CSettings> settings =
                   CServiceBroker::GetSettingsComponent()->GetSettings();
+              if (settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO))
+              {
+                bool only71 = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71);
+                if (!only71 || dstFormat.m_channelLayout.Count() > 6)
+                  dstFormat.m_channelLayout = CAEChannelInfo(AE_CH_LAYOUT_2_0);
+              }
+              m_audioEncoder->Initialize(dstFormat, true);
               auto quality = static_cast<AEQuality>(
                   settings->GetInt(CSettings::SETTING_AUDIOOUTPUT_PROCESSQUALITY));
               m_audioResample = std::make_unique<ActiveAE::CActiveAEBufferPoolResample>(
@@ -1407,9 +1487,9 @@ void CMediaPipelineWebOS::ProcessAudio()
               m_processInfo.SetAudioDecoderName((m_audioEncoder->GetCodecID() == AV_CODEC_ID_EAC3)
                                                     ? "starfish-EAC3 (transcoding)"
                                                     : "starfish-AC3 (transcoding)");
-              m_processInfo.SetAudioChannels(frame.format.m_channelLayout);
-              m_processInfo.SetAudioSampleRate(frame.format.m_sampleRate);
-              m_processInfo.SetAudioBitsPerSample(frame.bits_per_sample);
+              m_processInfo.SetAudioChannels(dstFormat.m_channelLayout);
+              m_processInfo.SetAudioSampleRate(dstFormat.m_sampleRate);
+              m_processInfo.SetAudioBitsPerSample(CAEUtil::DataFormatToBits(dstFormat.m_dataFormat));
             }
 
             using dvdTime = std::ratio<1, DVD_TIME_BASE>;
@@ -1561,12 +1641,6 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       m_pipeline = pipeline->GetGStreamerElements(
           {0, MIN_SRC_BUFFER_LEVEL_VIDEO, MAX_SRC_BUFFER_LEVEL_VIDEO, MAX_BUFFER_LEVEL});
 
-      if (acb)
-      {
-        AcbAPI_setSinkType(acb->Id(), SINK_TYPE_MAIN);
-        AcbAPI_setMediaId(acb->Id(), m_mediaAPIs->getMediaID());
-        AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_LOADED, &acb->TaskId());
-      }
       m_renderManager.ShowVideo(true);
       if (!m_mediaAPIs->Play())
         CLog::LogF(LOGERROR, "Failed to play");
@@ -1603,12 +1677,27 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       m_messageQueueParent.Put(
           std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, msg));
       if (acb)
+      {
+        AcbAPI_setSinkType(acb->Id(), SINK_TYPE_MAIN);
+        AcbAPI_setMediaId(acb->Id(), m_mediaAPIs->getMediaID());
+        AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_LOADED, &acb->TaskId());
         AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PLAYING, &acb->TaskId());
+      }
       UpdateGUISounds(true);
       break;
     }
     case PF_EVENT_TYPE_STR_BUFFERFULL:
     {
+      if (m_speed == DVD_PLAYSPEED_PAUSE)
+      {
+        if (!m_mediaAPIs->Pause())
+          CLog::LogF(LOGERROR, "Failed to pause");
+      }
+      else
+      {
+        if (!m_mediaAPIs->Play())
+          CLog::LogF(LOGERROR, "Failed to play");
+      }
       SStateMsg msg{.syncState = IDVDStreamPlayer::SYNC_INSYNC, .player = VideoPlayer_AUDIO};
       m_messageQueueParent.Put(
           std::make_shared<CDVDMsgType<SStateMsg>>(CDVDMsg::PLAYER_REPORT_STATE, msg));
