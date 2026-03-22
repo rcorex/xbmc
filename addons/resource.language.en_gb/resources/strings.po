@@ -3175,7 +3175,7 @@ msgstr ""
 
 #: system/settings/settings.xml
 msgctxt "#667"
-msgid "Enable Dolby Digital (AC3) transcoding"
+msgid "Enable Dolby Digital transcoding"
 msgstr ""
 
 #: system/settings/settings.xml
@@ -14404,7 +14404,14 @@ msgctxt "#20477"
 msgid "Do you want to create the new profile in a custom directory?"
 msgstr ""
 
-#empty strings from id 20478 to 21329
+#. Used in smart playlists to select items based on the HDR type (HDR10, HLG, Dolbyvision)
+#: xbmc/playlists/SmartPlayList.cpp
+#: addons/skin.estuary/xml/DialogPlayerProcessInfo.xml
+msgctxt "#20478"
+msgid "DV profile"
+msgstr ""
+
+#empty strings from id 20479 to 21329
 #up to 21329 is reserved for the video db !! !
 
 #: system/settings/settings.xml
@@ -21434,7 +21441,7 @@ msgstr ""
 #. Description of setting with label #667 "Enable Dolby Digital transcoding"
 #: system/settings/settings.xml
 msgctxt "#36429"
-msgid "Select this if the audio out connection only supports multichannel audio as Dolby Digital 5.1 (AC-3), such as a S/PDIF connection. If your system supports PCM multichannel audio via HDMI, leave this disabled."
+msgid "Select this if the audio out connection only supports multichannel audio as Dolby Digital 5.1 (AC-3), such as a S/PDIF connection. When E-AC3 passthrough is also enabled, Dolby Digital Plus (E-AC3) is used for higher quality. If your system supports PCM multichannel audio via HDMI, leave this disabled."
 msgstr ""
 
 #. Description for setting category #14101: "Video Acceleration"
