@@ -14,8 +14,10 @@
 #include "settings/MediaSettings.h"
 #include "utils/log.h"
 #include "windowing/wayland/WinSystemWaylandWebOS.h"
+#include "system_gl.h"
 
 #include <appswitching-control-block/AcbAPI.h>
+#include <vector>
 
 CRendererStarfish::CRendererStarfish()
 {
@@ -25,10 +27,6 @@ CRendererStarfish::CRendererStarfish()
 CRendererStarfish::~CRendererStarfish()
 {
   CServiceBroker::GetWinSystem()->GetGfxContext().SetTransferPQ(false);
-  if (m_blackBarVBO)
-  {
-    glDeleteBuffers(1, &m_blackBarVBO);
-  }
 }
 
 CBaseRenderer* CRendererStarfish::Create(CVideoBuffer* buffer)
@@ -190,6 +188,11 @@ bool CRendererStarfish::RenderCapture(int index, CRenderCapture* capture)
 void CRendererStarfish::UnInit()
 {
   m_configured = false;
+  if (m_blackBarVBO)
+  {
+    glDeleteBuffers(1, &m_blackBarVBO);
+    m_blackBarVBO = 0;
+  }
 }
 
 void CRendererStarfish::Update()
@@ -211,11 +214,25 @@ void CRendererStarfish::DrawBlackBars()
     m_lastWindowRect = windowRect;
     m_lastDestRect = m_destRect;
 
-    auto quads = windowRect.SubtractRect(m_destRect);
+    std::vector<CRect> quads;
+
+    // Top bar
+    if (m_destRect.y1 > windowRect.y1)
+      quads.emplace_back(windowRect.x1, windowRect.y1, windowRect.x2, m_destRect.y1);
+    // Bottom bar
+    if (m_destRect.y2 < windowRect.y2)
+      quads.emplace_back(windowRect.x1, m_destRect.y2, windowRect.x2, windowRect.y2);
+    // Left bar
+    if (m_destRect.x1 > windowRect.x1)
+      quads.emplace_back(windowRect.x1, m_destRect.y1, m_destRect.x1, m_destRect.y2);
+    // Right bar
+    if (m_destRect.x2 < windowRect.x2)
+      quads.emplace_back(m_destRect.x2, m_destRect.y1, windowRect.x2, m_destRect.y2);
+
     std::vector<Svertex> vertices(6 * quads.size());
     m_blackBarVertexCount = vertices.size();
 
-    GLubyte count = 0;
+    size_t count = 0;
     for (const auto& quad : quads)
     {
       vertices[count + 1].x = quad.x1;
@@ -270,6 +287,8 @@ void CRendererStarfish::DrawBlackBars()
   glBindBuffer(GL_ARRAY_BUFFER, 0);
 
   renderSystem->DisableGUIShader();
+
+  glEnable(GL_BLEND);
 }
 
 void CRendererStarfish::RenderUpdate(

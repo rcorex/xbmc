@@ -198,9 +198,6 @@ private:
   void UpdateTouchDpi();
   void ApplyShellSurfaceState(IShellSurface::StateBitset state);
 
-protected:
-  virtual void ApplyOpaqueRegion();
-
   void ProcessMessages();
   void AckConfigure(std::uint32_t serial);
 
