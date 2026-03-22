@@ -7,9 +7,6 @@ jobs:
   build:
     runs-on: self-hosted
     steps:
-      - name: Sync WSL Clock
-        run: sudo hwclock -s
-    
       - name: Checkout Code
         uses: actions/checkout@v4
 
