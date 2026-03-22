@@ -201,6 +201,12 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
 CMediaPipelineWebOS::~CMediaPipelineWebOS()
 {
   Unload(false);
+
+  const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
+  if (buffer)
+  {
+    buffer->ResetAcbHandle();
+  }
 }
 
 int CMediaPipelineWebOS::GetVideoBitrate() const
@@ -418,14 +424,21 @@ void CMediaPipelineWebOS::CloseVideoStream(const bool waitForBuffers)
 
 void CMediaPipelineWebOS::Flush(bool sync)
 {
-  if (!m_mediaAPIs->flush())
-    CLog::LogF(LOGDEBUG, "Failed to flush media APIs");
+  Unload(sync);
+
   FlushAudioMessages();
   FlushVideoMessages();
-  std::scoped_lock lock(m_videoCriticalSection);
-  if (m_bitstream)
-    m_bitstream->ResetStartDecode();
+
+  {
+    std::scoped_lock lock(m_videoCriticalSection);
+    if (m_bitstream)
+      m_bitstream->ResetStartDecode();
+  }
+
   m_flushed = true;
+
+  if (m_videoHint.codec || m_audioHint.codec)
+    Load(m_videoHint, m_audioHint);
 }
 
 bool CMediaPipelineWebOS::AcceptsAudioData() const
@@ -495,6 +508,8 @@ void CMediaPipelineWebOS::SendVideoMessage(const std::shared_ptr<CDVDMsg>& msg, 
 
 void CMediaPipelineWebOS::SetSpeed(const int speed)
 {
+  m_speed = speed;
+
   if (!m_loaded)
     return;
 
@@ -625,12 +640,15 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
   else
   {
     auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
-    const std::unique_ptr<AcbHandle>& acb = buffer->CreateAcbHandle();
-    if (acb->Id())
+    if (!buffer->GetAcbHandle())
     {
-      if (!AcbAPI_initialize(acb->Id(), PLAYER_TYPE_MSE, getenv("APPID"), &AcbCallback))
+      const std::unique_ptr<AcbHandle>& acb = buffer->CreateAcbHandle();
+      if (acb && acb->Id())
       {
-        buffer->ResetAcbHandle();
+        if (!AcbAPI_initialize(acb->Id(), PLAYER_TYPE_MSE, getenv("APPID"), &AcbCallback))
+        {
+          buffer->ResetAcbHandle();
+        }
       }
     }
   }
@@ -800,9 +818,6 @@ void CMediaPipelineWebOS::Unload(const bool sync)
 
   if (!m_mediaAPIs->Unload())
     CLog::LogF(LOGERROR, "Unload failed");
-
-  const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
-  buffer->ResetAcbHandle();
 
   if (sync)
   {
@@ -1064,6 +1079,37 @@ void CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
 
   if (pts < 0ns)
     return;
+
+  if (m_flushed && m_videoHint.codec == AV_CODEC_ID_NONE)
+  {
+    CVariant time;
+    time["position"] = pts.count();
+    std::string payload;
+    CJSONVariantWriter::Write(time, payload, true);
+
+    auto player = static_cast<mediapipeline::CustomPlayer*>(m_mediaAPIs->player.get());
+    auto pipeline = static_cast<mediapipeline::CustomPipeline*>(player->getPipeline().get());
+    if (!m_mediaAPIs->setTimeToDecode(payload.c_str()))
+    {
+      CLog::LogF(LOGERROR, "setTimeToDecode failed");
+      MEDIA_CUSTOM_CONTENT_INFO_T contentInfo;
+      pipeline->loadSpi_getInfo(&contentInfo);
+      contentInfo.ptsToDecode = pts.count();
+      pipeline->setContentInfo(MEDIA_CUSTOM_SRC_TYPE_ES, &contentInfo);
+    }
+
+    pipeline->sendSegmentEvent();
+
+    m_pts = pts;
+
+    SStartMsg startMsg{.timestamp = GetCurrentPts(),
+                       .player = VideoPlayer_AUDIO,
+                       .cachetime = DVD_MSEC_TO_TIME(50),
+                       .cachetotal = DVD_MSEC_TO_TIME(100)};
+    m_messageQueueParent.Put(
+        std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, startMsg));
+    m_flushed = false;
+  }
 
   CVariant payload;
   payload["bufferAddr"] = fmt::format("{:#x}", reinterpret_cast<std::uintptr_t>(packet->pData));
@@ -1354,6 +1400,11 @@ void CMediaPipelineWebOS::ProcessAudio()
   m_audioStats.Start();
   while (!m_bStop)
   {
+    while (m_flushed && m_videoHint.codec != AV_CODEC_ID_NONE && !m_bStop)
+    {
+      std::this_thread::sleep_for(10ms);
+    }
+
     std::shared_ptr<CDVDMsg> msg = nullptr;
     int priority = 0;
     m_messageQueueAudio.Get(msg, 10ms, priority);
@@ -1561,12 +1612,6 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       m_pipeline = pipeline->GetGStreamerElements(
           {0, MIN_SRC_BUFFER_LEVEL_VIDEO, MAX_SRC_BUFFER_LEVEL_VIDEO, MAX_BUFFER_LEVEL});
 
-      if (acb)
-      {
-        AcbAPI_setSinkType(acb->Id(), SINK_TYPE_MAIN);
-        AcbAPI_setMediaId(acb->Id(), m_mediaAPIs->getMediaID());
-        AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_LOADED, &acb->TaskId());
-      }
       m_renderManager.ShowVideo(true);
       if (!m_mediaAPIs->Play())
         CLog::LogF(LOGERROR, "Failed to play");
@@ -1603,12 +1648,27 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       m_messageQueueParent.Put(
           std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, msg));
       if (acb)
+      {
+        AcbAPI_setSinkType(acb->Id(), SINK_TYPE_MAIN);
+        AcbAPI_setMediaId(acb->Id(), m_mediaAPIs->getMediaID());
+        AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_LOADED, &acb->TaskId());
         AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PLAYING, &acb->TaskId());
+      }
       UpdateGUISounds(true);
       break;
     }
     case PF_EVENT_TYPE_STR_BUFFERFULL:
     {
+      if (m_speed == DVD_PLAYSPEED_PAUSE)
+      {
+        if (!m_mediaAPIs->Pause())
+          CLog::LogF(LOGERROR, "Failed to pause");
+      }
+      else
+      {
+        if (!m_mediaAPIs->Play())
+          CLog::LogF(LOGERROR, "Failed to play");
+      }
       SStateMsg msg{.syncState = IDVDStreamPlayer::SYNC_INSYNC, .player = VideoPlayer_AUDIO};
       m_messageQueueParent.Put(
           std::make_shared<CDVDMsgType<SStateMsg>>(CDVDMsg::PLAYER_REPORT_STATE, msg));
