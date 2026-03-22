@@ -25,6 +25,10 @@ CRendererStarfish::CRendererStarfish()
 CRendererStarfish::~CRendererStarfish()
 {
   CServiceBroker::GetWinSystem()->GetGfxContext().SetTransferPQ(false);
+  if (m_blackBarVBO)
+  {
+    glDeleteBuffers(1, &m_blackBarVBO);
+  }
 }
 
 CBaseRenderer* CRendererStarfish::Create(CVideoBuffer* buffer)
@@ -192,6 +196,82 @@ void CRendererStarfish::Update()
 {
 }
 
+void CRendererStarfish::DrawBlackBars()
+{
+  CRect windowRect(0, 0, CServiceBroker::GetWinSystem()->GetGfxContext().GetWidth(),
+                   CServiceBroker::GetWinSystem()->GetGfxContext().GetHeight());
+
+  struct Svertex
+  {
+    float x, y;
+  };
+
+  if (m_lastWindowRect != windowRect || m_lastDestRect != m_destRect)
+  {
+    m_lastWindowRect = windowRect;
+    m_lastDestRect = m_destRect;
+
+    auto quads = windowRect.SubtractRect(m_destRect);
+    std::vector<Svertex> vertices(6 * quads.size());
+    m_blackBarVertexCount = vertices.size();
+
+    GLubyte count = 0;
+    for (const auto& quad : quads)
+    {
+      vertices[count + 1].x = quad.x1;
+      vertices[count + 1].y = quad.y1;
+
+      vertices[count + 0].x = vertices[count + 5].x = quad.x1;
+      vertices[count + 0].y = vertices[count + 5].y = quad.y2;
+
+      vertices[count + 2].x = vertices[count + 3].x = quad.x2;
+      vertices[count + 2].y = vertices[count + 3].y = quad.y1;
+
+      vertices[count + 4].x = quad.x2;
+      vertices[count + 4].y = quad.y2;
+
+      count += 6;
+    }
+
+    if (!m_blackBarVBO)
+    {
+      glGenBuffers(1, &m_blackBarVBO);
+    }
+    glBindBuffer(GL_ARRAY_BUFFER, m_blackBarVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(Svertex) * vertices.size(), vertices.data(), GL_STATIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+  }
+
+  if (m_blackBarVertexCount == 0 || !m_blackBarVBO)
+    return;
+
+  CRenderSystemGLES* renderSystem =
+      dynamic_cast<CRenderSystemGLES*>(CServiceBroker::GetRenderSystem());
+  if (!renderSystem)
+    return;
+
+  glDisable(GL_BLEND);
+
+  renderSystem->EnableGUIShader(ShaderMethodGLES::SM_DEFAULT);
+  GLint posLoc = renderSystem->GUIShaderGetPos();
+  GLint uniCol = renderSystem->GUIShaderGetUniCol();
+  GLint depthLoc = renderSystem->GUIShaderGetDepth();
+
+  glUniform4f(uniCol, 0.0f, 0.0f, 0.0f, 1.0f);
+  glUniform1f(depthLoc, -1.0f);
+
+  glBindBuffer(GL_ARRAY_BUFFER, m_blackBarVBO);
+  glVertexAttribPointer(posLoc, 2, GL_FLOAT, GL_FALSE, sizeof(Svertex), 0);
+  glEnableVertexAttribArray(posLoc);
+
+  glDrawArrays(GL_TRIANGLES, 0, m_blackBarVertexCount);
+
+  glDisableVertexAttribArray(posLoc);
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+  renderSystem->DisableGUIShader();
+}
+
 void CRendererStarfish::RenderUpdate(
     int index, int index2, bool clear, unsigned int flags, unsigned int alpha)
 {
@@ -201,4 +281,9 @@ void CRendererStarfish::RenderUpdate(
   }
 
   ManageRenderArea();
+
+  if (clear)
+  {
+    DrawBlackBars();
+  }
 }

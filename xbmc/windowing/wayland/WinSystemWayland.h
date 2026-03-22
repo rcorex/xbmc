@@ -193,6 +193,7 @@ private:
   void UpdateBufferScale();
   void ApplyBufferScale();
   void ApplyViewportSizes();
+  void ApplyOpaqueRegion();
   void ApplyWindowGeometry();
   void UpdateTouchDpi();
   void ApplyShellSurfaceState(IShellSurface::StateBitset state);

@@ -46,8 +46,15 @@ protected:
   void ManageRenderArea() override;
 
 private:
+  void DrawBlackBars();
+
   CRect m_exportedSourceRect;
   CRect m_exportedDestRect;
   bool m_configured{false};
   CStarfishVideoBuffer* m_videoBuffer{nullptr};
+
+  CRect m_lastWindowRect;
+  CRect m_lastDestRect;
+  unsigned int m_blackBarVBO{0};
+  size_t m_blackBarVertexCount{0};
 };
