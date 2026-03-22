@@ -193,10 +193,12 @@ private:
   void UpdateBufferScale();
   void ApplyBufferScale();
   void ApplyViewportSizes();
-  virtual void ApplyOpaqueRegion();
   void ApplyWindowGeometry();
   void UpdateTouchDpi();
   void ApplyShellSurfaceState(IShellSurface::StateBitset state);
+
+protected:
+  virtual void ApplyOpaqueRegion();
 
   void ProcessMessages();
   void AckConfigure(std::uint32_t serial);

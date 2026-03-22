@@ -253,7 +253,7 @@ void CWinSystemWaylandWebOS::ApplyOpaqueRegion()
   // The exported video surface is blended behind the GUI surface, so the GUI surface must
   // be transparent where the video is playing, and having no opaque region ensures that
   // Wayland does not wrongly optimize and hide the video surface behind the GUI.
-  m_surface.set_opaque_region(wayland::region_t{});
+  GetMainSurface().set_opaque_region(wayland::region_t{});
 }
 
 } // namespace KODI::WINDOWING::WAYLAND
