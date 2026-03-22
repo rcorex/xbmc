@@ -53,6 +53,8 @@ public:
   float GetGuiSdrPeakLuminance() const override;
   bool IsHDRDisplay() override;
 
+  void ApplyOpaqueRegion() override;
+
 protected:
   std::unique_ptr<KODI::WINDOWING::IOSScreenSaver> GetOSScreenSaverImpl() override;
   std::unique_ptr<CSeat> CreateSeat(std::uint32_t name, wayland::seat_t& seat) override;
