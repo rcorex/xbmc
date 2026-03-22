@@ -428,6 +428,7 @@ private:
 
   std::atomic<bool> m_videoClosed{true};
   std::atomic<bool> m_audioClosed{true};
+  std::atomic<int> m_speed{1000}; // DVD_PLAYSPEED_NORMAL
 
   std::mutex m_audioInfoMutex;
   std::string m_audioInfo;
