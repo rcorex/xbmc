@@ -1106,7 +1106,7 @@ void CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
 
   if (m_audioFlushed)
   {
-    std::this_thread::sleep_for(250ms);
+    std::this_thread::sleep_for(100ms);
     m_audioFlushed = false;
   }
 
@@ -1177,7 +1177,7 @@ void CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
 
   if (m_flushed)
   {
-    std::this_thread::sleep_for(250ms);
+    std::this_thread::sleep_for(100ms);
     CVariant time;
     time["position"] = pts.count();
     std::string payload;
