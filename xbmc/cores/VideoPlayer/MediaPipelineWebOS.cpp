@@ -521,6 +521,8 @@ void CMediaPipelineWebOS::SendVideoMessage(const std::shared_ptr<CDVDMsg>& msg, 
 
 void CMediaPipelineWebOS::SetSpeed(const int speed)
 {
+  m_speed = speed;
+
   if (!m_loaded)
     return;
 
@@ -1104,7 +1106,7 @@ void CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
 
   if (m_audioFlushed)
   {
-    std::this_thread::sleep_for(100ms);
+    std::this_thread::sleep_for(250ms);
     m_audioFlushed = false;
   }
 
@@ -1175,7 +1177,7 @@ void CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
 
   if (m_flushed)
   {
-    std::this_thread::sleep_for(100ms);
+    std::this_thread::sleep_for(250ms);
     CVariant time;
     time["position"] = pts.count();
     std::string payload;
@@ -1659,8 +1661,16 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
     }
     case PF_EVENT_TYPE_STR_BUFFERFULL:
     {
-      if (!m_mediaAPIs->Play())
-        CLog::LogF(LOGERROR, "Failed to play");
+      if (m_speed == DVD_PLAYSPEED_PAUSE)
+      {
+        if (!m_mediaAPIs->Pause())
+          CLog::LogF(LOGERROR, "Failed to pause");
+      }
+      else
+      {
+        if (!m_mediaAPIs->Play())
+          CLog::LogF(LOGERROR, "Failed to play");
+      }
       SStateMsg msg{.syncState = IDVDStreamPlayer::SYNC_INSYNC, .player = VideoPlayer_AUDIO};
       m_messageQueueParent.Put(
           std::make_shared<CDVDMsgType<SStateMsg>>(CDVDMsg::PLAYER_REPORT_STATE, msg));
