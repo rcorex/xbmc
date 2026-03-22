@@ -448,6 +448,7 @@ void CMediaPipelineWebOS::Flush(bool sync)
   }
 
   m_flushed = true;
+  m_audioFlushed = true;
 
   if (m_videoHint.codec)
     Load(m_videoHint, m_audioHint);
@@ -1101,6 +1102,12 @@ void CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
   if (pts < 0ns)
     return;
 
+  if (m_audioFlushed)
+  {
+    std::this_thread::sleep_for(100ms);
+    m_audioFlushed = false;
+  }
+
   CVariant payload;
   payload["bufferAddr"] = fmt::format("{:#x}", reinterpret_cast<std::uintptr_t>(packet->pData));
   payload["bufferSize"] = packet->iSize;
@@ -1168,6 +1175,7 @@ void CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
 
   if (m_flushed)
   {
+    std::this_thread::sleep_for(100ms);
     CVariant time;
     time["position"] = pts.count();
     std::string payload;
@@ -1608,6 +1616,7 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
         CLog::LogF(LOGERROR, "Failed to play");
       m_loaded = true;
       m_flushed = true;
+      m_audioFlushed = true;
       Create();
       m_audioThread = std::thread([this] { ProcessAudio(); });
       break;
