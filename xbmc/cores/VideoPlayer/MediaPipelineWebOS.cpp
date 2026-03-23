@@ -341,9 +341,20 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
       return true;
     }
     // API introduced in webOS 6.0, so we need to handle older versions differently
+    m_messageQueueAudio.Abort(); 
+    m_messageQueueVideo.Abort(); 
+ 
+    CLog::LogF(LOGDEBUG, "Pause m_mediaAPIs before unload"); 
+    if (!m_mediaAPIs->Pause()) 
+      CLog::LogF(LOGERROR, "Failed to pause m_mediaAPIs"); 
+ 
     Unload(true);
 
-    m_mediaAPIs = std::make_unique<StarfishMediaAPIs>();
+    FlushAudioMessages(); 
+    FlushVideoMessages(); 
+    m_messageQueueAudio.Init(); 
+    m_messageQueueVideo.Init(); 
+ 
     m_audioClosed = false;
   }
 
@@ -386,9 +397,19 @@ bool CMediaPipelineWebOS::OpenVideoStream(CDVDStreamInfo hint)
     }
 
     // Different codec => unload the current stream
+    m_messageQueueAudio.Abort(); 
+    m_messageQueueVideo.Abort(); 
+ 
+    CLog::LogF(LOGDEBUG, "Pause m_mediaAPIs before unload"); 
+    if (!m_mediaAPIs->Pause()) 
+      CLog::LogF(LOGERROR, "Failed to pause m_mediaAPIs"); 
+ 
     Unload(true);
 
-    m_mediaAPIs = std::make_unique<StarfishMediaAPIs>();
+    FlushAudioMessages(); 
+    FlushVideoMessages(); 
+    m_messageQueueAudio.Init(); 
+    m_messageQueueVideo.Init(); 
   }
 
   m_videoHint = hint;
@@ -406,7 +427,6 @@ void CMediaPipelineWebOS::CloseAudioStream(const bool waitForBuffers)
     Unload(waitForBuffers);
     m_audioHint = CDVDStreamInfo();
     m_videoHint = CDVDStreamInfo();
-    m_mediaAPIs = std::make_unique<StarfishMediaAPIs>();
   }
 }
 
@@ -418,17 +438,29 @@ void CMediaPipelineWebOS::CloseVideoStream(const bool waitForBuffers)
     Unload(waitForBuffers);
     m_audioHint = CDVDStreamInfo();
     m_videoHint = CDVDStreamInfo();
-    m_mediaAPIs = std::make_unique<StarfishMediaAPIs>();
   }
 }
 
 void CMediaPipelineWebOS::Flush(bool sync)
 {
-  Unload(sync);
+  CLog::LogF(LOGDEBUG, "Halt the feeder"); 
+  m_messageQueueAudio.Abort(); 
+  m_messageQueueVideo.Abort(); 
+ 
+  CLog::LogF(LOGDEBUG, "Pause m_mediaAPIs"); 
+  if (!m_mediaAPIs->Pause()) 
+    CLog::LogF(LOGERROR, "Failed to pause m_mediaAPIs during flush"); 
+ 
+  CLog::LogF(LOGDEBUG, "Flush m_mediaAPIs"); 
+  if (!m_mediaAPIs->flush()) 
+    CLog::LogF(LOGERROR, "Failed to flush m_mediaAPIs"); 
 
   FlushAudioMessages();
   FlushVideoMessages();
 
+  m_messageQueueAudio.Init(); 
+  m_messageQueueVideo.Init(); 
+ 
   {
     std::scoped_lock lock(m_videoCriticalSection);
     if (m_bitstream)
@@ -436,9 +468,6 @@ void CMediaPipelineWebOS::Flush(bool sync)
   }
 
   m_flushed = true;
-
-  if (m_videoHint.codec || m_audioHint.codec)
-    Load(m_videoHint, m_audioHint);
 }
 
 bool CMediaPipelineWebOS::AcceptsAudioData() const
@@ -690,7 +719,6 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
   CVariant& esInfo = contents["esInfo"];
   esInfo["pauseAtDecodeTime"] = true;
   esInfo["seperatedPTS"] = true;
-  esInfo["ptsToDecode"] = m_pts.load().count();
   esInfo["videoWidth"] = videoHint.width;
   esInfo["videoHeight"] = videoHint.height;
   if (videoHint.fpsrate && videoHint.fpsscale)
@@ -1082,6 +1110,7 @@ void CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
 
   if (m_flushed && m_videoHint.codec == AV_CODEC_ID_NONE)
   {
+    CLog::LogF(LOGDEBUG, "Update the PTS"); 
     CVariant time;
     time["position"] = pts.count();
     std::string payload;
@@ -1091,7 +1120,7 @@ void CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
     auto pipeline = static_cast<mediapipeline::CustomPipeline*>(player->getPipeline().get());
     if (!m_mediaAPIs->setTimeToDecode(payload.c_str()))
     {
-      CLog::LogF(LOGERROR, "setTimeToDecode failed");
+      CLog::LogF(LOGDEBUG, "Using setContentInfo fallback instead of setTimeToDecode"); 
       MEDIA_CUSTOM_CONTENT_INFO_T contentInfo;
       pipeline->loadSpi_getInfo(&contentInfo);
       contentInfo.ptsToDecode = pts.count();
@@ -1100,6 +1129,12 @@ void CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
 
     pipeline->sendSegmentEvent();
 
+    if (m_speed != DVD_PLAYSPEED_PAUSE) 
+    { 
+      if (!m_mediaAPIs->Play()) 
+        CLog::LogF(LOGERROR, "Failed to resume API playback after flush"); 
+    } 
+ 
     m_pts = pts;
 
     SStartMsg startMsg{.timestamp = GetCurrentPts(),
@@ -1178,6 +1213,7 @@ void CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
 
   if (m_flushed)
   {
+    CLog::LogF(LOGDEBUG, "Update the PTS"); 
     CVariant time;
     time["position"] = pts.count();
     std::string payload;
@@ -1187,7 +1223,7 @@ void CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
     auto pipeline = static_cast<mediapipeline::CustomPipeline*>(player->getPipeline().get());
     if (!m_mediaAPIs->setTimeToDecode(payload.c_str()))
     {
-      CLog::LogF(LOGERROR, "setTimeToDecode failed");
+      CLog::LogF(LOGDEBUG, "Using setContentInfo fallback instead of setTimeToDecode"); 
       MEDIA_CUSTOM_CONTENT_INFO_T contentInfo;
       pipeline->loadSpi_getInfo(&contentInfo);
       contentInfo.ptsToDecode = pts.count();
@@ -1196,6 +1232,12 @@ void CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
 
     pipeline->sendSegmentEvent();
 
+    if (m_speed != DVD_PLAYSPEED_PAUSE) 
+    { 
+      if (!m_mediaAPIs->Play()) 
+        CLog::LogF(LOGERROR, "Failed to resume API playback after flush"); 
+    } 
+ 
     m_pts = pts;
 
     SStartMsg startMsg{.timestamp = GetCurrentPts(),
@@ -1659,16 +1701,6 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
     }
     case PF_EVENT_TYPE_STR_BUFFERFULL:
     {
-      if (m_speed == DVD_PLAYSPEED_PAUSE)
-      {
-        if (!m_mediaAPIs->Pause())
-          CLog::LogF(LOGERROR, "Failed to pause");
-      }
-      else
-      {
-        if (!m_mediaAPIs->Play())
-          CLog::LogF(LOGERROR, "Failed to play");
-      }
       SStateMsg msg{.syncState = IDVDStreamPlayer::SYNC_INSYNC, .player = VideoPlayer_AUDIO};
       m_messageQueueParent.Put(
           std::make_shared<CDVDMsgType<SStateMsg>>(CDVDMsg::PLAYER_REPORT_STATE, msg));
