@@ -685,7 +685,6 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
   CVariant& esInfo = contents["esInfo"];
   esInfo["pauseAtDecodeTime"] = true;
   esInfo["seperatedPTS"] = true;
-  esInfo["ptsToDecode"] = m_pts.load().count();
   esInfo["videoWidth"] = videoHint.width;
   esInfo["videoHeight"] = videoHint.height;
   if (videoHint.fpsrate && videoHint.fpsscale)
@@ -1077,7 +1076,7 @@ void CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
 
   if (m_flushed && m_videoHint.codec == AV_CODEC_ID_NONE)
   {
-    CVariant time;
+    /*CVariant time;
     time["position"] = pts.count();
     std::string payload;
     CJSONVariantWriter::Write(time, payload, true);
@@ -1093,7 +1092,7 @@ void CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
       pipeline->setContentInfo(MEDIA_CUSTOM_SRC_TYPE_ES, &contentInfo);
     }
 
-    pipeline->sendSegmentEvent();
+    pipeline->sendSegmentEvent();*/
 
     m_pts = pts;
 
@@ -1173,7 +1172,7 @@ void CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
 
   if (m_flushed)
   {
-    CVariant time;
+    /*CVariant time;
     time["position"] = pts.count();
     std::string payload;
     CJSONVariantWriter::Write(time, payload, true);
@@ -1189,7 +1188,7 @@ void CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
       pipeline->setContentInfo(MEDIA_CUSTOM_SRC_TYPE_ES, &contentInfo);
     }
 
-    pipeline->sendSegmentEvent();
+    pipeline->sendSegmentEvent();*/
 
     m_pts = pts;
 
