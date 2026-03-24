@@ -613,6 +613,9 @@ void CMediaPipelineWebOS::SetSubtitleDelay(const double delay)
 
 bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHint)
 {
+  if (!m_loaded)
+    Unload(true);
+
   std::scoped_lock videoLock(m_videoCriticalSection);
   std::scoped_lock audioLock(m_audioCriticalSection);
 
