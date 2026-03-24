@@ -356,7 +356,7 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
 
     m_messageQueueAudio.Abort(); 
     m_messageQueueVideo.Abort(); 
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
     FlushAudioMessages(); 
     FlushVideoMessages();     
  
@@ -366,7 +366,7 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
     FlushVideoMessages(); 
     m_messageQueueAudio.Init(); 
     m_messageQueueVideo.Init(); 
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
     
     m_audioClosed = false;
   }
@@ -413,7 +413,7 @@ bool CMediaPipelineWebOS::OpenVideoStream(CDVDStreamInfo hint)
 
     m_messageQueueAudio.Abort(); 
     m_messageQueueVideo.Abort(); 
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
     FlushAudioMessages(); 
     FlushVideoMessages();     
     
@@ -423,7 +423,7 @@ bool CMediaPipelineWebOS::OpenVideoStream(CDVDStreamInfo hint)
     FlushVideoMessages(); 
     m_messageQueueAudio.Init(); 
     m_messageQueueVideo.Init();
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
   }
 
@@ -468,7 +468,7 @@ void CMediaPipelineWebOS::Flush(bool sync)
   CLog::LogF(LOGDEBUG, "Pause m_mediaAPIs"); 
   if (!m_mediaAPIs->Pause()) 
     CLog::LogF(LOGERROR, "Failed to pause m_mediaAPIs during flush"); 
-  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  std::this_thread::sleep_for(std::chrono::milliseconds(500));
   
   CLog::LogF(LOGDEBUG, "Flush m_mediaAPIs"); 
   if (!m_mediaAPIs->flush()) 
@@ -480,7 +480,7 @@ void CMediaPipelineWebOS::Flush(bool sync)
   m_messageQueueAudio.Init(); 
   m_messageQueueVideo.Init();
   
-  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
  
   {
     std::scoped_lock lock(m_videoCriticalSection);
