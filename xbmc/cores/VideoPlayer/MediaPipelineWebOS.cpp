@@ -341,12 +341,10 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
       return true;
     }
     // API introduced in webOS 6.0, so we need to handle older versions differently
-    if (m_speed != DVD_PLAYSPEED_PAUSE)
-      m_messageQueueParent.Put(std::make_shared<CDVDMsgInt>(CDVDMsg::PLAYER_SETSPEED, DVD_PLAYSPEED_PAUSE));
 
     m_messageQueueAudio.Abort(); 
     m_messageQueueVideo.Abort(); 
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
     FlushAudioMessages(); 
     FlushVideoMessages();     
  
@@ -356,11 +354,8 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
     FlushVideoMessages(); 
     m_messageQueueAudio.Init(); 
     m_messageQueueVideo.Init(); 
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
     
-    if (m_speed != DVD_PLAYSPEED_PAUSE)
-      m_messageQueueParent.Put(std::make_shared<CDVDMsgInt>(CDVDMsg::PLAYER_SETSPEED, DVD_PLAYSPEED_NORMAL));
- 
     m_audioClosed = false;
   }
 
@@ -403,12 +398,10 @@ bool CMediaPipelineWebOS::OpenVideoStream(CDVDStreamInfo hint)
     }
 
     // Different codec => unload the current stream
-    if (m_speed != DVD_PLAYSPEED_PAUSE)
-      m_messageQueueParent.Put(std::make_shared<CDVDMsgInt>(CDVDMsg::PLAYER_SETSPEED, DVD_PLAYSPEED_PAUSE));
 
     m_messageQueueAudio.Abort(); 
     m_messageQueueVideo.Abort(); 
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
     FlushAudioMessages(); 
     FlushVideoMessages();     
     
@@ -418,10 +411,8 @@ bool CMediaPipelineWebOS::OpenVideoStream(CDVDStreamInfo hint)
     FlushVideoMessages(); 
     m_messageQueueAudio.Init(); 
     m_messageQueueVideo.Init();
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
-    if (m_speed != DVD_PLAYSPEED_PAUSE)
-      m_messageQueueParent.Put(std::make_shared<CDVDMsgInt>(CDVDMsg::PLAYER_SETSPEED, DVD_PLAYSPEED_NORMAL));
   }
 
   m_videoHint = hint;
@@ -459,7 +450,7 @@ void CMediaPipelineWebOS::Flush(bool sync)
   m_messageQueueAudio.Abort(); 
   m_messageQueueVideo.Abort(); 
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  std::this_thread::sleep_for(std::chrono::milliseconds(500));
   FlushAudioMessages();
   FlushVideoMessages();
   
@@ -477,7 +468,7 @@ void CMediaPipelineWebOS::Flush(bool sync)
   m_messageQueueAudio.Init(); 
   m_messageQueueVideo.Init();
   
-  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  std::this_thread::sleep_for(std::chrono::milliseconds(500));
  
   {
     std::scoped_lock lock(m_videoCriticalSection);
