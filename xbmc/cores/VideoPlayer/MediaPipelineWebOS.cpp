@@ -461,7 +461,7 @@ void CMediaPipelineWebOS::Flush(bool sync)
   CLog::LogF(LOGDEBUG, "Halt the feeder"); 
   m_messageQueueAudio.Abort(); 
   m_messageQueueVideo.Abort(); 
-
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
   FlushAudioMessages();
   FlushVideoMessages();
   
