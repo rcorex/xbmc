@@ -8,9 +8,6 @@
 
 #include "cores/AudioEngine/Utils/AEUtil.h"
 #include "ActiveAEResampleFFMPEG.h"
-#include "settings/Settings.h"
-#include "settings/SettingsComponent.h"
-#include "ServiceBroker.h"
 #include "utils/log.h"
 
 extern "C" {
@@ -188,13 +185,6 @@ bool CActiveAEResampleFFMPEG::Init(SampleConfig dstConfig,
   }
 
   av_opt_set_double(m_pContext, "center_mix_level", centerMix, 0);
-
-  const std::shared_ptr<CSettings> settings = CServiceBroker::GetSettingsComponent()->GetSettings();
-  if (settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREODPLII))
-  {
-    if (m_dst_channels == 2 && m_src_channels > 2)
-      av_opt_set_int(m_pContext, "matrix_encoding", AV_MATRIX_ENCODING_DPLII, 0);
-  }
 
   if(swr_init(m_pContext) < 0)
   {

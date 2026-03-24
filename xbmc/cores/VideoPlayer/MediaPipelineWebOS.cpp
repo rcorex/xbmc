@@ -26,7 +26,6 @@
 #include "cores/AudioEngine/Interfaces/AE.h"
 #include "cores/AudioEngine/Utils/AEStreamInfo.h"
 #include "cores/AudioEngine/Utils/AEUtil.h"
-#include "cores/AudioEngine/Utils/AEChannelData.h"
 #include "cores/VideoPlayer/Interface/DemuxCrypto.h"
 #include "settings/SettingUtils.h"
 #include "settings/Settings.h"
@@ -96,7 +95,6 @@ auto ms_codecMap = std::map<AVCodecID, std::string_view>({{AV_CODEC_ID_VP8, "VP8
                                                           {AV_CODEC_ID_AC3, "AC3"},
                                                           {AV_CODEC_ID_EAC3, "AC3 PLUS"},
                                                           {AV_CODEC_ID_AC4, "AC4"},
-                                                          {AV_CODEC_ID_DTS, "DTS"},
                                                           {AV_CODEC_ID_OPUS, "OPUS"},
                                                           {AV_CODEC_ID_MP3, "MP3"},
                                                           {AV_CODEC_ID_AAC, "AAC"},
@@ -195,6 +193,8 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
   m_picture.videoBuffer = new CStarfishVideoBuffer();
 
   m_webOSVersion = WebOSTVPlatformConfig::GetWebOSVersion();
+  if (WebOSTVPlatformConfig::SupportsDTS())
+    ms_codecMap.emplace(AV_CODEC_ID_DTS, "DTS");
   m_processInfo.GetVideoBufferManager().ReleasePools();
 }
 
@@ -282,18 +282,6 @@ bool CMediaPipelineWebOS::Supports(const AVCodecID codec, const int profile)
   if ((codec == AV_CODEC_ID_H264 || codec == AV_CODEC_ID_AVS || codec == AV_CODEC_ID_CAVS) &&
       profile == AV_PROFILE_H264_HIGH_10)
     return false;
-
-  if (codec == AV_CODEC_ID_DTS)
-  {
-    if (profile == AV_PROFILE_DTS_HD_HRA ||
-        profile == AV_PROFILE_DTS_HD_MA ||
-        profile == AV_PROFILE_DTS_HD_MA_X ||
-        profile == AV_PROFILE_DTS_HD_MA_X_IMAX)
-      return WebOSTVPlatformConfig::SupportsDTSHD();
-
-    return WebOSTVPlatformConfig::SupportsDTS();
-  }
-
   return ms_codecMap.contains(codec);
 }
 
@@ -358,6 +346,9 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
 
     m_messageQueueAudio.Abort(); 
     m_messageQueueVideo.Abort(); 
+
+    std::scoped_lock videoLock(m_videoCriticalSection);
+    std::scoped_lock audioLock(m_audioCriticalSection);
  
     Unload(true);
 
@@ -416,6 +407,9 @@ bool CMediaPipelineWebOS::OpenVideoStream(CDVDStreamInfo hint)
 
     m_messageQueueAudio.Abort(); 
     m_messageQueueVideo.Abort(); 
+
+    std::scoped_lock videoLock(m_videoCriticalSection);
+    std::scoped_lock audioLock(m_audioCriticalSection);
  
     Unload(true);
 
@@ -462,6 +456,9 @@ void CMediaPipelineWebOS::Flush(bool sync)
   CLog::LogF(LOGDEBUG, "Halt the feeder"); 
   m_messageQueueAudio.Abort(); 
   m_messageQueueVideo.Abort(); 
+
+  std::scoped_lock videoLock(m_videoCriticalSection);
+  std::scoped_lock audioLock(m_audioCriticalSection);
  
   CLog::LogF(LOGDEBUG, "Pause m_mediaAPIs"); 
   if (!m_mediaAPIs->Pause()) 
@@ -918,20 +915,6 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
       setAC3PlusInfo(audioHint, optInfo);
     }
 
-    const std::shared_ptr<CSettings> settings =
-        CServiceBroker::GetSettingsComponent()->GetSettings();
-    if (settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO))
-    {
-      bool only71 = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71);
-      if (!only71 || audioHint.channels > 6)
-      {
-        if (codecName == "AC3 PLUS")
-          optInfo["ac3PlusInfo"]["channels"] = 2;
-        else if (codecName == "AC3")
-          optInfo["ac3Info"]["channels"] = 2;
-      }
-    }
-
     return codecName;
   }
 
@@ -950,8 +933,11 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
     optInfo["dtsInfo"]["channels"] = audioHint.channels;
     optInfo["dtsInfo"]["frequency"] = audioHint.samplerate / 1000.0;
 
-    if (audioHint.profile == AV_PROFILE_DTS_EXPRESS)
+    if (audioHint.profile == AV_PROFILE_DTS_ES)
       codecName = "DTSE";
+    if (audioHint.profile == AV_PROFILE_DTS_HD_MA_X ||
+        audioHint.profile == AV_PROFILE_DTS_HD_MA_X_IMAX)
+      codecName = "DTSX";
   }
   else if (audioHint.codec == AV_CODEC_ID_OPUS)
   {
@@ -1504,15 +1490,9 @@ void CMediaPipelineWebOS::ProcessAudio()
               dstFormat.m_streamInfo.m_type = WebOSTVPlatformConfig::SupportsEAC3()
                                                   ? CAEStreamInfo::DataType::STREAM_TYPE_EAC3
                                                   : CAEStreamInfo::DataType::STREAM_TYPE_AC3;
+              m_audioEncoder->Initialize(dstFormat, true);
               const std::shared_ptr<CSettings> settings =
                   CServiceBroker::GetSettingsComponent()->GetSettings();
-              if (settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO))
-              {
-                bool only71 = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71);
-                if (!only71 || dstFormat.m_channelLayout.Count() > 6)
-                  dstFormat.m_channelLayout = CAEChannelInfo(AE_CH_LAYOUT_2_0);
-              }
-              m_audioEncoder->Initialize(dstFormat, true);
               auto quality = static_cast<AEQuality>(
                   settings->GetInt(CSettings::SETTING_AUDIOOUTPUT_PROCESSQUALITY));
               m_audioResample = std::make_unique<ActiveAE::CActiveAEBufferPoolResample>(
@@ -1535,9 +1515,9 @@ void CMediaPipelineWebOS::ProcessAudio()
               m_processInfo.SetAudioDecoderName((m_audioEncoder->GetCodecID() == AV_CODEC_ID_EAC3)
                                                     ? "starfish-EAC3 (transcoding)"
                                                     : "starfish-AC3 (transcoding)");
-              m_processInfo.SetAudioChannels(dstFormat.m_channelLayout);
-              m_processInfo.SetAudioSampleRate(dstFormat.m_sampleRate);
-              m_processInfo.SetAudioBitsPerSample(CAEUtil::DataFormatToBits(dstFormat.m_dataFormat));
+              m_processInfo.SetAudioChannels(frame.format.m_channelLayout);
+              m_processInfo.SetAudioSampleRate(frame.format.m_sampleRate);
+              m_processInfo.SetAudioBitsPerSample(frame.bits_per_sample);
             }
 
             using dvdTime = std::ratio<1, DVD_TIME_BASE>;
