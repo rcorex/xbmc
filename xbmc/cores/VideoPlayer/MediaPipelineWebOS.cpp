@@ -346,9 +346,6 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
 
     m_messageQueueAudio.Abort(); 
     m_messageQueueVideo.Abort(); 
-
-    std::scoped_lock videoLock(m_videoCriticalSection);
-    std::scoped_lock audioLock(m_audioCriticalSection);
  
     Unload(true);
 
@@ -407,9 +404,6 @@ bool CMediaPipelineWebOS::OpenVideoStream(CDVDStreamInfo hint)
 
     m_messageQueueAudio.Abort(); 
     m_messageQueueVideo.Abort(); 
-
-    std::scoped_lock videoLock(m_videoCriticalSection);
-    std::scoped_lock audioLock(m_audioCriticalSection);
  
     Unload(true);
 
@@ -456,9 +450,6 @@ void CMediaPipelineWebOS::Flush(bool sync)
   CLog::LogF(LOGDEBUG, "Halt the feeder"); 
   m_messageQueueAudio.Abort(); 
   m_messageQueueVideo.Abort(); 
-
-  std::scoped_lock videoLock(m_videoCriticalSection);
-  std::scoped_lock audioLock(m_audioCriticalSection);
  
   CLog::LogF(LOGDEBUG, "Pause m_mediaAPIs"); 
   if (!m_mediaAPIs->Pause()) 
@@ -1142,7 +1133,7 @@ void CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
 
     pipeline->sendSegmentEvent();
 
-    std::this_thread::sleep_for(100ms);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
     if (m_speed != DVD_PLAYSPEED_PAUSE) 
     { 
       if (!m_mediaAPIs->Play()) 
@@ -1246,7 +1237,7 @@ void CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
 
     pipeline->sendSegmentEvent();
 
-    std::this_thread::sleep_for(100ms);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
     if (m_speed != DVD_PLAYSPEED_PAUSE) 
     { 
       if (!m_mediaAPIs->Play()) 
