@@ -341,12 +341,11 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
       return true;
     }
     // API introduced in webOS 6.0, so we need to handle older versions differently
+    if (m_speed != DVD_PLAYSPEED_PAUSE)
+      m_messageQueueParent.Put(std::make_shared<CDVDMsgInt>(CDVDMsg::PLAYER_SETSPEED, DVD_PLAYSPEED_PAUSE));
+
     m_messageQueueAudio.Abort(); 
     m_messageQueueVideo.Abort(); 
- 
-    CLog::LogF(LOGDEBUG, "Pause m_mediaAPIs before unload"); 
-    if (!m_mediaAPIs->Pause()) 
-      CLog::LogF(LOGERROR, "Failed to pause m_mediaAPIs"); 
  
     Unload(true);
 
@@ -354,6 +353,9 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
     FlushVideoMessages(); 
     m_messageQueueAudio.Init(); 
     m_messageQueueVideo.Init(); 
+
+    if (m_speed != DVD_PLAYSPEED_PAUSE)
+      m_messageQueueParent.Put(std::make_shared<CDVDMsgInt>(CDVDMsg::PLAYER_SETSPEED, DVD_PLAYSPEED_NORMAL));
  
     m_audioClosed = false;
   }
@@ -397,12 +399,11 @@ bool CMediaPipelineWebOS::OpenVideoStream(CDVDStreamInfo hint)
     }
 
     // Different codec => unload the current stream
+    if (m_speed != DVD_PLAYSPEED_PAUSE)
+      m_messageQueueParent.Put(std::make_shared<CDVDMsgInt>(CDVDMsg::PLAYER_SETSPEED, DVD_PLAYSPEED_PAUSE));
+
     m_messageQueueAudio.Abort(); 
     m_messageQueueVideo.Abort(); 
- 
-    CLog::LogF(LOGDEBUG, "Pause m_mediaAPIs before unload"); 
-    if (!m_mediaAPIs->Pause()) 
-      CLog::LogF(LOGERROR, "Failed to pause m_mediaAPIs"); 
  
     Unload(true);
 
@@ -410,6 +411,9 @@ bool CMediaPipelineWebOS::OpenVideoStream(CDVDStreamInfo hint)
     FlushVideoMessages(); 
     m_messageQueueAudio.Init(); 
     m_messageQueueVideo.Init(); 
+
+    if (m_speed != DVD_PLAYSPEED_PAUSE)
+      m_messageQueueParent.Put(std::make_shared<CDVDMsgInt>(CDVDMsg::PLAYER_SETSPEED, DVD_PLAYSPEED_NORMAL));
   }
 
   m_videoHint = hint;
@@ -1129,6 +1133,7 @@ void CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
 
     pipeline->sendSegmentEvent();
 
+    std::this_thread::sleep_for(100ms);
     if (m_speed != DVD_PLAYSPEED_PAUSE) 
     { 
       if (!m_mediaAPIs->Play()) 
@@ -1232,6 +1237,7 @@ void CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
 
     pipeline->sendSegmentEvent();
 
+    std::this_thread::sleep_for(100ms);
     if (m_speed != DVD_PLAYSPEED_PAUSE) 
     { 
       if (!m_mediaAPIs->Play()) 
