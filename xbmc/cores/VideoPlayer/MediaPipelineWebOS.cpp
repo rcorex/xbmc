@@ -353,20 +353,22 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
       return true;
     }
     // API introduced in webOS 6.0, so we need to handle older versions differently
-    m_messageQueueAudio.Abort();
-    m_messageQueueVideo.Abort();
+    if (m_speed != DVD_PLAYSPEED_PAUSE)
+      m_messageQueueParent.Put(std::make_shared<CDVDMsgInt>(CDVDMsg::PLAYER_SETSPEED, DVD_PLAYSPEED_PAUSE));
 
-    CLog::LogF(LOGDEBUG, "Pause m_mediaAPIs before unload");
-    if (!m_mediaAPIs->Pause())
-      CLog::LogF(LOGERROR, "Failed to pause m_mediaAPIs");
-
+    m_messageQueueAudio.Abort(); 
+    m_messageQueueVideo.Abort(); 
+ 
     Unload(true);
 
-    FlushAudioMessages();
-    FlushVideoMessages();
-    m_messageQueueAudio.Init();
-    m_messageQueueVideo.Init();
+    FlushAudioMessages(); 
+    FlushVideoMessages(); 
+    m_messageQueueAudio.Init(); 
+    m_messageQueueVideo.Init(); 
 
+    if (m_speed != DVD_PLAYSPEED_PAUSE)
+      m_messageQueueParent.Put(std::make_shared<CDVDMsgInt>(CDVDMsg::PLAYER_SETSPEED, DVD_PLAYSPEED_NORMAL));
+ 
     m_audioClosed = false;
   }
 
@@ -409,19 +411,21 @@ bool CMediaPipelineWebOS::OpenVideoStream(CDVDStreamInfo hint)
     }
 
     // Different codec => unload the current stream
-    m_messageQueueAudio.Abort();
-    m_messageQueueVideo.Abort();
+    if (m_speed != DVD_PLAYSPEED_PAUSE)
+      m_messageQueueParent.Put(std::make_shared<CDVDMsgInt>(CDVDMsg::PLAYER_SETSPEED, DVD_PLAYSPEED_PAUSE));
 
-    CLog::LogF(LOGDEBUG, "Pause m_mediaAPIs before unload");
-    if (!m_mediaAPIs->Pause())
-      CLog::LogF(LOGERROR, "Failed to pause m_mediaAPIs");
-
+    m_messageQueueAudio.Abort(); 
+    m_messageQueueVideo.Abort(); 
+ 
     Unload(true);
 
-    FlushAudioMessages();
-    FlushVideoMessages();
-    m_messageQueueAudio.Init();
-    m_messageQueueVideo.Init();
+    FlushAudioMessages(); 
+    FlushVideoMessages(); 
+    m_messageQueueAudio.Init(); 
+    m_messageQueueVideo.Init(); 
+
+    if (m_speed != DVD_PLAYSPEED_PAUSE)
+      m_messageQueueParent.Put(std::make_shared<CDVDMsgInt>(CDVDMsg::PLAYER_SETSPEED, DVD_PLAYSPEED_NORMAL));
   }
 
   m_videoHint = hint;
@@ -455,24 +459,24 @@ void CMediaPipelineWebOS::CloseVideoStream(const bool waitForBuffers)
 
 void CMediaPipelineWebOS::Flush(bool sync)
 {
-  CLog::LogF(LOGDEBUG, "Halt the feeder");
-  m_messageQueueAudio.Abort();
-  m_messageQueueVideo.Abort();
-
-  CLog::LogF(LOGDEBUG, "Pause m_mediaAPIs");
-  if (!m_mediaAPIs->Pause())
-    CLog::LogF(LOGERROR, "Failed to pause m_mediaAPIs during flush");
-
-  CLog::LogF(LOGDEBUG, "Flush m_mediaAPIs");
-  if (!m_mediaAPIs->flush())
-    CLog::LogF(LOGERROR, "Failed to flush m_mediaAPIs");
+  CLog::LogF(LOGDEBUG, "Halt the feeder"); 
+  m_messageQueueAudio.Abort(); 
+  m_messageQueueVideo.Abort(); 
+ 
+  CLog::LogF(LOGDEBUG, "Pause m_mediaAPIs"); 
+  if (!m_mediaAPIs->Pause()) 
+    CLog::LogF(LOGERROR, "Failed to pause m_mediaAPIs during flush"); 
+ 
+  CLog::LogF(LOGDEBUG, "Flush m_mediaAPIs"); 
+  if (!m_mediaAPIs->flush()) 
+    CLog::LogF(LOGERROR, "Failed to flush m_mediaAPIs"); 
 
   FlushAudioMessages();
   FlushVideoMessages();
 
-  m_messageQueueAudio.Init();
-  m_messageQueueVideo.Init();
-
+  m_messageQueueAudio.Init(); 
+  m_messageQueueVideo.Init(); 
+ 
   {
     std::scoped_lock lock(m_videoCriticalSection);
     if (m_bitstream)
@@ -1133,7 +1137,7 @@ void CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
 
   if (m_flushed && m_videoHint.codec == AV_CODEC_ID_NONE)
   {
-    CLog::LogF(LOGDEBUG, "Update the PTS");
+    CLog::LogF(LOGDEBUG, "Update the PTS"); 
     CVariant time;
     time["position"] = pts.count();
     std::string payload;
@@ -1143,7 +1147,7 @@ void CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
     auto pipeline = static_cast<mediapipeline::CustomPipeline*>(player->getPipeline().get());
     if (!m_mediaAPIs->setTimeToDecode(payload.c_str()))
     {
-      CLog::LogF(LOGDEBUG, "Using setContentInfo fallback instead of setTimeToDecode");
+      CLog::LogF(LOGDEBUG, "Using setContentInfo fallback instead of setTimeToDecode"); 
       MEDIA_CUSTOM_CONTENT_INFO_T contentInfo;
       pipeline->loadSpi_getInfo(&contentInfo);
       contentInfo.ptsToDecode = pts.count();
@@ -1152,12 +1156,13 @@ void CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
 
     pipeline->sendSegmentEvent();
 
-    if (m_speed != DVD_PLAYSPEED_PAUSE)
-    {
-      if (!m_mediaAPIs->Play())
-        CLog::LogF(LOGERROR, "Failed to resume API playback after flush");
-    }
-
+    std::this_thread::sleep_for(100ms);
+    if (m_speed != DVD_PLAYSPEED_PAUSE) 
+    { 
+      if (!m_mediaAPIs->Play()) 
+        CLog::LogF(LOGERROR, "Failed to resume API playback after flush"); 
+    } 
+ 
     m_pts = pts;
 
     SStartMsg startMsg{.timestamp = GetCurrentPts(),
@@ -1236,7 +1241,7 @@ void CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
 
   if (m_flushed)
   {
-    CLog::LogF(LOGDEBUG, "Update the PTS");
+    CLog::LogF(LOGDEBUG, "Update the PTS"); 
     CVariant time;
     time["position"] = pts.count();
     std::string payload;
@@ -1246,7 +1251,7 @@ void CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
     auto pipeline = static_cast<mediapipeline::CustomPipeline*>(player->getPipeline().get());
     if (!m_mediaAPIs->setTimeToDecode(payload.c_str()))
     {
-      CLog::LogF(LOGDEBUG, "Using setContentInfo fallback instead of setTimeToDecode");
+      CLog::LogF(LOGDEBUG, "Using setContentInfo fallback instead of setTimeToDecode"); 
       MEDIA_CUSTOM_CONTENT_INFO_T contentInfo;
       pipeline->loadSpi_getInfo(&contentInfo);
       contentInfo.ptsToDecode = pts.count();
@@ -1255,12 +1260,13 @@ void CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
 
     pipeline->sendSegmentEvent();
 
-    if (m_speed != DVD_PLAYSPEED_PAUSE)
-    {
-      if (!m_mediaAPIs->Play())
-        CLog::LogF(LOGERROR, "Failed to resume API playback after flush");
-    }
-
+    std::this_thread::sleep_for(100ms);
+    if (m_speed != DVD_PLAYSPEED_PAUSE) 
+    { 
+      if (!m_mediaAPIs->Play()) 
+        CLog::LogF(LOGERROR, "Failed to resume API playback after flush"); 
+    } 
+ 
     m_pts = pts;
 
     SStartMsg startMsg{.timestamp = GetCurrentPts(),
