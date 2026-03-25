@@ -47,7 +47,7 @@ jobs:
           cd tools/depends
           ./bootstrap
           ./configure --prefix=$HOME/kodi-deps --with-toolchain=$HOME/kodi-dev/arm-webos-linux-gnueabi_sdk-buildroot --host=arm-webos-linux-gnueabi --enable-debug=no
-          make -j4
+          make -j6
 
       - name: Generate Kodi build system
         run: make -C tools/depends/target/cmakebuildsys
@@ -55,7 +55,7 @@ jobs:
       - name: Compile Kodi
         run: |
           cd build
-          make -j4
+          make -j6
 
       - name: Package Kodi app
         run: |
