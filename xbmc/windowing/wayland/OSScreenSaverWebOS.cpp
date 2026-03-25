@@ -39,7 +39,7 @@ void COSScreenSaverWebOS::Inhibit()
 {
   CVariant request;
   request["subscribe"] = true;
-  request["clientName"] = CCompileInfo::GetPackage();
+  request["clientName"] = std::string(CCompileInfo::GetPackage()) + ".wakelock";
   std::string payload;
   CJSONVariantWriter::Write(request, payload, true);
 
@@ -74,11 +74,14 @@ bool COSScreenSaverWebOS::OnScreenSaverAboutToStart(LSHandle* sh, LSMessage* rep
 
   CLog::LogF(LOGDEBUG, "Responded {}", msg);
 
-  if (request["state"] != "Active")
+  if (!request.isMember("timestamp"))
+  {
+    CLog::LogF(LOGINFO, "Skip invalid screensaver request (no timestamp)");
     return true;
+  }
 
   CVariant response;
-  response["clientName"] = CCompileInfo::GetPackage();
+  response["clientName"] = std::string(CCompileInfo::GetPackage()) + ".wakelock";
   response["ack"] = false;
   response["timestamp"] = request["timestamp"];
   std::string payload;
