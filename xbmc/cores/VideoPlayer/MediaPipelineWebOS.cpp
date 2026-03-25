@@ -1403,7 +1403,7 @@ void CMediaPipelineWebOS::Process()
   {
     std::shared_ptr<CDVDMsg> msg = nullptr;
     int priority = 0;
-    m_messageQueueVideo.Get(msg, 10ms, priority);
+    m_messageQueueVideo.Get(msg, 20ms, priority);
 
     if (msg)
     {
@@ -1441,12 +1441,12 @@ void CMediaPipelineWebOS::ProcessAudio()
   {
     while (m_flushed && !m_bStop)
     {
-      std::this_thread::sleep_for(30ms);
+      std::this_thread::sleep_for(20ms);
     }
 
     std::shared_ptr<CDVDMsg> msg = nullptr;
     int priority = 0;
-    m_messageQueueAudio.Get(msg, 10ms, priority);
+    m_messageQueueAudio.Get(msg, 20ms, priority);
     if (msg)
     {
       std::scoped_lock lock(m_audioCriticalSection);
