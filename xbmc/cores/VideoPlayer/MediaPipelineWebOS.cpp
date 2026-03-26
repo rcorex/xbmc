@@ -318,9 +318,6 @@ void CMediaPipelineWebOS::FlushVideoMessages()
 void CMediaPipelineWebOS::FlushAudioMessages()
 {
   m_messageQueueAudio.Flush();
-  std::scoped_lock lock(m_audioCriticalSection);
-  std::queue<std::shared_ptr<CDVDMsg>> empty;
-  std::swap(m_audioFlushBuffer, empty);
 }
 
 bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
@@ -1450,34 +1447,19 @@ void CMediaPipelineWebOS::ProcessAudio()
   {
     std::shared_ptr<CDVDMsg> msg = nullptr;
     int priority = 0;
-
-    {
-      std::scoped_lock lock(m_audioCriticalSection);
-      if (!m_flushed && !m_audioFlushBuffer.empty())
-      {
-        msg = m_audioFlushBuffer.front();
-        m_audioFlushBuffer.pop();
-      }
-    }
-
-    if (!msg)
-    {
-      m_messageQueueAudio.Get(msg, 30ms, priority);
-    }
-
+    m_messageQueueAudio.Get(msg, 30ms, priority);
     if (msg)
     {
-      if (m_flushed)
-      {
-        std::scoped_lock lock(m_audioCriticalSection);
-        m_audioFlushBuffer.push(msg);
-        continue;
-      }
-
       std::scoped_lock lock(m_audioCriticalSection);
 
       if (msg->IsType(CDVDMsg::DEMUXER_PACKET))
       {
+        if (m_flushed)
+        {
+          // Drop audio packets while waiting for video to finish flushing to avoid deadlocking the demuxer
+          continue;
+        }
+
         const DemuxPacket* packet =
             std::static_pointer_cast<CDVDMsgDemuxerPacket>(msg)->GetPacket();
         if (m_audioCodec && packet->iStreamId != RESAMPLED_STREAM_ID)
@@ -1644,7 +1626,7 @@ void CMediaPipelineWebOS::OnSettingChanged(const std::shared_ptr<const CSetting>
     {
       CLog::LogF(LOGDEBUG, "Audio passthrough setting changed, triggering audio stream reset");
       m_messageQueueParent.Put(
-          std::make_shared<CDVDMsgPlayerSetAudioStream>(m_processInfo.GetAudioStream()));
+          std::make_shared<CDVDMsgPlayerSetAudioStream>(m_processInfo.GetVideoSettings().m_AudioStream));
     }
   }
 }

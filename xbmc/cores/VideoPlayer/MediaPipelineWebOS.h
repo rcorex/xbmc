@@ -21,7 +21,6 @@
 #include <condition_variable>
 #include <memory>
 #include <mutex>
-#include <queue>
 #include <string>
 #include <thread>
 
@@ -431,7 +430,6 @@ private:
   CDVDClock& m_clock;
   CDVDOverlayContainer& m_overlayContainer;
   bool m_hasAudio{true};
-  std::queue<std::shared_ptr<CDVDMsg>> m_audioFlushBuffer;
 
   std::atomic<bool> m_videoClosed{true};
   std::atomic<bool> m_audioClosed{true};
