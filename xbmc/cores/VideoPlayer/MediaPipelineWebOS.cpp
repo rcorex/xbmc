@@ -1441,7 +1441,7 @@ void CMediaPipelineWebOS::ProcessAudio()
   {
     while (m_flushed && !m_bStop)
     {
-      std::this_thread::sleep_for(30ms);
+      std::this_thread::sleep_for(50ms);
     }
 
     std::shared_ptr<CDVDMsg> msg = nullptr;
