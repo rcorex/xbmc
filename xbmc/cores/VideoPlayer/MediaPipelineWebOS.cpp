@@ -618,9 +618,6 @@ void CMediaPipelineWebOS::SetSubtitleDelay(const double delay)
 
 bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHint)
 {
-  if (!m_loaded)
-    Unload(true);
-
   std::scoped_lock videoLock(m_videoCriticalSection);
   std::scoped_lock audioLock(m_audioCriticalSection);
 
@@ -1409,7 +1406,7 @@ void CMediaPipelineWebOS::Process()
   {
     std::shared_ptr<CDVDMsg> msg = nullptr;
     int priority = 0;
-    m_messageQueueVideo.Get(msg, 30ms, priority);
+    m_messageQueueVideo.Get(msg, 20ms, priority);
 
     if (msg)
     {
@@ -1447,7 +1444,7 @@ void CMediaPipelineWebOS::ProcessAudio()
   {
     std::shared_ptr<CDVDMsg> msg = nullptr;
     int priority = 0;
-    m_messageQueueAudio.Get(msg, 30ms, priority);
+    m_messageQueueAudio.Get(msg, 20ms, priority);
     if (msg)
     {
       std::scoped_lock lock(m_audioCriticalSection);
