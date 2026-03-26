@@ -196,10 +196,15 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
 
   m_webOSVersion = WebOSTVPlatformConfig::GetWebOSVersion();
   m_processInfo.GetVideoBufferManager().ReleasePools();
+
+  CServiceBroker::GetSettingsComponent()->GetSettings()->RegisterCallback(
+      this, {CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH});
 }
 
 CMediaPipelineWebOS::~CMediaPipelineWebOS()
 {
+  CServiceBroker::GetSettingsComponent()->GetSettings()->UnregisterCallback(this);
+
   Unload(false);
 
   const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
@@ -901,6 +906,7 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
   const bool allowPassthrough = CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
                                     CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH) ||
                                 audioHint.cryptoSession;
+  m_allowPassthrough = allowPassthrough;
   const bool supported = Supports(audioHint.codec, audioHint.profile);
 
   if (!supported && audioHint.cryptoSession)
@@ -1439,16 +1445,17 @@ void CMediaPipelineWebOS::ProcessAudio()
   m_audioStats.Start();
   while (!m_bStop)
   {
-    while (m_flushed && !m_bStop)
-    {
-      std::this_thread::sleep_for(50ms);
-    }
-
     std::shared_ptr<CDVDMsg> msg = nullptr;
     int priority = 0;
     m_messageQueueAudio.Get(msg, 30ms, priority);
     if (msg)
     {
+      if (m_flushed)
+      {
+        // Drop audio packets while waiting for video to finish flushing to avoid deadlocking the demuxer
+        continue;
+      }
+
       std::scoped_lock lock(m_audioCriticalSection);
 
       if (msg->IsType(CDVDMsg::DEMUXER_PACKET))
@@ -1549,9 +1556,7 @@ void CMediaPipelineWebOS::ProcessAudio()
                 auto p = std::make_shared<CDVDMsgDemuxerPacket>(
                     CDVDDemuxUtils::AllocateDemuxPacket(maxSize));
 
-                const bool passthrough =
-                    CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
-                        CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH);
+                const bool passthrough = m_allowPassthrough;
                 if (!passthrough && buf->pkt->config.fmt == AV_SAMPLE_FMT_FLTP)
                 {
                   float volume = CServiceBroker::GetAppComponents()
@@ -1610,6 +1615,19 @@ void CMediaPipelineWebOS::GetVideoResolution(unsigned int& width, unsigned int& 
   {
     width = m_videoHint.width;
     height = m_videoHint.height;
+  }
+}
+
+void CMediaPipelineWebOS::OnSettingChanged(const std::shared_ptr<const CSetting>& setting)
+{
+  if (setting->GetId() == CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH)
+  {
+    if (m_loaded && !m_audioClosed && m_audioHint.codec)
+    {
+      CLog::LogF(LOGDEBUG, "Audio passthrough setting changed, triggering audio stream reset");
+      m_messageQueueParent.Put(
+          std::make_shared<CDVDMsgPlayerSetAudioStream>(m_processInfo.GetAudioStream()));
+    }
   }
 }
 
