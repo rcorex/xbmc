@@ -481,11 +481,6 @@ void CMediaPipelineWebOS::Flush(bool sync)
 
   FlushAudioMessages();
   FlushVideoMessages();
-
-  m_messageQueueAudio.Init(); 
-  m_messageQueueVideo.Init();
-  
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
  
   {
     std::scoped_lock lock(m_videoCriticalSection);
@@ -494,6 +489,10 @@ void CMediaPipelineWebOS::Flush(bool sync)
   }
 
   m_flushed = true;
+  
+  m_messageQueueAudio.Init(); 
+  m_messageQueueVideo.Init();
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
 }
 
 bool CMediaPipelineWebOS::AcceptsAudioData() const
