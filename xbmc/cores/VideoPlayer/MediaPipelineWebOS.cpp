@@ -318,6 +318,9 @@ void CMediaPipelineWebOS::FlushVideoMessages()
 void CMediaPipelineWebOS::FlushAudioMessages()
 {
   m_messageQueueAudio.Flush();
+  std::scoped_lock lock(m_audioCriticalSection);
+  std::queue<std::shared_ptr<CDVDMsg>> empty;
+  std::swap(m_audioFlushBuffer, empty);
 }
 
 bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
@@ -1447,12 +1450,27 @@ void CMediaPipelineWebOS::ProcessAudio()
   {
     std::shared_ptr<CDVDMsg> msg = nullptr;
     int priority = 0;
-    m_messageQueueAudio.Get(msg, 30ms, priority);
+
+    {
+      std::scoped_lock lock(m_audioCriticalSection);
+      if (!m_flushed && !m_audioFlushBuffer.empty())
+      {
+        msg = m_audioFlushBuffer.front();
+        m_audioFlushBuffer.pop();
+      }
+    }
+
+    if (!msg)
+    {
+      m_messageQueueAudio.Get(msg, 30ms, priority);
+    }
+
     if (msg)
     {
       if (m_flushed)
       {
-        // Drop audio packets while waiting for video to finish flushing to avoid deadlocking the demuxer
+        std::scoped_lock lock(m_audioCriticalSection);
+        m_audioFlushBuffer.push(msg);
         continue;
       }
 
