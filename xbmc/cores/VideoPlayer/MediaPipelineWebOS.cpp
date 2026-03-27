@@ -480,6 +480,7 @@ void CMediaPipelineWebOS::Flush(bool sync)
   }
 
   m_flushed = true;
+  m_audioFed = false;
 
   m_messageQueueAudio.Init();
   m_messageQueueVideo.Init();
@@ -1153,6 +1154,7 @@ void CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
   CJSONVariantWriter::Write(payload, json, true);
   CLog::LogFC(LOGDEBUG, LOGVIDEO, "{}", json);
 
+  m_audioFed = true;
   const std::string result = m_mediaAPIs->Feed(json.c_str());
 
   if (result.find("Ok") != std::string::npos)
@@ -1247,6 +1249,16 @@ void CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
     m_messageQueueParent.Put(
         std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, startMsg));
     m_flushed = false;
+
+    if (m_hasAudio && !m_audioClosed && m_audioHint.codec != AV_CODEC_ID_NONE)
+    {
+      for (int i = 0; i < 10; i++)
+      {
+        if (m_audioFed)
+          break;
+        std::this_thread::sleep_for(5ms);
+      }
+    }
   }
 
   if (data && size)
@@ -1674,6 +1686,7 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
         CLog::LogF(LOGERROR, "Failed to play");
       m_loaded = true;
       m_flushed = true;
+      m_audioFed = false;
       Create();
       m_audioThread = std::thread([this] { ProcessAudio(); });
       break;
