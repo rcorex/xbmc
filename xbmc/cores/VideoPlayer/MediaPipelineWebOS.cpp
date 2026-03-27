@@ -361,9 +361,7 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
 
     m_messageQueueAudio.Abort();
     m_messageQueueVideo.Abort();
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    FlushAudioMessages();
-    FlushVideoMessages();
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     Unload(true);
 
@@ -371,7 +369,7 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
     FlushVideoMessages();
     m_messageQueueAudio.Init();
     m_messageQueueVideo.Init();
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     m_audioClosed = false;
   }
@@ -418,9 +416,7 @@ bool CMediaPipelineWebOS::OpenVideoStream(CDVDStreamInfo hint)
 
     m_messageQueueAudio.Abort();
     m_messageQueueVideo.Abort();
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    FlushAudioMessages();
-    FlushVideoMessages();
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     Unload(true);
 
@@ -428,7 +424,7 @@ bool CMediaPipelineWebOS::OpenVideoStream(CDVDStreamInfo hint)
     FlushVideoMessages();
     m_messageQueueAudio.Init();
     m_messageQueueVideo.Init();
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
   }
 
@@ -466,18 +462,13 @@ void CMediaPipelineWebOS::Flush(bool sync)
   CLog::LogF(LOGDEBUG, "Halt the feeder");
   m_messageQueueAudio.Abort();
   m_messageQueueVideo.Abort();
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  FlushAudioMessages();
-  FlushVideoMessages();
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
   CLog::LogF(LOGDEBUG, "Pause m_mediaAPIs");
   if (!m_mediaAPIs->Pause())
     CLog::LogF(LOGERROR, "Failed to pause m_mediaAPIs during flush");
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
   CLog::LogF(LOGDEBUG, "Flush m_mediaAPIs");
-  if (!m_mediaAPIs->flush())
-    CLog::LogF(LOGERROR, "Failed to flush m_mediaAPIs");
+  m_mediaAPIs->flush();
 
   FlushAudioMessages();
   FlushVideoMessages();
@@ -489,10 +480,11 @@ void CMediaPipelineWebOS::Flush(bool sync)
   }
 
   m_flushed = true;
+  m_audioFed = false;
 
   m_messageQueueAudio.Init();
   m_messageQueueVideo.Init();
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
 }
 
 bool CMediaPipelineWebOS::AcceptsAudioData() const
@@ -926,7 +918,13 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
     if (WebOSTVPlatformConfig::SupportsEAC3())
     {
       codecName = "AC3 PLUS";
-      setAC3PlusInfo(audioHint, optInfo);
+      optInfo["ac3PlusInfo"]["channels"] = audioHint.channels;
+      optInfo["ac3PlusInfo"]["frequency"] = SelectTranscodingSampleRate(audioHint.samplerate) / 1000.0;
+    }
+    else
+    {
+      optInfo["ac3Info"]["channels"] = audioHint.channels;
+      optInfo["ac3Info"]["frequency"] = SelectTranscodingSampleRate(audioHint.samplerate) / 1000.0;
     }
 
     const std::shared_ptr<CSettings> settings =
@@ -1156,6 +1154,7 @@ void CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
   CJSONVariantWriter::Write(payload, json, true);
   CLog::LogFC(LOGDEBUG, LOGVIDEO, "{}", json);
 
+  m_audioFed = true;
   const std::string result = m_mediaAPIs->Feed(json.c_str());
 
   if (result.find("Ok") != std::string::npos)
@@ -1250,6 +1249,16 @@ void CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
     m_messageQueueParent.Put(
         std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, startMsg));
     m_flushed = false;
+
+    if (m_hasAudio && !m_audioClosed && m_audioHint.codec != AV_CODEC_ID_NONE)
+    {
+      for (int i = 0; i < 10; i++)
+      {
+        if (m_audioFed)
+          break;
+        std::this_thread::sleep_for(5ms);
+      }
+    }
   }
 
   if (data && size)
@@ -1451,12 +1460,6 @@ void CMediaPipelineWebOS::ProcessAudio()
 
       if (msg->IsType(CDVDMsg::DEMUXER_PACKET))
       {
-        if (m_flushed)
-        {
-          // Drop audio packets while waiting for video to finish flushing to avoid deadlocking the demuxer
-          continue;
-        }
-
         const DemuxPacket* packet =
             std::static_pointer_cast<CDVDMsgDemuxerPacket>(msg)->GetPacket();
         if (m_audioCodec && packet->iStreamId != RESAMPLED_STREAM_ID)
@@ -1580,14 +1583,19 @@ void CMediaPipelineWebOS::ProcessAudio()
                     m_audioEncoder->Encode(buf->pkt->data[0], buf->pkt->planes * buf->pkt->linesize,
                                            p->m_packet->pData, p->m_packet->iSize);
                 buf->Return();
-                FeedAudioData(p);
+                if (!m_flushed)
+                {
+                  FeedAudioData(p);
+                }
               }
               m_audioResample->m_outputSamples.clear();
             }
           }
         }
-        else
+        else if (!m_flushed)
+        {
           FeedAudioData(msg);
+        }
       }
       else if (msg->IsType(CDVDMsg::PLAYER_REQUEST_STATE))
       {
@@ -1678,6 +1686,7 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
         CLog::LogF(LOGERROR, "Failed to play");
       m_loaded = true;
       m_flushed = true;
+      m_audioFed = false;
       Create();
       m_audioThread = std::thread([this] { ProcessAudio(); });
       break;
