@@ -361,9 +361,7 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
 
     m_messageQueueAudio.Abort();
     m_messageQueueVideo.Abort();
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    FlushAudioMessages();
-    FlushVideoMessages();
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     Unload(true);
 
@@ -371,7 +369,7 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
     FlushVideoMessages();
     m_messageQueueAudio.Init();
     m_messageQueueVideo.Init();
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     m_audioClosed = false;
   }
@@ -418,9 +416,7 @@ bool CMediaPipelineWebOS::OpenVideoStream(CDVDStreamInfo hint)
 
     m_messageQueueAudio.Abort();
     m_messageQueueVideo.Abort();
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    FlushAudioMessages();
-    FlushVideoMessages();
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     Unload(true);
 
@@ -428,7 +424,7 @@ bool CMediaPipelineWebOS::OpenVideoStream(CDVDStreamInfo hint)
     FlushVideoMessages();
     m_messageQueueAudio.Init();
     m_messageQueueVideo.Init();
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
   }
 
@@ -466,15 +462,11 @@ void CMediaPipelineWebOS::Flush(bool sync)
   CLog::LogF(LOGDEBUG, "Halt the feeder");
   m_messageQueueAudio.Abort();
   m_messageQueueVideo.Abort();
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  FlushAudioMessages();
-  FlushVideoMessages();
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
   CLog::LogF(LOGDEBUG, "Pause m_mediaAPIs");
   if (!m_mediaAPIs->Pause())
     CLog::LogF(LOGERROR, "Failed to pause m_mediaAPIs during flush");
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
   CLog::LogF(LOGDEBUG, "Flush m_mediaAPIs");
   if (!m_mediaAPIs->flush())
     CLog::LogF(LOGERROR, "Failed to flush m_mediaAPIs");
@@ -492,7 +484,7 @@ void CMediaPipelineWebOS::Flush(bool sync)
 
   m_messageQueueAudio.Init();
   m_messageQueueVideo.Init();
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
 }
 
 bool CMediaPipelineWebOS::AcceptsAudioData() const
