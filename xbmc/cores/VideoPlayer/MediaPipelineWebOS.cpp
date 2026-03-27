@@ -468,8 +468,7 @@ void CMediaPipelineWebOS::Flush(bool sync)
   if (!m_mediaAPIs->Pause())
     CLog::LogF(LOGERROR, "Failed to pause m_mediaAPIs during flush");
   CLog::LogF(LOGDEBUG, "Flush m_mediaAPIs");
-  if (!m_mediaAPIs->flush())
-    CLog::LogF(LOGERROR, "Failed to flush m_mediaAPIs");
+  m_mediaAPIs->flush();
 
   FlushAudioMessages();
   FlushVideoMessages();
