@@ -917,7 +917,13 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
     if (WebOSTVPlatformConfig::SupportsEAC3())
     {
       codecName = "AC3 PLUS";
-      setAC3PlusInfo(audioHint, optInfo);
+      optInfo["ac3PlusInfo"]["channels"] = audioHint.channels;
+      optInfo["ac3PlusInfo"]["frequency"] = SelectTranscodingSampleRate(audioHint.samplerate) / 1000.0;
+    }
+    else
+    {
+      optInfo["ac3Info"]["channels"] = audioHint.channels;
+      optInfo["ac3Info"]["frequency"] = SelectTranscodingSampleRate(audioHint.samplerate) / 1000.0;
     }
 
     const std::shared_ptr<CSettings> settings =
