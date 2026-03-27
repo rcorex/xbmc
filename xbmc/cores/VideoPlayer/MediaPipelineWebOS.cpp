@@ -1442,12 +1442,6 @@ void CMediaPipelineWebOS::ProcessAudio()
 
       if (msg->IsType(CDVDMsg::DEMUXER_PACKET))
       {
-        if (m_flushed)
-        {
-          // Drop audio packets while waiting for video to finish flushing to avoid deadlocking the demuxer
-          continue;
-        }
-
         const DemuxPacket* packet =
             std::static_pointer_cast<CDVDMsgDemuxerPacket>(msg)->GetPacket();
         if (m_audioCodec && packet->iStreamId != RESAMPLED_STREAM_ID)
@@ -1571,14 +1565,19 @@ void CMediaPipelineWebOS::ProcessAudio()
                     m_audioEncoder->Encode(buf->pkt->data[0], buf->pkt->planes * buf->pkt->linesize,
                                            p->m_packet->pData, p->m_packet->iSize);
                 buf->Return();
-                FeedAudioData(p);
+                if (!m_flushed)
+                {
+                  FeedAudioData(p);
+                }
               }
               m_audioResample->m_outputSamples.clear();
             }
           }
         }
-        else
+        else if (!m_flushed)
+        {
           FeedAudioData(msg);
+        }
       }
       else if (msg->IsType(CDVDMsg::PLAYER_REQUEST_STATE))
       {
