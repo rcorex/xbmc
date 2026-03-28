@@ -205,8 +205,6 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
 
 CMediaPipelineWebOS::~CMediaPipelineWebOS()
 {
-  CServiceBroker::GetActiveAE()->Resume();
-
   CServiceBroker::GetSettingsComponent()->GetSettings()->UnregisterCallback(this);
 
   Unload(false);
@@ -216,6 +214,7 @@ CMediaPipelineWebOS::~CMediaPipelineWebOS()
   {
     buffer->ResetAcbHandle();
   }
+  CServiceBroker::GetActiveAE()->Resume();
 }
 
 int CMediaPipelineWebOS::GetVideoBitrate() const
