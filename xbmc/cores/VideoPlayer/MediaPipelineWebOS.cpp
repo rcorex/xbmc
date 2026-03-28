@@ -273,8 +273,9 @@ void CMediaPipelineWebOS::UpdateGUISounds(const bool playing)
   }
   else
   {
-    // Avoid rapid resume/suspend cycles during native seeks or track changes
-    if (m_speed == DVD_PLAYSPEED_PAUSE || (m_videoClosed && m_audioClosed))
+    // Avoid rapid resume/suspend cycles during native seeks or track changes.
+    // m_flushed guarantees we don't resume during mid-seek buffering pauses.
+    if ((m_speed == DVD_PLAYSPEED_PAUSE && !m_flushed) || (m_videoClosed && m_audioClosed))
     {
       if (m_bAESuspended.exchange(false))
       {
