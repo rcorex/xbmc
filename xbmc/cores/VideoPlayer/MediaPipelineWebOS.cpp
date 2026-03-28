@@ -214,6 +214,7 @@ CMediaPipelineWebOS::~CMediaPipelineWebOS()
   {
     buffer->ResetAcbHandle();
   }
+
   CServiceBroker::GetActiveAE()->Resume();
 }
 
