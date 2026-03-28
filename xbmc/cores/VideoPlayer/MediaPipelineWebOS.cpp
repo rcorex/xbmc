@@ -1167,7 +1167,7 @@ void CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
   if (result.find("BufferFull") != std::string::npos)
   {
     m_messageQueueAudio.PutBack(msg);
-    std::this_thread::sleep_for(20ms);
+    std::this_thread::sleep_for(50ms);
     return;
   }
 
@@ -1287,7 +1287,7 @@ void CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
     if (result.find("BufferFull") != std::string::npos)
     {
       m_messageQueueVideo.PutBack(msg);
-      std::this_thread::sleep_for(20ms);
+      std::this_thread::sleep_for(50ms);
       return;
     }
 
