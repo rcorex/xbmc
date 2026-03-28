@@ -199,6 +199,9 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
 
   CServiceBroker::GetSettingsComponent()->GetSettings()->RegisterCallback(
       this, {CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH});
+
+  if (auto activeAE = CServiceBroker::GetActiveAE())
+    activeAE->Suspend();
 }
 
 CMediaPipelineWebOS::~CMediaPipelineWebOS()
@@ -212,6 +215,9 @@ CMediaPipelineWebOS::~CMediaPipelineWebOS()
   {
     buffer->ResetAcbHandle();
   }
+
+  if (auto activeAE = CServiceBroker::GetActiveAE())
+    activeAE->Resume();
 }
 
 int CMediaPipelineWebOS::GetVideoBitrate() const
@@ -253,21 +259,6 @@ void CMediaPipelineWebOS::UpdateVideoInfo()
   std::scoped_lock lock(m_videoInfoMutex);
   m_videoInfo = fmt::format("vq:{:02}% {:.3f}s, {:.3f}Mb, Mb/s:{:.2f}, fr:{:.3f}, drop:{}", level,
                             ts, mb, mbps, fps, m_droppedFrames.load());
-}
-
-void CMediaPipelineWebOS::UpdateGUISounds(const bool playing)
-{
-  IAE* activeAE = CServiceBroker::GetActiveAE();
-  const int guiSoundMode = CServiceBroker::GetSettingsComponent()->GetSettings()->GetInt(
-      CSettings::SETTING_AUDIOOUTPUT_GUISOUNDMODE);
-
-  if (guiSoundMode != AE_SOUND_IDLE)
-    return;
-
-  if (playing)
-    activeAE->SetVolume(0.0);
-  else
-    activeAE->SetVolume(1.0);
 }
 
 std::string CMediaPipelineWebOS::GetAudioInfo()
@@ -353,6 +344,7 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
         m_processInfo.SetAudioDecoderName((m_audioEncoder->GetCodecID() == AV_CODEC_ID_EAC3)
                                               ? "starfish-EAC3 (transcoding)"
                                               : "starfish-AC3 (transcoding)");
+        m_processInfo.SetAudioBitsPerSample(m_audioEncoder->GetBitRate());
       }
       m_audioClosed = false;
       return true;
@@ -846,6 +838,7 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
       m_processInfo.SetAudioDecoderName((m_audioEncoder->GetCodecID() == AV_CODEC_ID_EAC3)
                                             ? "starfish-EAC3 (transcoding)"
                                             : "starfish-AC3 (transcoding)");
+      m_processInfo.SetAudioBitsPerSample(m_audioEncoder->GetBitRate());
     }
   }
 
@@ -1167,7 +1160,7 @@ void CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
   if (result.find("BufferFull") != std::string::npos)
   {
     m_messageQueueAudio.PutBack(msg);
-    std::this_thread::sleep_for(100ms);
+    std::this_thread::sleep_for(50ms);
     return;
   }
 
@@ -1256,7 +1249,7 @@ void CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
       {
         if (m_audioFed)
           break;
-        std::this_thread::sleep_for(5ms);
+        std::this_thread::sleep_for(10ms);
       }
     }
   }
@@ -1287,7 +1280,7 @@ void CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
     if (result.find("BufferFull") != std::string::npos)
     {
       m_messageQueueVideo.PutBack(msg);
-      std::this_thread::sleep_for(100ms);
+      std::this_thread::sleep_for(50ms);
       return;
     }
 
@@ -1512,7 +1505,7 @@ void CMediaPipelineWebOS::ProcessAudio()
                                                     : "starfish-AC3 (transcoding)");
               m_processInfo.SetAudioChannels(dstFormat.m_channelLayout);
               m_processInfo.SetAudioSampleRate(dstFormat.m_sampleRate);
-              m_processInfo.SetAudioBitsPerSample(CAEUtil::DataFormatToBits(dstFormat.m_dataFormat));
+              m_processInfo.SetAudioBitsPerSample(m_audioEncoder ? m_audioEncoder->GetBitRate() : CAEUtil::DataFormatToBits(dstFormat.m_dataFormat));
             }
 
             using dvdTime = std::ratio<1, DVD_TIME_BASE>;
@@ -1699,12 +1692,10 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
         m_audioThread.join();
       m_loaded = false;
       m_pipeline = nullptr;
-      UpdateGUISounds(false);
       break;
     case PF_EVENT_TYPE_STR_STATE_UPDATE__PAUSED:
       if (acb)
         AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PAUSED, &acb->TaskId());
-      UpdateGUISounds(false);
       break;
     case PF_EVENT_TYPE_STR_STATE_UPDATE__PLAYING:
     {
@@ -1724,7 +1715,6 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
         AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_LOADED, &acb->TaskId());
         AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PLAYING, &acb->TaskId());
       }
-      UpdateGUISounds(true);
       break;
     }
     case PF_EVENT_TYPE_STR_BUFFERFULL:

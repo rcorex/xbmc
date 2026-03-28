@@ -339,12 +339,6 @@ private:
   void UpdateAudioInfo();
 
   /**
-   * @brief Updates ActiveAE volume setting based on current audio state.
-   * @param playing True if media is currently playing, false otherwise.
-   */
-  void UpdateGUISounds(bool playing);
-
-  /**
    * @brief Callback for media events.
    * @param type Event type identifier.
    * @param numValue Numeric associated value.
