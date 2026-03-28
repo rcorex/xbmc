@@ -265,9 +265,9 @@ void CMediaPipelineWebOS::UpdateGUISounds(const bool playing)
     return;
 
   if (playing)
-    activeAE->SetVolume(0.0);
+    activeAE->Suspend();
   else
-    activeAE->SetVolume(1.0);
+    activeAE->Resume();
 }
 
 std::string CMediaPipelineWebOS::GetAudioInfo()
