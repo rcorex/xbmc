@@ -1256,7 +1256,7 @@ void CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
       {
         if (m_audioFed)
           break;
-        std::this_thread::sleep_for(5ms);
+        std::this_thread::sleep_for(10ms);
       }
     }
   }
