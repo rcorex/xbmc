@@ -261,21 +261,6 @@ void CMediaPipelineWebOS::UpdateVideoInfo()
                             ts, mb, mbps, fps, m_droppedFrames.load());
 }
 
-void CMediaPipelineWebOS::UpdateGUISounds(const bool playing)
-{
-  IAE* activeAE = CServiceBroker::GetActiveAE();
-  const int guiSoundMode = CServiceBroker::GetSettingsComponent()->GetSettings()->GetInt(
-      CSettings::SETTING_AUDIOOUTPUT_GUISOUNDMODE);
-
-  if (guiSoundMode != AE_SOUND_IDLE)
-    return;
-
-  if (playing)
-    activeAE->SetVolume(0.0);
-  else
-    activeAE->SetVolume(1.0);
-}
-
 std::string CMediaPipelineWebOS::GetAudioInfo()
 {
   std::scoped_lock lock(m_audioInfoMutex);
@@ -1520,7 +1505,7 @@ void CMediaPipelineWebOS::ProcessAudio()
                                                     : "starfish-AC3 (transcoding)");
               m_processInfo.SetAudioChannels(dstFormat.m_channelLayout);
               m_processInfo.SetAudioSampleRate(dstFormat.m_sampleRate);
-              m_processInfo.SetAudioBitsPerSample(m_audioEncoder ? m_audioEncoder->GetBitRate() : 32);
+              m_processInfo.SetAudioBitsPerSample(m_audioEncoder ? m_audioEncoder->GetBitRate() : CAEUtil::DataFormatToBits(dstFormat.m_dataFormat));
             }
 
             using dvdTime = std::ratio<1, DVD_TIME_BASE>;
@@ -1707,12 +1692,10 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
         m_audioThread.join();
       m_loaded = false;
       m_pipeline = nullptr;
-      UpdateGUISounds(false);
       break;
     case PF_EVENT_TYPE_STR_STATE_UPDATE__PAUSED:
       if (acb)
         AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PAUSED, &acb->TaskId());
-      UpdateGUISounds(false);
       break;
     case PF_EVENT_TYPE_STR_STATE_UPDATE__PLAYING:
     {
@@ -1732,7 +1715,6 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
         AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_LOADED, &acb->TaskId());
         AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PLAYING, &acb->TaskId());
       }
-      UpdateGUISounds(true);
       break;
     }
     case PF_EVENT_TYPE_STR_BUFFERFULL:
