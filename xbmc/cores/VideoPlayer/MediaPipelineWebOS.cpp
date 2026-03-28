@@ -199,10 +199,14 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
 
   CServiceBroker::GetSettingsComponent()->GetSettings()->RegisterCallback(
       this, {CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH});
+
+  CServiceBroker::GetActiveAE()->Suspend();
 }
 
 CMediaPipelineWebOS::~CMediaPipelineWebOS()
 {
+  CServiceBroker::GetActiveAE()->Resume();
+
   CServiceBroker::GetSettingsComponent()->GetSettings()->UnregisterCallback(this);
 
   Unload(false);
@@ -265,24 +269,9 @@ void CMediaPipelineWebOS::UpdateGUISounds(const bool playing)
     return;
 
   if (playing)
-  {
-    if (!m_bAESuspended.exchange(true))
-    {
-      activeAE->Suspend();
-    }
-  }
+    activeAE->SetVolume(0.0);
   else
-  {
-    // Avoid rapid resume/suspend cycles during native seeks or track changes.
-    // m_flushed guarantees we don't resume during mid-seek buffering pauses.
-    if ((m_speed == DVD_PLAYSPEED_PAUSE && !m_flushed) || (m_videoClosed && m_audioClosed))
-    {
-      if (m_bAESuspended.exchange(false))
-      {
-        activeAE->Resume();
-      }
-    }
-  }
+    activeAE->SetVolume(1.0);
 }
 
 std::string CMediaPipelineWebOS::GetAudioInfo()

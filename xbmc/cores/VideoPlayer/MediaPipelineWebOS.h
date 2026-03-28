@@ -445,6 +445,4 @@ private:
   BitstreamStats m_videoStats{};
 
   std::thread m_audioThread;
-
-  std::atomic<bool> m_bAESuspended{false};
 };
