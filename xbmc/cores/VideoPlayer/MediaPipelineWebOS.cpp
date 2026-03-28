@@ -200,7 +200,8 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
   CServiceBroker::GetSettingsComponent()->GetSettings()->RegisterCallback(
       this, {CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH});
 
-  CServiceBroker::GetActiveAE()->Suspend();
+  if (auto activeAE = CServiceBroker::GetActiveAE())
+    activeAE->Suspend();
 }
 
 CMediaPipelineWebOS::~CMediaPipelineWebOS()
@@ -215,7 +216,8 @@ CMediaPipelineWebOS::~CMediaPipelineWebOS()
     buffer->ResetAcbHandle();
   }
 
-  CServiceBroker::GetActiveAE()->Resume();
+  if (auto activeAE = CServiceBroker::GetActiveAE())
+    activeAE->Resume();
 }
 
 int CMediaPipelineWebOS::GetVideoBitrate() const
@@ -1516,7 +1518,7 @@ void CMediaPipelineWebOS::ProcessAudio()
                                                     : "starfish-AC3 (transcoding)");
               m_processInfo.SetAudioChannels(dstFormat.m_channelLayout);
               m_processInfo.SetAudioSampleRate(dstFormat.m_sampleRate);
-              m_processInfo.SetAudioBitsPerSample(CAEUtil::DataFormatToBits(dstFormat.m_dataFormat));
+              m_processInfo.SetAudioBitsPerSample(m_audioEncoder ? (m_audioEncoder->GetBitRate() / 1000) : 32);
             }
 
             using dvdTime = std::ratio<1, DVD_TIME_BASE>;
