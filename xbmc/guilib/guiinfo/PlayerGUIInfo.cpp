@@ -344,14 +344,8 @@ bool CPlayerGUIInfo::GetLabel(std::string& value,
       value = StringUtils::FormatNumber(CServiceBroker::GetDataCacheCore().GetAudioSampleRate());
       return true;
     case PLAYER_PROCESS_AUDIOBITSPERSAMPLE:
-    {
-      int bits = CServiceBroker::GetDataCacheCore().GetAudioBitsPerSample();
-      if (bits >= 100) // Transcoding bitrate in kbps hack for WebOS (e.g. 640 kbps instead of 32-bit)
-        value = StringUtils::FormatNumber(bits) + "k";
-      else
-        value = StringUtils::FormatNumber(bits);
+      value = StringUtils::FormatNumber(CServiceBroker::GetDataCacheCore().GetAudioBitsPerSample());
       return true;
-    }
 
     ///////////////////////////////////////////////////////////////////////////////////////////////
     // PLAYLIST_*

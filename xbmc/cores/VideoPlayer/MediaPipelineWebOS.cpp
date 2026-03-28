@@ -359,6 +359,7 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
         m_processInfo.SetAudioDecoderName((m_audioEncoder->GetCodecID() == AV_CODEC_ID_EAC3)
                                               ? "starfish-EAC3 (transcoding)"
                                               : "starfish-AC3 (transcoding)");
+        m_processInfo.SetAudioBitsPerSample(m_audioEncoder->GetBitRate());
       }
       m_audioClosed = false;
       return true;
@@ -852,6 +853,7 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
       m_processInfo.SetAudioDecoderName((m_audioEncoder->GetCodecID() == AV_CODEC_ID_EAC3)
                                             ? "starfish-EAC3 (transcoding)"
                                             : "starfish-AC3 (transcoding)");
+      m_processInfo.SetAudioBitsPerSample(m_audioEncoder->GetBitRate());
     }
   }
 
@@ -1518,7 +1520,7 @@ void CMediaPipelineWebOS::ProcessAudio()
                                                     : "starfish-AC3 (transcoding)");
               m_processInfo.SetAudioChannels(dstFormat.m_channelLayout);
               m_processInfo.SetAudioSampleRate(dstFormat.m_sampleRate);
-              m_processInfo.SetAudioBitsPerSample(m_audioEncoder ? (m_audioEncoder->GetBitRate() / 1000) : 32);
+              m_processInfo.SetAudioBitsPerSample(m_audioEncoder ? m_audioEncoder->GetBitRate() : 32);
             }
 
             using dvdTime = std::ratio<1, DVD_TIME_BASE>;
