@@ -265,9 +265,23 @@ void CMediaPipelineWebOS::UpdateGUISounds(const bool playing)
     return;
 
   if (playing)
-    activeAE->Suspend();
+  {
+    if (!m_bAESuspended.exchange(true))
+    {
+      activeAE->Suspend();
+    }
+  }
   else
-    activeAE->Resume();
+  {
+    // Avoid rapid resume/suspend cycles during native seeks or track changes
+    if (m_speed == DVD_PLAYSPEED_PAUSE || (m_videoClosed && m_audioClosed))
+    {
+      if (m_bAESuspended.exchange(false))
+      {
+        activeAE->Resume();
+      }
+    }
+  }
 }
 
 std::string CMediaPipelineWebOS::GetAudioInfo()
