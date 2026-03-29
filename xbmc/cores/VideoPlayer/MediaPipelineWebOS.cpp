@@ -217,9 +217,7 @@ CMediaPipelineWebOS::~CMediaPipelineWebOS()
   }
 
   if (auto activeAE = CServiceBroker::GetActiveAE())
-  {
     activeAE->Resume();    
-  }
 }
 
 int CMediaPipelineWebOS::GetVideoBitrate() const
