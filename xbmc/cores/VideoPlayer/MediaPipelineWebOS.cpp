@@ -221,6 +221,10 @@ CMediaPipelineWebOS::~CMediaPipelineWebOS()
   {
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
     activeAE->Resume();
+    if (auto appVolume =
+            CServiceBroker::GetAppComponents().GetComponent<CApplicationVolumeHandling>())
+      appVolume->SetVolume(appVolume->GetVolumeRatio(), false);
+    
   }
 }
 
