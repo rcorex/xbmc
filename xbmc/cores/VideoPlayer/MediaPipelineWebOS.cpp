@@ -218,7 +218,7 @@ CMediaPipelineWebOS::~CMediaPipelineWebOS()
 
   if (auto activeAE = CServiceBroker::GetActiveAE())
   {
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     activeAE->Resume();    
   }
 }
