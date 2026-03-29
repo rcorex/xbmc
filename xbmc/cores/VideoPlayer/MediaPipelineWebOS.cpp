@@ -208,7 +208,7 @@ CMediaPipelineWebOS::~CMediaPipelineWebOS()
 {
   CServiceBroker::GetSettingsComponent()->GetSettings()->UnregisterCallback(this);
 
-  Unload(false);
+  Unload(true);
 
   const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
   if (buffer)
