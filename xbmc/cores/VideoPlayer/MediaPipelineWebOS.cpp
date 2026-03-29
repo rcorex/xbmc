@@ -222,7 +222,7 @@ CMediaPipelineWebOS::~CMediaPipelineWebOS()
 
     if (auto appVolume =
             CServiceBroker::GetAppComponents().GetComponent<CApplicationVolumeHandling>())
-      appVolume->SetHardwareVolume(appVolume->GetVolumeRatio());
+      appVolume->SetVolume(appVolume->GetVolumeRatio(), false);
   }
 }
 
