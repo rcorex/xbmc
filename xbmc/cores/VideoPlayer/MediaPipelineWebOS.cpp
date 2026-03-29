@@ -217,7 +217,13 @@ CMediaPipelineWebOS::~CMediaPipelineWebOS()
   }
 
   if (auto activeAE = CServiceBroker::GetActiveAE())
+  {
     activeAE->Resume();
+
+    if (auto appVolume =
+            CServiceBroker::GetAppComponents().GetComponent<CApplicationVolumeHandling>())
+      appVolume->SetHardwareVolume(appVolume->GetVolumeRatio());
+  }
 }
 
 int CMediaPipelineWebOS::GetVideoBitrate() const
