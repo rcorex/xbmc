@@ -217,13 +217,7 @@ CMediaPipelineWebOS::~CMediaPipelineWebOS()
   }
 
   if (auto activeAE = CServiceBroker::GetActiveAE())
-  {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     activeAE->Resume();
-    if (auto appVolume =
-          CServiceBroker::GetAppComponents().GetComponent<CApplicationVolumeHandling>())
-    appVolume->SetVolume(0.1, false);
-  }
 }
 
 int CMediaPipelineWebOS::GetVideoBitrate() const
