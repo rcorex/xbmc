@@ -208,7 +208,7 @@ CMediaPipelineWebOS::~CMediaPipelineWebOS()
 {
   CServiceBroker::GetSettingsComponent()->GetSettings()->UnregisterCallback(this);
 
-  Unload(false);
+  Unload(true);
 
   const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
   if (buffer)
@@ -218,7 +218,6 @@ CMediaPipelineWebOS::~CMediaPipelineWebOS()
 
   if (auto activeAE = CServiceBroker::GetActiveAE())
   {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     activeAE->Resume();    
   }
 }
