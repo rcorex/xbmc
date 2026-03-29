@@ -221,7 +221,7 @@ CMediaPipelineWebOS::~CMediaPipelineWebOS()
     const int guiSoundMode = CServiceBroker::GetSettingsComponent()->GetSettings()->GetInt(
         CSettings::SETTING_AUDIOOUTPUT_GUISOUNDMODE);
     if (guiSoundMode != AE_SOUND_OFF && m_audioEncoder != nullptr)
-      std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+      std::this_thread::sleep_for(std::chrono::milliseconds(1500));
     
     activeAE->Resume();
   }
