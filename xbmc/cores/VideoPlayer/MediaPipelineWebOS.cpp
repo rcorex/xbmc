@@ -202,7 +202,6 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
 
   if (auto activeAE = CServiceBroker::GetActiveAE())
     activeAE->Suspend();
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
 }
 
 CMediaPipelineWebOS::~CMediaPipelineWebOS()
@@ -219,12 +218,8 @@ CMediaPipelineWebOS::~CMediaPipelineWebOS()
 
   if (auto activeAE = CServiceBroker::GetActiveAE())
   {
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    activeAE->Resume();
-    if (auto appVolume =
-            CServiceBroker::GetAppComponents().GetComponent<CApplicationVolumeHandling>())
-      appVolume->SetVolume(appVolume->GetVolumeRatio(), false);
-    
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    activeAE->Resume();    
   }
 }
 
