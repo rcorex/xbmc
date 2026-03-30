@@ -14,8 +14,12 @@
 #include "VideoPlayerVideoWebOS.h"
 #include "settings/Settings.h"
 #include "settings/SettingsComponent.h"
+#include "threads/Thread.h"
+#include "utils/log.h"
 
 #include <algorithm>
+
+using namespace std::chrono_literals;
 
 CVideoPlayerWebOS::CVideoPlayerWebOS(IPlayerCallback& callback) : CVideoPlayer(callback)
 {
