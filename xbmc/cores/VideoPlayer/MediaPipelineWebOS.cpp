@@ -199,25 +199,19 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
 
   CServiceBroker::GetSettingsComponent()->GetSettings()->RegisterCallback(
       this, {CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH});
-
-  if (auto activeAE = CServiceBroker::GetActiveAE())
-    activeAE->Suspend();
 }
 
 CMediaPipelineWebOS::~CMediaPipelineWebOS()
 {
   CServiceBroker::GetSettingsComponent()->GetSettings()->UnregisterCallback(this);
 
-  Unload(false);
+  Unload(true);
 
   const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
   if (buffer)
   {
     buffer->ResetAcbHandle();
   }
-
-  if (auto activeAE = CServiceBroker::GetActiveAE())
-    activeAE->Resume();
 }
 
 int CMediaPipelineWebOS::GetVideoBitrate() const
