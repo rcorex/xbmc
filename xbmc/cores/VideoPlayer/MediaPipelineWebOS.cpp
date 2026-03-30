@@ -1560,9 +1560,10 @@ void CMediaPipelineWebOS::ProcessAudio()
 
                   for (std::size_t j = 0; j < static_cast<std::size_t>(buf->pkt->planes); ++j)
                   {
-                    const std::size_t numSamples = static_cast<std::size_t>(buf->pkt->nb_samples) *
+                    const std::size_t numSamples = (buf->pkt->planes > 0) ?
+                                                   static_cast<std::size_t>(buf->pkt->nb_samples) *
                                                    buf->pkt->config.channels /
-                                                   static_cast<std::size_t>(buf->pkt->planes);
+                                                   static_cast<std::size_t>(buf->pkt->planes) : 0;
                     std::span samples{reinterpret_cast<float*>(buf->pkt->data[j]), numSamples};
                     std::ranges::for_each(samples, [volume](float& s) { s *= volume; });
                   }
