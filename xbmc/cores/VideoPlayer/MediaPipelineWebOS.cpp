@@ -199,9 +199,6 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
 
   CServiceBroker::GetSettingsComponent()->GetSettings()->RegisterCallback(
       this, {CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH});
-
-  if (auto activeAE = CServiceBroker::GetActiveAE())
-    activeAE->Suspend();
 }
 
 CMediaPipelineWebOS::~CMediaPipelineWebOS()
@@ -215,9 +212,6 @@ CMediaPipelineWebOS::~CMediaPipelineWebOS()
   {
     buffer->ResetAcbHandle();
   }
-
-  if (auto activeAE = CServiceBroker::GetActiveAE())
-    activeAE->Resume();
 }
 
 int CMediaPipelineWebOS::GetVideoBitrate() const

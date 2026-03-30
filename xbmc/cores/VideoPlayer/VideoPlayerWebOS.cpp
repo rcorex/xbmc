@@ -21,7 +21,20 @@ CVideoPlayerWebOS::CVideoPlayerWebOS(IPlayerCallback& callback) : CVideoPlayer(c
 {
 }
 
-CVideoPlayerWebOS::~CVideoPlayerWebOS() = default;
+CVideoPlayerWebOS::~CVideoPlayerWebOS()
+{
+  bool resumeAudio = m_mediaPipelineWebOS != nullptr;
+  m_mediaPipelineWebOS = nullptr;
+
+  if (resumeAudio)
+  {
+    if (auto activeAE = CServiceBroker::GetActiveAE())
+    {
+      if (!activeAE->Resume())
+        CLog::Log(LOGFATAL, "CVideoPlayerWebOS::{}: Failed to restart AudioEngine after destroying WebOS media pipeline", __FUNCTION__);
+    }
+  }
+}
 
 void CVideoPlayerWebOS::CreatePlayers()
 {
@@ -48,6 +61,22 @@ void CVideoPlayerWebOS::CreatePlayers()
 
     if (!m_mediaPipelineWebOS)
     {
+      if (auto activeAE = CServiceBroker::GetActiveAE())
+      {
+        activeAE->Suspend();
+        // Wait for AE to complete suspension before launching native media pipeline
+        XbmcThreads::EndTime<> timer(2000ms);
+        while (!timer.IsTimePast() && !activeAE->IsSuspended())
+        {
+          CThread::Sleep(50ms);
+        }
+        if (timer.IsTimePast())
+        {
+          CLog::Log(LOGERROR, "CVideoPlayerWebOS::{}: AudioEngine did not suspend before launching WebOS media pipeline",
+                    __FUNCTION__);
+        }
+      }
+
       m_mediaPipelineWebOS = std::make_unique<CMediaPipelineWebOS>(
           *m_processInfo, m_renderManager, m_clock, m_messenger, m_overlayContainer, hasAudio);
       m_VideoPlayerVideo =
@@ -60,7 +89,18 @@ void CVideoPlayerWebOS::CreatePlayers()
   }
   else if (m_mediaPipelineWebOS || (!m_VideoPlayerVideo && !m_VideoPlayerAudio))
   {
+    bool resumeAudio = m_mediaPipelineWebOS != nullptr;
     m_mediaPipelineWebOS = nullptr;
+
+    if (resumeAudio)
+    {
+      if (auto activeAE = CServiceBroker::GetActiveAE())
+      {
+        if (!activeAE->Resume())
+          CLog::Log(LOGFATAL, "CVideoPlayerWebOS::{}: Failed to restart AudioEngine after destroying WebOS media pipeline", __FUNCTION__);
+      }
+    }
+
     m_VideoPlayerVideo = std::make_unique<CVideoPlayerVideo>(
         &m_clock, &m_overlayContainer, m_messenger, m_renderManager, *m_processInfo,
         m_messageQueueTimeSize);

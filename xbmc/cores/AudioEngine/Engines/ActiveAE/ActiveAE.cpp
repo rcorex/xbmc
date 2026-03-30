@@ -760,8 +760,7 @@ void CActiveAE::StateMachine(int signal, Protocol *port, Message *msg)
           if (sound)
           {
             if (m_settings.guisoundmode == AE_SOUND_OFF ||
-               (m_settings.guisoundmode == AE_SOUND_IDLE && !m_streams.empty()) ||
-               m_extSuspended)
+               (m_settings.guisoundmode == AE_SOUND_IDLE && !m_streams.empty()))
               return;
 
             SoundState st = {sound, 0};
