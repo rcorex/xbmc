@@ -1374,7 +1374,9 @@ unsigned int CMediaPipelineWebOS::GetQueuedBytes(const StreamType type) const
   // If the message queue is not data-based, we calculate hypothetical bytes based on the time size
   if (!queue->IsDataBased())
   {
-    bytes = std::lround(queue->GetTimeSize() / queue->GetMaxTimeSize() * queue->GetMaxDataSize());
+    const double maxTimeSize = queue->GetMaxTimeSize();
+    if (maxTimeSize > 0.0)
+      bytes = std::lround(queue->GetTimeSize() / maxTimeSize * queue->GetMaxDataSize());
   }
 
   return bytes + queuedSrcBytes + queuedSinkBytes + queuedBytes;
@@ -1387,6 +1389,9 @@ unsigned int CMediaPipelineWebOS::GetQueueLevel(const StreamType type) const
 
   const unsigned int bytes = GetQueuedBytes(type);
   const unsigned int capacity = GetQueueCapacity(type);
+
+  if (capacity == 0)
+    return 0;
 
   return std::min(99L, std::lround(100.0 * bytes / capacity));
 }
@@ -1525,7 +1530,7 @@ void CMediaPipelineWebOS::ProcessAudio()
             buffer->timestamp = static_cast<int64_t>(frame.pts);
             buffer->pkt->nb_samples = static_cast<int>(frame.nb_frames);
 
-            const unsigned int bytes = frame.nb_frames * frame.framesize / frame.planes;
+            const unsigned int bytes = (frame.planes > 0) ? (frame.nb_frames * frame.framesize / frame.planes) : 0;
             for (unsigned int i = 0; i < frame.planes; i++)
             {
               std::copy_n(frame.data[i], bytes, buffer->pkt->data[i]);
