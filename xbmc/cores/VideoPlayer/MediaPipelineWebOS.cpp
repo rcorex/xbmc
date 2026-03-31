@@ -1592,11 +1592,11 @@ void CMediaPipelineWebOS::ProcessAudio()
                   m_audioCodec->GetFormat(), dstFormat, quality);
               m_audioLimiter.SetSamplerate(dstFormat.m_sampleRate);
               float volumeAmplification = m_processInfo.GetVideoSettings().m_VolumeAmplification;
-              if (m_audioHint.codec == AV_CODEC_ID_AC3 &&
+             if ((m_audioHint.codec == AV_CODEC_ID_AC3 || m_audioHint.codec == AV_CODEC_ID_EAC3) &&
                   m_audioCodec->GetFormat().m_channelLayout.Count() > 2 &&
                   dstFormat.m_channelLayout == CAEChannelInfo(AE_CH_LAYOUT_2_0))
               {
-                volumeAmplification += 6.0f; //boost for AC3
+                volumeAmplification += 6.0f; //boost for AC3 & EAC3
               }
               m_audioLimiter.SetAmplification(std::pow(10.0f, volumeAmplification / 20.0f));
               const double sublevel = m_mixSubLevel.load() / 100.0;
