@@ -1419,6 +1419,8 @@ void CMediaPipelineWebOS::ProcessAudio()
               m_audioResample = std::make_unique<ActiveAE::CActiveAEBufferPoolResample>(
                   m_audioCodec->GetFormat(), dstFormat, quality);
               m_audioLimiter.SetSamplerate(dstFormat.m_sampleRate);
+              m_audioLimiter.SetAmplification(
+                  std::pow(10.0f, m_processInfo.GetVideoSettings().m_VolumeAmplification / 20.0f));
               const double sublevel =
                   settings->GetNumber(CSettings::SETTING_AUDIOOUTPUT_MIXSUBLEVEL) / 100.0;
               m_audioResample->Create(
@@ -1483,8 +1485,7 @@ void CMediaPipelineWebOS::ProcessAudio()
                     CDVDDemuxUtils::AllocateDemuxPacket(maxSize));
 
                 const bool passthrough =
-                    CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
-                        CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH);
+                    CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH) && !(m_audioEncoder && buf->pkt->config.channels == 2);
                 if (!passthrough && buf->pkt->config.fmt == AV_SAMPLE_FMT_FLTP)
                 {
                   float volume = CServiceBroker::GetAppComponents()
