@@ -26,7 +26,6 @@
 
 #include <starfish-media-pipeline/StarfishMediaAPIs.h>
 
-#include "settings/lib/ISettingCallback.h"
 
 namespace ActiveAE
 {
@@ -50,7 +49,7 @@ class StarfishMediaAPIs;
  * @class CMediaPipelineWebOS
  * @brief WebOS media pipeline for audio/video playback.
  */
-class CMediaPipelineWebOS final : public CThread, public ISettingCallback
+class CMediaPipelineWebOS final : public CThread
 {
 public:
   /**
@@ -257,9 +256,6 @@ public:
    */
   void GetVideoResolution(unsigned int& width, unsigned int& height) const;
 
-  // ISettingCallback
-  void OnSettingChanged(const std::shared_ptr<const CSetting>& setting) override;
-
 protected:
   /**
    * @brief Video processing thread loop.
@@ -429,6 +425,7 @@ private:
   std::atomic<bool> m_videoClosed{true};
   std::atomic<bool> m_audioClosed{true};
   std::atomic<bool> m_allowPassthrough{false};
+  std::atomic<bool> m_convertDovi{false};
   std::atomic<int> m_speed{1000}; // DVD_PLAYSPEED_NORMAL
 
   std::mutex m_audioInfoMutex;

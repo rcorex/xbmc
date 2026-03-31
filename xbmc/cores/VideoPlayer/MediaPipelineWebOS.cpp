@@ -197,27 +197,18 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
   m_webOSVersion = WebOSTVPlatformConfig::GetWebOSVersion();
   m_processInfo.GetVideoBufferManager().ReleasePools();
 
-  CServiceBroker::GetSettingsComponent()->GetSettings()->RegisterCallback(
-      this, {CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH});
-
-  if (auto activeAE = CServiceBroker::GetActiveAE())
-    activeAE->Suspend();
 }
 
 CMediaPipelineWebOS::~CMediaPipelineWebOS()
 {
-  CServiceBroker::GetSettingsComponent()->GetSettings()->UnregisterCallback(this);
 
-  Unload(false);
+  Unload(true);
 
   const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
   if (buffer)
   {
     buffer->ResetAcbHandle();
   }
-
-  if (auto activeAE = CServiceBroker::GetActiveAE())
-    activeAE->Resume();
 }
 
 int CMediaPipelineWebOS::GetVideoBitrate() const
@@ -1018,8 +1009,9 @@ void CMediaPipelineWebOS::SetupBitstreamConverter(CDVDStreamInfo& hint)
 
           // Only set for profile 7, container hint allows to skip parsing unnecessarily
           // set profile 8 and single layer when converting
-          if (!removeDovi && convertDovi && hint.dovi.dv_profile == 7)
+          if (!removeDovi && convertDovi && (hint.dovi.dv_profile == 7 || m_convertDovi))
           {
+            m_convertDovi = true;
             m_bitstream->SetConvertDovi(true);
             hint.dovi.dv_profile = 8;
             hint.dovi.el_present_flag = false;
@@ -1486,6 +1478,8 @@ void CMediaPipelineWebOS::ProcessAudio()
               m_audioResample = std::make_unique<ActiveAE::CActiveAEBufferPoolResample>(
                   m_audioCodec->GetFormat(), dstFormat, quality);
               m_audioLimiter.SetSamplerate(dstFormat.m_sampleRate);
+              m_audioLimiter.SetAmplification(
+                  std::pow(10.0f, m_processInfo.GetVideoSettings().m_VolumeAmplification / 20.0f));
               const double sublevel =
                   settings->GetNumber(CSettings::SETTING_AUDIOOUTPUT_MIXSUBLEVEL) / 100.0;
               m_audioResample->Create(
@@ -1549,7 +1543,7 @@ void CMediaPipelineWebOS::ProcessAudio()
                 auto p = std::make_shared<CDVDMsgDemuxerPacket>(
                     CDVDDemuxUtils::AllocateDemuxPacket(maxSize));
 
-                const bool passthrough = m_allowPassthrough;
+                const bool passthrough = m_allowPassthrough && !(m_audioEncoder && buf->pkt->config.channels == 2);
                 if (!passthrough && buf->pkt->config.fmt == AV_SAMPLE_FMT_FLTP)
                 {
                   float volume = CServiceBroker::GetAppComponents()
@@ -1616,19 +1610,7 @@ void CMediaPipelineWebOS::GetVideoResolution(unsigned int& width, unsigned int& 
   }
 }
 
-void CMediaPipelineWebOS::OnSettingChanged(const std::shared_ptr<const CSetting>& setting)
-{
-  if (setting->GetId() == CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH)
-  {
-    if (m_loaded && !m_audioClosed && m_audioHint.codec)
-    {
-      CLog::LogF(LOGDEBUG, "Audio passthrough setting changed, triggering audio stream reset");
 
-      m_messageQueueParent.Put(
-          std::make_shared<CDVDMsgPlayerSetAudioStream>(m_processInfo.GetVideoSettings().m_AudioStream));
-    }
-  }
-}
 
 void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, const char* strValue)
 {
