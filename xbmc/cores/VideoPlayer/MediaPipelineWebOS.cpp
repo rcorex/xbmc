@@ -1503,7 +1503,8 @@ unsigned int CMediaPipelineWebOS::GetQueueLevel(const StreamType type) const
 
 void CMediaPipelineWebOS::SetDynamicRangeCompression(const long drc)
 {
-  m_audioLimiter.SetAmplification(std::pow(10.0f, static_cast<float>(drc) / 2000.0f));
+  m_audioLimiter.SetAmplification(
+      std::pow(10.0f, (static_cast<float>(drc) / 100.0f + m_volumeAmplificationBoost.load()) / 20.0f));
 }
 
 void CMediaPipelineWebOS::Process()
@@ -1592,12 +1593,15 @@ void CMediaPipelineWebOS::ProcessAudio()
                   m_audioCodec->GetFormat(), dstFormat, quality);
               m_audioLimiter.SetSamplerate(dstFormat.m_sampleRate);
               float volumeAmplification = m_processInfo.GetVideoSettings().m_VolumeAmplification;
-             if ((m_audioHint.codec == AV_CODEC_ID_AC3 || m_audioHint.codec == AV_CODEC_ID_EAC3) &&
+              float boost = 0.0f;
+              if ((m_audioHint.codec == AV_CODEC_ID_AC3 || m_audioHint.codec == AV_CODEC_ID_EAC3) &&
                   m_audioCodec->GetFormat().m_channelLayout.Count() > 2 &&
                   dstFormat.m_channelLayout == CAEChannelInfo(AE_CH_LAYOUT_2_0))
               {
-                volumeAmplification += 6.0f; //boost for AC3 & EAC3
+                boost = 6.0f; //boost for AC3 & EAC3
               }
+              m_volumeAmplificationBoost.store(boost);
+              volumeAmplification += boost;
               m_audioLimiter.SetAmplification(std::pow(10.0f, volumeAmplification / 20.0f));
               const double sublevel = m_mixSubLevel.load() / 100.0;
               m_audioResample->Create(

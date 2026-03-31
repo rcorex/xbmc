@@ -410,6 +410,7 @@ private:
   std::unique_ptr<ActiveAE::CActiveAEBufferPoolResample> m_audioResample{nullptr};
   std::unique_ptr<CAEEncoderFFmpeg> m_audioEncoder{nullptr};
   CAELimiter m_audioLimiter;
+  std::atomic<float> m_volumeAmplificationBoost{0.0f};
   std::atomic<unsigned long> m_droppedFrames{0};
   std::chrono::duration<double, std::ratio<1, DVD_TIME_BASE>> m_audioClock{0.0};
 
