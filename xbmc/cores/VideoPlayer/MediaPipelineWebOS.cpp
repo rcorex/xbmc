@@ -128,8 +128,10 @@ void DefeatDialnorm(uint8_t* data, size_t size)
       }
       if (offset != -1)
       {
-        int byte_idx = i + offset / 8;
+        // Changed int to size_t here to fix the comparison warning
+        size_t byte_idx = i + offset / 8;
         int bit_idx = offset % 8;
+        
         if (byte_idx < size)
         {
           int bits_in_first = 8 - bit_idx;
@@ -140,6 +142,7 @@ void DefeatDialnorm(uint8_t* data, size_t size)
           else
           {
             data[byte_idx] |= ((1 << bits_in_first) - 1);
+            // The byte_idx + 1 comparison is also fixed by the change above
             if (byte_idx + 1 < size)
             {
               int bits_in_second = 5 - bits_in_first;
