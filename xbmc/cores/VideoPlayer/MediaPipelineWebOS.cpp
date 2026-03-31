@@ -197,13 +197,10 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
   m_webOSVersion = WebOSTVPlatformConfig::GetWebOSVersion();
   m_processInfo.GetVideoBufferManager().ReleasePools();
 
-  CServiceBroker::GetSettingsComponent()->GetSettings()->RegisterCallback(
-      this, {CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH});
 }
 
 CMediaPipelineWebOS::~CMediaPipelineWebOS()
 {
-  CServiceBroker::GetSettingsComponent()->GetSettings()->UnregisterCallback(this);
 
   Unload(true);
 
@@ -1612,19 +1609,7 @@ void CMediaPipelineWebOS::GetVideoResolution(unsigned int& width, unsigned int& 
   }
 }
 
-void CMediaPipelineWebOS::OnSettingChanged(const std::shared_ptr<const CSetting>& setting)
-{
-  if (setting->GetId() == CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH)
-  {
-    if (m_loaded && !m_audioClosed && m_audioHint.codec)
-    {
-      CLog::LogF(LOGDEBUG, "Audio passthrough setting changed, triggering audio stream reset");
 
-      m_messageQueueParent.Put(
-          std::make_shared<CDVDMsgPlayerSetAudioStream>(m_processInfo.GetVideoSettings().m_AudioStream));
-    }
-  }
-}
 
 void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, const char* strValue)
 {
