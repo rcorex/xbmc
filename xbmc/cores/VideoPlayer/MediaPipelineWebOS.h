@@ -334,12 +334,6 @@ private:
   void UpdateAudioInfo();
 
   /**
-   * @brief Updates ActiveAE volume setting based on current audio state.
-   * @param playing True if media is currently playing, false otherwise.
-   */
-  void UpdateGUISounds(bool playing);
-
-  /**
    * @brief Callback for media events.
    * @param type Event type identifier.
    * @param numValue Numeric associated value.
@@ -428,6 +422,10 @@ private:
 
   std::atomic<bool> m_videoClosed{true};
   std::atomic<bool> m_audioClosed{true};
+  std::atomic<bool> m_allowPassthrough{false};
+  std::atomic<bool> m_convertDovi{false};
+  std::atomic<int> m_speed{1000}; // DVD_PLAYSPEED_NORMAL
+  std::atomic<bool> m_audioFed{false};
 
   std::mutex m_audioInfoMutex;
   std::string m_audioInfo;
