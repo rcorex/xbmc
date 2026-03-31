@@ -1,9 +1,9 @@
 /*
- *  Copyright (C) 2025 Team Kodi
- *  This file is part of Kodi - https://kodi.tv
+ * Copyright (C) 2025 Team Kodi
+ * This file is part of Kodi - https://kodi.tv
  *
- *  SPDX-License-Identifier: GPL-2.0-or-later
- *  See LICENSES/README.md for more information.
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ * See LICENSES/README.md for more information.
  */
 
 #include "MediaPipelineWebOS.h"
@@ -85,6 +85,72 @@ constexpr unsigned int MAX_SRC_BUFFER_LEVEL_VIDEO = 8 * 1024 * 1024; // 8 MB
 
 constexpr unsigned int SVP_VERSION_30 = 30;
 constexpr unsigned int SVP_VERSION_40 = 40;
+
+int GetDialnormOffsetAC3(uint8_t acmod)
+{
+  int offset = 16 + 16 + 2 + 6 + 5 + 3 + 3;
+  if ((acmod & 1) && (acmod != 1))
+    offset += 2;
+  if (acmod & 4)
+    offset += 2;
+  if (acmod == 2)
+    offset += 2;
+  offset += 1;
+  return offset;
+}
+
+void DefeatDialnorm(uint8_t* data, size_t size)
+{
+  if (size < 8)
+    return;
+  for (size_t i = 0; i + 8 <= size; i++)
+  {
+    if (data[i] == 0x0B && data[i + 1] == 0x77)
+    {
+      uint8_t bsid = data[i + 5] >> 3;
+      int offset = -1;
+      if (bsid <= 10)
+      {
+        uint8_t acmod = data[i + 6] >> 5;
+        offset = GetDialnormOffsetAC3(acmod);
+      }
+      else
+      {
+        uint8_t strmtyp = data[i + 2] >> 6;
+        if (strmtyp == 1 || strmtyp == 3)
+          continue;
+
+        uint8_t fscod = data[i + 4] >> 6;
+        if (fscod == 3)
+          offset = 47;
+        else
+          offset = 45;
+      }
+      if (offset != -1)
+      {
+        int byte_idx = i + offset / 8;
+        int bit_idx = offset % 8;
+        if (byte_idx < size)
+        {
+          int bits_in_first = 8 - bit_idx;
+          if (bits_in_first >= 5)
+          {
+            data[byte_idx] |= (0x1F << (bits_in_first - 5));
+          }
+          else
+          {
+            data[byte_idx] |= ((1 << bits_in_first) - 1);
+            if (byte_idx + 1 < size)
+            {
+              int bits_in_second = 5 - bits_in_first;
+              data[byte_idx + 1] |= (((1 << bits_in_second) - 1) << (8 - bits_in_second));
+            }
+          }
+        }
+      }
+    }
+  }
+}
 
 auto ms_codecMap = std::map<AVCodecID, std::string_view>({{AV_CODEC_ID_VP8, "VP8"},
                                                           {AV_CODEC_ID_VP9, "VP9"},
@@ -1492,6 +1558,9 @@ void CMediaPipelineWebOS::ProcessAudio()
             std::static_pointer_cast<CDVDMsgDemuxerPacket>(msg)->GetPacket();
         if (m_audioCodec && packet->iStreamId != RESAMPLED_STREAM_ID)
         {
+          if (m_audioEncoder && (m_audioHint.codec == AV_CODEC_ID_AC3 || m_audioHint.codec == AV_CODEC_ID_EAC3))
+            DefeatDialnorm(packet->pData, packet->iSize);
+
           if (!m_audioCodec->AddData(*packet))
             m_messageQueueAudio.PutBack(msg);
 
@@ -1666,7 +1735,7 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
   const std::unique_ptr<AcbHandle>& acb = buffer->GetAcbHandle();
   switch (type)
   {
-    case PF_EVENT_TYPE_FRAMEREADY:
+    case PF_EVENT_TYPE_FRAMREADY:
     {
       m_pts = std::chrono::nanoseconds(numValue);
       const double pts = GetCurrentPts();
