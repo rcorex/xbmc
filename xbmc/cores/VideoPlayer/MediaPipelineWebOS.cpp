@@ -1735,7 +1735,7 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
   const std::unique_ptr<AcbHandle>& acb = buffer->GetAcbHandle();
   switch (type)
   {
-    case PF_EVENT_TYPE_FRAMREADY:
+    case PF_EVENT_TYPE_FRAMEREADY:
     {
       m_pts = std::chrono::nanoseconds(numValue);
       const double pts = GetCurrentPts();
