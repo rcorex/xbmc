@@ -13,8 +13,8 @@
 #include "DVDStreamInfo.h"
 #include "IVideoPlayer.h"
 #include "cores/AudioEngine/Utils/AELimiter.h"
-#include "threads/Thread.h"
 #include "settings/lib/ISettingCallback.h"
+#include "threads/Thread.h"
 #include "utils/BitstreamStats.h"
 
 #include <atomic>
@@ -26,7 +26,6 @@
 #include <thread>
 
 #include <starfish-media-pipeline/StarfishMediaAPIs.h>
-
 
 namespace ActiveAE
 {
@@ -430,6 +429,8 @@ private:
   std::atomic<bool> m_audioClosed{true};
   std::atomic<bool> m_allowPassthrough{false};
   std::atomic<bool> m_passthroughSetting{false};
+  std::atomic<bool> m_bypassDialnorm{false};
+  std::atomic<bool> m_bypassDialnormAtmos{false};
   std::atomic<bool> m_convertDovi{false};
   std::atomic<bool> m_downmixStereo{false};
   std::atomic<bool> m_downmixStereoOnly71{false};

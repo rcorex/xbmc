@@ -406,6 +406,8 @@ public:
   static constexpr auto SETTING_AUDIOOUTPUT_GUISOUNDVOLUME = "audiooutput.guisoundvolume";
   static constexpr auto SETTING_AUDIOOUTPUT_PASSTHROUGH = "audiooutput.passthrough";
   static constexpr auto SETTING_AUDIOOUTPUT_PASSTHROUGHDEVICE = "audiooutput.passthroughdevice";
+  static constexpr auto SETTING_AUDIOOUTPUT_BYPASSDIALNORM = "audiooutput.bypassdialnorm";
+  static constexpr auto SETTING_AUDIOOUTPUT_BYPASSDIALNORMATMOS = "audiooutput.bypassdialnormatmos";
   static constexpr auto SETTING_AUDIOOUTPUT_AC3PASSTHROUGH = "audiooutput.ac3passthrough";
   static constexpr auto SETTING_AUDIOOUTPUT_AC3TRANSCODE = "audiooutput.ac3transcode";
   static constexpr auto SETTING_AUDIOOUTPUT_EAC3PASSTHROUGH = "audiooutput.eac3passthrough";
