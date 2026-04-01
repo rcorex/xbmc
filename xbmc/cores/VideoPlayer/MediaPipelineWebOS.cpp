@@ -126,6 +126,8 @@ void DefeatDialnorm(uint8_t* data, size_t size)
     {
       uint8_t bsid = data[i + 5] >> 3;
       int offset = -1;
+      bool is_eac3 = false;
+
       if (bsid <= 10)
       {
         uint8_t acmod = data[i + 6] >> 5;
@@ -133,6 +135,7 @@ void DefeatDialnorm(uint8_t* data, size_t size)
       }
       else
       {
+        is_eac3 = true;
         uint8_t strmtyp = data[i + 2] >> 6;
         if (strmtyp == 1 || strmtyp == 3)
         {
@@ -146,6 +149,7 @@ void DefeatDialnorm(uint8_t* data, size_t size)
         else
           offset = 45;
       }
+
       if (offset != -1)
       {
         size_t byte_idx = i + offset / 8;
@@ -167,6 +171,41 @@ void DefeatDialnorm(uint8_t* data, size_t size)
               data[byte_idx + 1] |= (((1 << bits_in_second) - 1) << (8 - bits_in_second));
             }
           }
+
+          // --- Recalculate CRC for E-AC-3 ---
+          if (is_eac3)
+          {
+            // frmsiz is an 11-bit field: lower 3 bits of data[i+2] and all 8 bits of data[i+3]
+            uint16_t frmsiz = ((data[i + 2] & 0x07) << 8) | data[i + 3];
+            
+            // Frame size in bytes = (frmsiz + 1) * 2
+            size_t frame_size = (frmsiz + 1) * 2;
+
+            // Ensure the full frame is available in the buffer before calculating
+            if (i + frame_size <= size)
+            {
+              uint16_t crc = 0;
+              
+              // ATSC A/52 CRC covers the entire frame except the last 2 bytes (the CRC itself)
+              for (size_t j = 0; j < frame_size - 2; ++j)
+              {
+                crc ^= (data[i + j] << 8);
+                for (int bit = 0; bit < 8; ++bit)
+                {
+                  if (crc & 0x8000)
+                    crc = (crc << 1) ^ 0x8005;
+                  else
+                    crc <<= 1;
+                }
+              }
+
+              // Write the 16-bit CRC back into the last two bytes of the frame (Big-Endian)
+              data[i + frame_size - 2] = (crc >> 8) & 0xFF;
+              data[i + frame_size - 1] = crc & 0xFF;
+            }
+          }
+          // ----------------------------------
+
           break; // Early exit
         }
       }
@@ -873,10 +912,7 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
   }
 
   if (audioHint.codec == AV_CODEC_ID_EAC3 && audioHint.profile == AV_PROFILE_EAC3_DDP_ATMOS)
-  {
-    if (!(m_bypassDialnorm && m_bypassDialnormAtmos))
-      contents["immersive"] = "ATMOS";
-  }
+    contents["immersive"] = "ATMOS";
 
   contents["format"] = "RAW";
   p["mediaTransportType"] = "BUFFERSTREAM";
@@ -1043,7 +1079,7 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
   {
     optInfo["ac3PlusInfo"]["channels"] = hint.channels;
     optInfo["ac3PlusInfo"]["frequency"] = hint.samplerate / 1000.0;
-    if (hint.profile == AV_PROFILE_EAC3_DDP_ATMOS && !(m_bypassDialnorm && m_bypassDialnormAtmos))
+    if (hint.profile == AV_PROFILE_EAC3_DDP_ATMOS)
       optInfo["ac3PlusInfo"]["channels"] = hint.channels + 2;
   };
 
