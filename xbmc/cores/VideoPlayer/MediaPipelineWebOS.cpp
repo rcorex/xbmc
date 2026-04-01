@@ -100,7 +100,7 @@ int GetDialnormOffsetAC3(uint8_t acmod)
   return offset;
 }
 
-void DefeatDialnorm(uint8_t* data, size_t size)
+void DefeatDialnorm(uint8_t* data, size_t size, bool isEac3Atmos)
 {
   if (size < 8)
     return;
@@ -172,8 +172,8 @@ void DefeatDialnorm(uint8_t* data, size_t size)
             }
           }
 
-          // --- Recalculate CRC for E-AC-3 ---
-          if (is_eac3)
+          // --- Recalculate CRC for E-AC-3 Atmos ONLY ---
+          if (is_eac3 && isEac3Atmos)
           {
             // frmsiz is an 11-bit field: lower 3 bits of data[i+2] and all 8 bits of data[i+3]
             uint16_t frmsiz = ((data[i + 2] & 0x07) << 8) | data[i + 3];
@@ -186,25 +186,25 @@ void DefeatDialnorm(uint8_t* data, size_t size)
             {
               uint16_t crc = 0;
               
-              // ATSC A/52 CRC covers the entire frame except the last 2 bytes (the CRC itself)
+              // ATSC A/52 CRC covers the entire frame except the last 2 bytes
               for (size_t j = 0; j < frame_size - 2; ++j)
               {
-                crc ^= (data[i + j] << 8);
+                crc ^= static_cast<uint16_t>(data[i + j] << 8);
                 for (int bit = 0; bit < 8; ++bit)
                 {
                   if (crc & 0x8000)
-                    crc = (crc << 1) ^ 0x8005;
+                    crc = static_cast<uint16_t>((crc << 1) ^ 0x8005);
                   else
-                    crc <<= 1;
+                    crc = static_cast<uint16_t>(crc << 1);
                 }
               }
 
               // Write the 16-bit CRC back into the last two bytes of the frame (Big-Endian)
-              data[i + frame_size - 2] = (crc >> 8) & 0xFF;
-              data[i + frame_size - 1] = crc & 0xFF;
+              data[i + frame_size - 2] = static_cast<uint8_t>((crc >> 8) & 0xFF);
+              data[i + frame_size - 1] = static_cast<uint8_t>(crc & 0xFF);
             }
           }
-          // ----------------------------------
+          // ---------------------------------------------
 
           break; // Early exit
         }
@@ -1654,16 +1654,18 @@ void CMediaPipelineWebOS::ProcessAudio()
           if (m_audioHint.codec == AV_CODEC_ID_AC3 || m_audioHint.codec == AV_CODEC_ID_EAC3)
           {
             bool shouldDefeat = false;
+            bool isEac3Atmos = (m_audioHint.codec == AV_CODEC_ID_EAC3 && m_audioHint.profile == AV_PROFILE_EAC3_DDP_ATMOS);
+
             if (m_bypassDialnorm)
             {
-              if (m_audioHint.profile == AV_PROFILE_EAC3_DDP_ATMOS)
+              if (isEac3Atmos)
                 shouldDefeat = m_bypassDialnormAtmos;
               else
                 shouldDefeat = true;
             }
 
             if (shouldDefeat)
-              DefeatDialnorm(packet->pData, packet->iSize);
+              DefeatDialnorm(packet->pData, packet->iSize, isEac3Atmos);
           }
         }
 
