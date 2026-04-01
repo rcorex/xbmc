@@ -353,7 +353,8 @@ void CMediaPipelineWebOS::OnSettingChanged(const std::shared_ptr<const CSetting>
   else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM)
     m_bypassDialnorm = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM);
   else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS)
-    m_bypassDialnormAtmos = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS);
+    m_bypassDialnormAtmos =
+        settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS);
   else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO)
     m_downmixStereo = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO);
   else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71)
@@ -1608,7 +1609,8 @@ void CMediaPipelineWebOS::ProcessAudio()
       {
         const DemuxPacket* packet =
             std::static_pointer_cast<CDVDMsgDemuxerPacket>(msg)->GetPacket();
-        if (m_audioCodec && packet->iStreamId != RESAMPLED_STREAM_ID)
+
+        if (packet->iStreamId != RESAMPLED_STREAM_ID)
         {
           if (m_audioHint.codec == AV_CODEC_ID_AC3 || m_audioHint.codec == AV_CODEC_ID_EAC3)
           {
@@ -1624,7 +1626,10 @@ void CMediaPipelineWebOS::ProcessAudio()
             if (shouldDefeat)
               DefeatDialnorm(packet->pData, packet->iSize);
           }
+        }
 
+        if (m_audioCodec && packet->iStreamId != RESAMPLED_STREAM_ID)
+        {
           if (!m_audioCodec->AddData(*packet))
             m_messageQueueAudio.PutBack(msg);
 
