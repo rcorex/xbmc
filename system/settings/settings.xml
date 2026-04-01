@@ -3437,6 +3437,21 @@
           </dependencies>
           <control type="toggle" />
         </setting>
+        <setting id="audiooutput.webosbypassdialnorm" type="boolean" label="39225" help="39226">
+          <visible>false</visible>
+          <level>1</level>
+          <default>false</default>
+          <control type="toggle" />
+        </setting>
+        <setting id="audiooutput.webosbypassdialnormatmos" type="boolean" parent="audiooutput.webosbypassdialnorm" label="39227" help="39228">
+          <visible>false</visible>
+          <level>2</level>
+          <default>false</default>
+          <dependencies>
+            <dependency type="enable" setting="audiooutput.webosbypassdialnorm" operator="is">true</dependency>
+          </dependencies>
+          <control type="toggle" />
+        </setting>
         <setting id="audiooutput.webosdtspassthrough" type="boolean" label="39211" help="39212">
           <visible>false</visible>
           <level>1</level>
