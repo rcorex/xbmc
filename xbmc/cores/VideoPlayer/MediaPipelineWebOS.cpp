@@ -296,8 +296,9 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
 
   const std::shared_ptr<CSettings> settings = CServiceBroker::GetSettingsComponent()->GetSettings();
   m_passthroughSetting = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH);
-  m_bypassDialnorm = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_BYPASSDIALNORM);
-  m_bypassDialnormAtmos = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_BYPASSDIALNORMATMOS);
+  m_bypassDialnorm = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM);
+  m_bypassDialnormAtmos =
+      settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS);
   m_downmixStereo = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO);
   m_downmixStereoOnly71 =
       settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71);
@@ -315,17 +316,18 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
   m_allowDovi = CSettingUtils::FindIntInList(allowedHdrFormatsSetting,
                                              CSettings::VIDEOPLAYER_ALLOWED_HDR_TYPE_DOLBY_VISION);
 
-  settings->RegisterCallback(
-      this,
-      {CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH, CSettings::SETTING_AUDIOOUTPUT_BYPASSDIALNORM,
-       CSettings::SETTING_AUDIOOUTPUT_BYPASSDIALNORMATMOS,
-       CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO,
-       CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71,
-       CSettings::SETTING_AUDIOOUTPUT_PROCESSQUALITY, CSettings::SETTING_AUDIOOUTPUT_MIXSUBLEVEL,
-       CSettings::SETTING_AUDIOOUTPUT_STEREOUPMIX,
-       CSettings::SETTING_AUDIOOUTPUT_MAINTAINORIGINALVOLUME,
-       CSettings::SETTING_VIDEOPLAYER_CONVERTDOVI, CSettings::SETTING_VIDEOPLAYER_DOVIZEROLEVEL5,
-       CSettings::SETTING_VIDEOPLAYER_ALLOWEDHDRFORMATS});
+  settings->RegisterCallback(this, {CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH,
+                                    CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM,
+                                    CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS,
+                                    CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO,
+                                    CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71,
+                                    CSettings::SETTING_AUDIOOUTPUT_PROCESSQUALITY,
+                                    CSettings::SETTING_AUDIOOUTPUT_MIXSUBLEVEL,
+                                    CSettings::SETTING_AUDIOOUTPUT_STEREOUPMIX,
+                                    CSettings::SETTING_AUDIOOUTPUT_MAINTAINORIGINALVOLUME,
+                                    CSettings::SETTING_VIDEOPLAYER_CONVERTDOVI,
+                                    CSettings::SETTING_VIDEOPLAYER_DOVIZEROLEVEL5,
+                                    CSettings::SETTING_VIDEOPLAYER_ALLOWEDHDRFORMATS});
 }
 
 CMediaPipelineWebOS::~CMediaPipelineWebOS()
@@ -348,10 +350,10 @@ void CMediaPipelineWebOS::OnSettingChanged(const std::shared_ptr<const CSetting>
 
   if (settingId == CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH)
     m_passthroughSetting = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH);
-  else if (settingId == CSettings::SETTING_AUDIOOUTPUT_BYPASSDIALNORM)
-    m_bypassDialnorm = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_BYPASSDIALNORM);
-  else if (settingId == CSettings::SETTING_AUDIOOUTPUT_BYPASSDIALNORMATMOS)
-    m_bypassDialnormAtmos = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_BYPASSDIALNORMATMOS);
+  else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM)
+    m_bypassDialnorm = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM);
+  else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS)
+    m_bypassDialnormAtmos = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS);
   else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO)
     m_downmixStereo = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO);
   else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71)
@@ -1611,11 +1613,7 @@ void CMediaPipelineWebOS::ProcessAudio()
           if (m_audioHint.codec == AV_CODEC_ID_AC3 || m_audioHint.codec == AV_CODEC_ID_EAC3)
           {
             bool shouldDefeat = false;
-            if (m_audioEncoder)
-            {
-              shouldDefeat = true;
-            }
-            else if (m_allowPassthrough && m_bypassDialnorm)
+            if (m_bypassDialnorm)
             {
               if (m_audioHint.profile == AV_PROFILE_EAC3_DDP_ATMOS)
                 shouldDefeat = m_bypassDialnormAtmos;

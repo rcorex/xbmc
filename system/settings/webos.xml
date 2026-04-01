@@ -27,6 +27,12 @@
           <default>true</default>
           <visible>true</visible>
         </setting>
+        <setting id="audiooutput.webosbypassdialnorm">
+          <visible>true</visible>
+        </setting>
+        <setting id="audiooutput.webosbypassdialnormatmos">
+          <visible>true</visible>
+        </setting>
         <setting id="audiooutput.webosdtspassthrough">
           <visible>true</visible>
         </setting>

@@ -295,28 +295,6 @@
           </dependencies>
           <control type="toggle" />
         </setting>
-        <setting id="audiooutput.bypassdialnorm" type="boolean" label="39225" help="39226">
-          <level>1</level>
-          <default>false</default>
-          <dependencies>
-            <dependency type="enable" setting="audiooutput.passthrough" operator="is">true</dependency>
-          </dependencies>
-          <control type="toggle" />
-        </setting>
-        <setting id="audiooutput.bypassdialnormatmos" type="boolean" parent="audiooutput.bypassdialnorm" label="39227" help="39228">
-          <level>2</level>
-          <default>false</default>
-          <dependencies>
-            <dependency type="enable">
-              <and>
-                <condition setting="audiooutput.passthrough" operator="is">true</condition>
-                <condition setting="audiooutput.bypassdialnorm" operator="is">true</condition>
-              </and>
-            </dependency>
-            <dependency type="visible" setting="audiooutput.bypassdialnorm" operator="is">true</dependency>
-          </dependencies>
-          <control type="toggle" />
-        </setting>
       </group>
     </category>
     <category id="musicplayer" label="14216" help="38104">
@@ -3456,6 +3434,21 @@
               </and>
             </dependency>
             <dependency type="enable" setting="audiooutput.passthrough" operator="is">true</dependency>
+          </dependencies>
+          <control type="toggle" />
+        </setting>
+        <setting id="audiooutput.webosbypassdialnorm" type="boolean" label="39225" help="39226">
+          <visible>false</visible>
+          <level>1</level>
+          <default>false</default>
+          <control type="toggle" />
+        </setting>
+        <setting id="audiooutput.webosbypassdialnormatmos" type="boolean" parent="audiooutput.webosbypassdialnorm" label="39227" help="39228">
+          <visible>false</visible>
+          <level>2</level>
+          <default>false</default>
+          <dependencies>
+            <dependency type="enable" setting="audiooutput.webosbypassdialnorm" operator="is">true</dependency>
           </dependencies>
           <control type="toggle" />
         </setting>
