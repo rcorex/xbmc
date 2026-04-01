@@ -873,7 +873,10 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
   }
 
   if (audioHint.codec == AV_CODEC_ID_EAC3 && audioHint.profile == AV_PROFILE_EAC3_DDP_ATMOS)
-    contents["immersive"] = "ATMOS";
+  {
+    if (!(m_bypassDialnorm && m_bypassDialnormAtmos))
+      contents["immersive"] = "ATMOS";
+  }
 
   contents["format"] = "RAW";
   p["mediaTransportType"] = "BUFFERSTREAM";
@@ -1040,7 +1043,7 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
   {
     optInfo["ac3PlusInfo"]["channels"] = hint.channels;
     optInfo["ac3PlusInfo"]["frequency"] = hint.samplerate / 1000.0;
-    if (hint.profile == AV_PROFILE_EAC3_DDP_ATMOS)
+    if (hint.profile == AV_PROFILE_EAC3_DDP_ATMOS && !(m_bypassDialnorm && m_bypassDialnormAtmos))
       optInfo["ac3PlusInfo"]["channels"] = hint.channels + 2;
   };
 
