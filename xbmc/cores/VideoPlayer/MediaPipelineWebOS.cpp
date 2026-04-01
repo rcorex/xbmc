@@ -100,7 +100,7 @@ int GetDialnormOffsetAC3(uint8_t acmod)
   return offset;
 }
 
-void DefeatDialnorm(uint8_t* data, size_t size, bool isEac3Atmos)
+void DefeatDialnorm(uint8_t* data, size_t size)
 {
   if (size < 8)
     return;
@@ -126,8 +126,6 @@ void DefeatDialnorm(uint8_t* data, size_t size, bool isEac3Atmos)
     {
       uint8_t bsid = data[i + 5] >> 3;
       int offset = -1;
-      bool is_eac3 = false;
-
       if (bsid <= 10)
       {
         uint8_t acmod = data[i + 6] >> 5;
@@ -135,7 +133,6 @@ void DefeatDialnorm(uint8_t* data, size_t size, bool isEac3Atmos)
       }
       else
       {
-        is_eac3 = true;
         uint8_t strmtyp = data[i + 2] >> 6;
         if (strmtyp == 1 || strmtyp == 3)
         {
@@ -149,7 +146,6 @@ void DefeatDialnorm(uint8_t* data, size_t size, bool isEac3Atmos)
         else
           offset = 45;
       }
-
       if (offset != -1)
       {
         size_t byte_idx = i + offset / 8;
@@ -171,41 +167,6 @@ void DefeatDialnorm(uint8_t* data, size_t size, bool isEac3Atmos)
               data[byte_idx + 1] |= (((1 << bits_in_second) - 1) << (8 - bits_in_second));
             }
           }
-
-          // --- Recalculate CRC for E-AC-3 Atmos ONLY ---
-          if (is_eac3 && isEac3Atmos)
-          {
-            // frmsiz is an 11-bit field: lower 3 bits of data[i+2] and all 8 bits of data[i+3]
-            uint16_t frmsiz = ((data[i + 2] & 0x07) << 8) | data[i + 3];
-            
-            // Frame size in bytes = (frmsiz + 1) * 2
-            size_t frame_size = (frmsiz + 1) * 2;
-
-            // Ensure the full frame is available in the buffer before calculating
-            if (i + frame_size <= size)
-            {
-              uint16_t crc = 0;
-              
-              // ATSC A/52 CRC covers the entire frame except the last 2 bytes
-              for (size_t j = 0; j < frame_size - 2; ++j)
-              {
-                crc ^= static_cast<uint16_t>(data[i + j] << 8);
-                for (int bit = 0; bit < 8; ++bit)
-                {
-                  if (crc & 0x8000)
-                    crc = static_cast<uint16_t>((crc << 1) ^ 0x8005);
-                  else
-                    crc = static_cast<uint16_t>(crc << 1);
-                }
-              }
-
-              // Write the 16-bit CRC back into the last two bytes of the frame (Big-Endian)
-              data[i + frame_size - 2] = static_cast<uint8_t>((crc >> 8) & 0xFF);
-              data[i + frame_size - 1] = static_cast<uint8_t>(crc & 0xFF);
-            }
-          }
-          // ---------------------------------------------
-
           break; // Early exit
         }
       }
@@ -336,8 +297,6 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
   const std::shared_ptr<CSettings> settings = CServiceBroker::GetSettingsComponent()->GetSettings();
   m_passthroughSetting = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH);
   m_bypassDialnorm = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM);
-  m_bypassDialnormAtmos =
-      settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS);
   m_downmixStereo = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO);
   m_downmixStereoOnly71 =
       settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71);
@@ -357,7 +316,6 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
 
   settings->RegisterCallback(this, {CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH,
                                     CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM,
-                                    CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS,
                                     CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO,
                                     CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71,
                                     CSettings::SETTING_AUDIOOUTPUT_PROCESSQUALITY,
@@ -391,9 +349,6 @@ void CMediaPipelineWebOS::OnSettingChanged(const std::shared_ptr<const CSetting>
     m_passthroughSetting = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH);
   else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM)
     m_bypassDialnorm = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM);
-  else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS)
-    m_bypassDialnormAtmos =
-        settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS);
   else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO)
     m_downmixStereo = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO);
   else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71)
@@ -1653,19 +1608,18 @@ void CMediaPipelineWebOS::ProcessAudio()
         {
           if (m_audioHint.codec == AV_CODEC_ID_AC3 || m_audioHint.codec == AV_CODEC_ID_EAC3)
           {
-            bool shouldDefeat = false;
-            bool isEac3Atmos = (m_audioHint.codec == AV_CODEC_ID_EAC3 && m_audioHint.profile == AV_PROFILE_EAC3_DDP_ATMOS);
-
             if (m_bypassDialnorm)
             {
-              if (isEac3Atmos)
-                shouldDefeat = m_bypassDialnormAtmos;
-              else
-                shouldDefeat = true;
-            }
+              bool shouldDefeat = true;
+              if (m_audioHint.profile == AV_PROFILE_EAC3_DDP_ATMOS)
+              {
+                if (!m_audioCodec)
+                  shouldDefeat = false;
+              }
 
-            if (shouldDefeat)
-              DefeatDialnorm(packet->pData, packet->iSize, isEac3Atmos);
+              if (shouldDefeat)
+                DefeatDialnorm(packet->pData, packet->iSize);
+            }
           }
         }
 
