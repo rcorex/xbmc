@@ -510,15 +510,22 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
 
       m_processInfo.SetAudioChannels(CAEUtil::GetAEChannelLayout(audioHint.channellayout));
       m_processInfo.SetAudioSampleRate(audioHint.samplerate);
-      m_processInfo.SetAudioBitsPerSample(audioHint.bitspersample);
       if (Supports(audioHint.codec, audioHint.profile))
+      {
+        m_processInfo.SetAudioBitsPerSample(audioHint.bitspersample);
         m_processInfo.SetAudioDecoderName("starfish-" +
                                           std::string(ms_codecMap.at(audioHint.codec).data()));
+      }
       else if (m_audioEncoder)
       {
+        m_processInfo.SetAudioBitsPerSample(m_audioEncoder->GetBitRate());
         m_processInfo.SetAudioDecoderName((m_audioEncoder->GetCodecID() == AV_CODEC_ID_EAC3)
                                               ? "starfish-EAC3 (transcoding)"
                                               : "starfish-AC3 (transcoding)");
+      }
+      else
+      {
+        m_processInfo.SetAudioBitsPerSample(audioHint.bitspersample);
       }
       m_audioClosed = false;
       return true;
@@ -989,15 +996,22 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
     else
       m_processInfo.SetAudioChannels(CAEUtil::GuessChLayout(audioHint.channels));
     m_processInfo.SetAudioSampleRate(audioHint.samplerate);
-    m_processInfo.SetAudioBitsPerSample(audioHint.bitspersample);
     if (Supports(audioHint.codec, audioHint.profile))
+    {
+      m_processInfo.SetAudioBitsPerSample(audioHint.bitspersample);
       m_processInfo.SetAudioDecoderName(std::string("starfish-") +
                                         ms_codecMap.at(audioHint.codec).data());
+    }
     else if (m_audioEncoder)
     {
+      m_processInfo.SetAudioBitsPerSample(m_audioEncoder->GetBitRate());
       m_processInfo.SetAudioDecoderName((m_audioEncoder->GetCodecID() == AV_CODEC_ID_EAC3)
                                             ? "starfish-EAC3 (transcoding)"
                                             : "starfish-AC3 (transcoding)");
+    }
+    else
+    {
+      m_processInfo.SetAudioBitsPerSample(audioHint.bitspersample);
     }
   }
 
