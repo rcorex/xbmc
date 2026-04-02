@@ -283,8 +283,9 @@ private:
   /**
    * @brief Feed a video packet to the media API.
    * @param msg Demux packet wrapped in a CDVDMsg.
+   * @return true if the packet was consumed, false if not.
    */
-  void FeedVideoData(const std::shared_ptr<CDVDMsg>& msg);
+  bool FeedVideoData(const std::shared_ptr<CDVDMsg>& msg);
 
   /**
    * @brief Render subtitle and overlay graphics at given timestamp.
@@ -295,8 +296,9 @@ private:
   /**
    * @brief Feed an audio packet to the media API.
    * @param msg Demux packet wrapped in a CDVDMsg.
+   * @return true if the packet was consumed, false if not.
    */
-  void FeedAudioData(const std::shared_ptr<CDVDMsg>& msg);
+  bool FeedAudioData(const std::shared_ptr<CDVDMsg>& msg);
 
   /**
    * @brief Configure and load media streams into the pipeline.
@@ -335,12 +337,6 @@ private:
    * @brief Updates the player video debug info.
    */
   void UpdateAudioInfo();
-
-  /**
-   * @brief Updates ActiveAE volume setting based on current audio state.
-   * @param playing True if media is currently playing, false otherwise.
-   */
-  void UpdateGUISounds(bool playing);
 
   /**
    * @brief Callback for media events.
@@ -391,6 +387,21 @@ private:
    * @return Current queue level as a percentage
    */
   unsigned int GetQueueLevel(StreamType type) const;
+
+  /**
+   * @brief Get the maximum supported video resolution for a given codec.
+   * @param codec Codec name to query.
+   * @param width Output parameter for maximum width.
+   * @param height Output parameter for maximum height.
+   * @param framerate Output parameter for maximum framerate.
+   * @return True if the information was successfully retrieved, false otherwise.
+   */
+  bool GetMaxVideoResolution(const std::string& codec,
+                             int& width,
+                             int& height,
+                             int& framerate) const;
+
+  static constexpr std::chrono::nanoseconds NO_PTS{-1};
 
   std::condition_variable m_eventCondition;
   std::mutex m_eventMutex;
@@ -445,6 +456,11 @@ private:
   std::atomic<bool> m_doviZeroLevel5{false};
   std::atomic<bool> m_allowDovi{true};
   std::atomic<int> m_speed{1000}; // DVD_PLAYSPEED_NORMAL
+  std::atomic<bool> m_audioFed{false};
+
+  std::atomic<std::chrono::nanoseconds> m_fedAudioPts{NO_PTS};
+  std::atomic<std::chrono::nanoseconds> m_fedVideoPts{NO_PTS};
+  std::atomic<bool> m_started{false};
 
   std::mutex m_audioInfoMutex;
   std::string m_audioInfo;
