@@ -444,6 +444,8 @@ void CMediaPipelineWebOS::Flush(bool sync)
   FlushVideoMessages();
   if (m_bitstream)
     m_bitstream->ResetStartDecode();
+  m_videoSyncPts = NO_PTS;
+  m_audioReady = false;
   m_fedAudioPts = NO_PTS;
   m_fedVideoPts = NO_PTS;
   m_started = false;
@@ -1110,6 +1112,18 @@ bool CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
   if (pts < 0ns)
     return true;
 
+  if (m_flushed)
+  {
+    if (m_videoSyncPts.load() == NO_PTS)
+      return false; // Wait for video thread to establish a sync pts
+
+    if (pts < m_videoSyncPts.load())
+      return true; // Drop packets before the video sync pts
+
+    m_audioReady = true;
+    return false; // Wait until flushed state is cleared by the video thread
+  }
+
   const std::chrono::nanoseconds fedAudioPts = m_fedAudioPts.load();
   if (m_started && fedAudioPts != NO_PTS && fedAudioPts - m_pts.load() > MAX_FEED_AHEAD_TIME)
     return false;
@@ -1178,6 +1192,12 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
 
   if (m_flushed)
   {
+    if (m_hasAudio && !m_audioClosed && !m_audioReady)
+    {
+      m_videoSyncPts = pts;
+      return false; // Wait until audio is ready
+    }
+
     CVariant time;
     time["position"] = pts.count();
     std::string payload;
@@ -1214,6 +1234,7 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
     m_messageQueueParent.Put(
         std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, startMsg));
     m_flushed = false;
+    m_videoSyncPts = NO_PTS;
   }
 
   const std::chrono::nanoseconds fedVideoPts = m_fedVideoPts.load();
