@@ -221,6 +221,9 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
   m_allowDovi = CSettingUtils::FindIntInList(allowedHdrFormatsSetting,
                                              CSettings::VIDEOPLAYER_ALLOWED_HDR_TYPE_DOLBY_VISION);
 
+  m_downmixStereo = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO);
+  m_downmixStereoOnly71 = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71);
+
   settings->RegisterCallback(this, {CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH,
                                     CSettings::SETTING_AUDIOOUTPUT_PROCESSQUALITY,
                                     CSettings::SETTING_AUDIOOUTPUT_MIXSUBLEVEL,
@@ -228,7 +231,9 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
                                     CSettings::SETTING_AUDIOOUTPUT_MAINTAINORIGINALVOLUME,
                                     CSettings::SETTING_VIDEOPLAYER_CONVERTDOVI,
                                     CSettings::SETTING_VIDEOPLAYER_DOVIZEROLEVEL5,
-                                    CSettings::SETTING_VIDEOPLAYER_ALLOWEDHDRFORMATS});
+                                    CSettings::SETTING_VIDEOPLAYER_ALLOWEDHDRFORMATS,
+                                    CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO,
+                                    CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71});
 }
 
 CMediaPipelineWebOS::~CMediaPipelineWebOS()
@@ -267,6 +272,10 @@ void CMediaPipelineWebOS::OnSettingChanged(const std::shared_ptr<const CSetting>
     m_allowDovi = CSettingUtils::FindIntInList(
         allowedHdrFormatsSetting, CSettings::VIDEOPLAYER_ALLOWED_HDR_TYPE_DOLBY_VISION);
   }
+  else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO)
+    m_downmixStereo = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO);
+  else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71)
+    m_downmixStereoOnly71 = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71);
 }
 
 int CMediaPipelineWebOS::GetVideoBitrate() const
@@ -977,6 +986,18 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
   {
     setAC3PlusInfo(audioHint, optInfo);
   }
+
+    if (m_downmixStereo)
+    {
+      bool only71 = m_downmixStereoOnly71;
+      if (!only71 || audioHint.channels > 6)
+      {
+        if (codecName == "AC3 PLUS")
+          optInfo["ac3PlusInfo"]["channels"] = 2;
+        else if (codecName == "AC3")
+          optInfo["ac3Info"]["channels"] = 2;
+      }
+    }
   if (audioHint.codec == AV_CODEC_ID_AC4)
   {
     optInfo["ac4Info"]["channels"] = audioHint.channels;
@@ -1501,6 +1522,12 @@ void CMediaPipelineWebOS::ProcessAudio()
               dstFormat.m_streamInfo.m_type = WebOSTVPlatformConfig::SupportsEAC3()
                                                   ? CAEStreamInfo::DataType::STREAM_TYPE_EAC3
                                                   : CAEStreamInfo::DataType::STREAM_TYPE_AC3;
+              if (m_downmixStereo)
+              {
+                bool only71 = m_downmixStereoOnly71;
+                if (!only71 || dstFormat.m_channelLayout.Count() > 6)
+                  dstFormat.m_channelLayout = CAEChannelInfo(AE_CH_LAYOUT_2_0);
+              }
               m_audioEncoder->Initialize(dstFormat, true);
               auto quality = static_cast<AEQuality>(m_processQuality.load());
               m_audioResample = std::make_unique<ActiveAE::CActiveAEBufferPoolResample>(
