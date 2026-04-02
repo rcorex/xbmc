@@ -871,6 +871,9 @@ void CActiveAE::StateMachine(int signal, Protocol *port, Message *msg)
         bool displayReset = false;
         switch (signal)
         {
+        case CActiveAEControlProtocol::RECONFIGURE:
+          LoadSettings();
+          return;
         case CActiveAEControlProtocol::DISPLAYRESET:
           if (m_extSuspended)
             return;
