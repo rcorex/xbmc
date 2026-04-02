@@ -443,6 +443,8 @@ private:
   CDVDOverlayContainer& m_overlayContainer;
   bool m_hasAudio{true};
 
+  std::atomic<bool> m_convertDovi{false};
+
   std::atomic<bool> m_videoClosed{true};
   std::atomic<bool> m_audioClosed{true};
 
