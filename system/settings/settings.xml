@@ -3478,6 +3478,12 @@
           </constraints>
           <control type="spinner" format="string" />
         </setting>
+        <setting id="audiooutput.webosbypassdialnorm" type="boolean" label="39225" help="39226">
+          <visible>false</visible>
+          <level>1</level>
+          <default>false</default>
+          <control type="toggle" />
+        </setting>
         <setting id="audiooutput.webosstarfishdownmixstereo" type="boolean" label="39219" help="39220">
           <visible>false</visible>
           <level>1</level>

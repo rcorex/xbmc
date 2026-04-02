@@ -39,6 +39,9 @@
         <setting id="audiooutput.webosstarfisheac3bitrate">
           <visible>true</visible>
         </setting>
+        <setting id="audiooutput.webosbypassdialnorm">
+          <visible>true</visible>
+        </setting>
         <setting id="audiooutput.webosstarfishdownmixstereo">
           <visible>true</visible>
         </setting>

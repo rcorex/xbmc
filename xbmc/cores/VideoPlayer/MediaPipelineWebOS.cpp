@@ -45,6 +45,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <exception>
 #include <map>
 #include <ratio>
@@ -85,6 +86,102 @@ constexpr std::chrono::nanoseconds MAX_FEED_AHEAD_TIME = 1300ms;
 
 constexpr unsigned int SVP_VERSION_30 = 30;
 constexpr unsigned int SVP_VERSION_40 = 40;
+
+int GetDialnormOffsetAC3(uint8_t acmod)
+{
+  int offset = 16 + 16 + 2 + 6 + 5 + 3 + 3;
+  if ((acmod & 1) && (acmod != 1))
+    offset += 2;
+  if (acmod & 4)
+    offset += 2;
+  if (acmod == 2)
+    offset += 2;
+  offset += 1;
+  return offset;
+}
+
+void DefeatDialnorm(uint8_t* data, size_t size)
+{
+  if (size < 8)
+    return;
+
+  const size_t max_idx = size - 8;
+  size_t i = 0;
+
+  if (data[0] == 0x0B && data[1] == 0x77)
+  {
+    i = 0;
+  }
+  else
+  {
+    const void* next = std::memchr(data, 0x0B, max_idx + 1);
+    if (!next)
+      return;
+    i = static_cast<size_t>(static_cast<const uint8_t*>(next) - data);
+  }
+
+  while (i <= max_idx)
+  {
+    if (data[i] == 0x0B && data[i + 1] == 0x77)
+    {
+      uint8_t bsid = data[i + 5] >> 3;
+      int offset = -1;
+      if (bsid <= 10)
+      {
+        uint8_t acmod = data[i + 6] >> 5;
+        offset = GetDialnormOffsetAC3(acmod);
+      }
+      else
+      {
+        uint8_t strmtyp = data[i + 2] >> 6;
+        if (strmtyp == 1 || strmtyp == 3)
+        {
+          i++;
+          continue;
+        }
+
+        uint8_t fscod = data[i + 4] >> 6;
+        if (fscod == 3)
+          offset = 47;
+        else
+          offset = 45;
+      }
+      if (offset != -1)
+      {
+        size_t byte_idx = i + offset / 8;
+        int bit_idx = offset % 8;
+
+        if (byte_idx < size)
+        {
+          int bits_in_first = 8 - bit_idx;
+          if (bits_in_first >= 5)
+          {
+            data[byte_idx] |= (0x1F << (bits_in_first - 5));
+          }
+          else
+          {
+            data[byte_idx] |= ((1 << bits_in_first) - 1);
+            if (byte_idx + 1 < size)
+            {
+              int bits_in_second = 5 - bits_in_first;
+              data[byte_idx + 1] |= (((1 << bits_in_second) - 1) << (8 - bits_in_second));
+            }
+          }
+          break; // Early exit
+        }
+      }
+    }
+
+    if (i >= max_idx)
+      break;
+
+    const void* next = std::memchr(data + i + 1, 0x0B, max_idx - i);
+    if (!next)
+      break;
+
+    i = static_cast<size_t>(static_cast<const uint8_t*>(next) - data);
+  }
+}
 
 auto ms_codecMap = std::map<AVCodecID, std::string_view>({{AV_CODEC_ID_VP8, "VP8"},
                                                           {AV_CODEC_ID_VP9, "VP9"},
@@ -223,6 +320,7 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
 
   m_downmixStereo = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO);
   m_downmixStereoOnly71 = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71);
+  m_bypassDialnorm = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM);
 
   settings->RegisterCallback(this, {CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH,
                                     CSettings::SETTING_AUDIOOUTPUT_PROCESSQUALITY,
@@ -233,7 +331,8 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
                                     CSettings::SETTING_VIDEOPLAYER_DOVIZEROLEVEL5,
                                     CSettings::SETTING_VIDEOPLAYER_ALLOWEDHDRFORMATS,
                                     CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO,
-                                    CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71});
+                                    CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71,
+                                    CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM});
 }
 
 CMediaPipelineWebOS::~CMediaPipelineWebOS()
@@ -276,6 +375,8 @@ void CMediaPipelineWebOS::OnSettingChanged(const std::shared_ptr<const CSetting>
     m_downmixStereo = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO);
   else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71)
     m_downmixStereoOnly71 = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71);
+  else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM)
+    m_bypassDialnorm = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM);
 }
 
 int CMediaPipelineWebOS::GetVideoBitrate() const
@@ -1441,7 +1542,8 @@ unsigned int CMediaPipelineWebOS::GetQueueLevel(const StreamType type) const
 
 void CMediaPipelineWebOS::SetDynamicRangeCompression(const long drc)
 {
-  m_audioLimiter.SetAmplification(std::pow(10.0f, static_cast<float>(drc) / 2000.0f));
+  m_audioLimiter.SetAmplification(std::pow(
+      10.0f, (static_cast<float>(drc) / 100.0f + m_volumeAmplificationBoost.load()) / 20.0f));
 }
 
 void CMediaPipelineWebOS::Process()
@@ -1505,6 +1607,26 @@ void CMediaPipelineWebOS::ProcessAudio()
       {
         const DemuxPacket* packet =
             std::static_pointer_cast<CDVDMsgDemuxerPacket>(msg)->GetPacket();
+
+        if (packet->iStreamId != RESAMPLED_STREAM_ID)
+        {
+          if (m_audioHint.codec == AV_CODEC_ID_AC3 || m_audioHint.codec == AV_CODEC_ID_EAC3)
+          {
+            if (m_bypassDialnorm)
+            {
+              bool shouldDefeat = true;
+              if (m_audioHint.profile == AV_PROFILE_EAC3_DDP_ATMOS)
+              {
+                if (!m_audioCodec)
+                  shouldDefeat = false;
+              }
+
+              if (shouldDefeat)
+                DefeatDialnorm(packet->pData, packet->iSize);
+            }
+          }
+        }
+
         if (m_audioCodec && packet->iStreamId != RESAMPLED_STREAM_ID)
         {
           if (!m_audioCodec->AddData(*packet))
@@ -1534,6 +1656,15 @@ void CMediaPipelineWebOS::ProcessAudio()
                   m_audioCodec->GetFormat(), dstFormat, quality);
               m_audioLimiter.SetSamplerate(dstFormat.m_sampleRate);
               float volumeAmplification = m_processInfo.GetVideoSettings().m_VolumeAmplification;
+              float boost = 0.0f;
+              if ((m_audioHint.codec == AV_CODEC_ID_AC3 || m_audioHint.codec == AV_CODEC_ID_EAC3) &&
+                  m_audioCodec->GetFormat().m_channelLayout.Count() > 2 &&
+                  dstFormat.m_channelLayout == CAEChannelInfo(AE_CH_LAYOUT_2_0))
+              {
+                boost = 6.0f; //boost for AC3 & EAC3
+              }
+              m_volumeAmplificationBoost.store(boost);
+              volumeAmplification += boost;
               m_audioLimiter.SetAmplification(std::pow(10.0f, volumeAmplification / 20.0f));
               const double sublevel = m_mixSubLevel.load() / 100.0;
               m_audioResample->Create(0, false, m_stereoUpmix.load(),
@@ -1550,9 +1681,11 @@ void CMediaPipelineWebOS::ProcessAudio()
               m_processInfo.SetAudioDecoderName((m_audioEncoder->GetCodecID() == AV_CODEC_ID_EAC3)
                                                     ? "starfish-EAC3 (transcoding)"
                                                     : "starfish-AC3 (transcoding)");
-              m_processInfo.SetAudioChannels(frame.format.m_channelLayout);
-              m_processInfo.SetAudioSampleRate(frame.format.m_sampleRate);
-              m_processInfo.SetAudioBitsPerSample(frame.bits_per_sample);
+              m_processInfo.SetAudioChannels(dstFormat.m_channelLayout);
+              m_processInfo.SetAudioSampleRate(dstFormat.m_sampleRate);
+              m_processInfo.SetAudioBitsPerSample(
+                  m_audioEncoder ? m_audioEncoder->GetBitRate()
+                                 : CAEUtil::DataFormatToBits(dstFormat.m_dataFormat));
             }
 
             using dvdTime = std::ratio<1, DVD_TIME_BASE>;
@@ -1597,8 +1730,7 @@ void CMediaPipelineWebOS::ProcessAudio()
                     CDVDDemuxUtils::AllocateDemuxPacket(maxSize));
 
                 const bool passthrough =
-                    CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
-                        CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH);
+                    m_allowPassthrough && !(m_audioEncoder && buf->pkt->config.channels == 2);
                 if (!passthrough && buf->pkt->config.fmt == AV_SAMPLE_FMT_FLTP)
                 {
                   float volume = CServiceBroker::GetAppComponents()
