@@ -14,6 +14,9 @@
 
 #include "cores/AudioEngine/Utils/AEUtil.h"
 #include "cores/FFmpeg.h"
+#include "settings/Settings.h"
+#include "settings/SettingsComponent.h"
+#include "ServiceBroker.h"
 #include "utils/log.h"
 
 extern "C"
