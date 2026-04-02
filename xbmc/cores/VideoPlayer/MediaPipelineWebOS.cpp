@@ -358,7 +358,6 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
     m_audioReady = false;
     m_flushed = true;
 
-    m_mediaAPIs = std::make_unique<StarfishMediaAPIs>();
     m_audioClosed = false;
   }
 
@@ -412,8 +411,6 @@ bool CMediaPipelineWebOS::OpenVideoStream(CDVDStreamInfo hint)
     m_videoSyncPts = NO_PTS;
     m_audioReady = false;
     m_flushed = true;
-
-    m_mediaAPIs = std::make_unique<StarfishMediaAPIs>();
   }
 
   m_videoHint = hint;
@@ -432,7 +429,6 @@ void CMediaPipelineWebOS::CloseAudioStream(const bool waitForBuffers)
     Unload(waitForBuffers);
     m_audioHint = CDVDStreamInfo();
     m_videoHint = CDVDStreamInfo();
-    m_mediaAPIs = std::make_unique<StarfishMediaAPIs>();
   }
 }
 
@@ -445,7 +441,6 @@ void CMediaPipelineWebOS::CloseVideoStream(const bool waitForBuffers)
     Unload(waitForBuffers);
     m_audioHint = CDVDStreamInfo();
     m_videoHint = CDVDStreamInfo();
-    m_mediaAPIs = std::make_unique<StarfishMediaAPIs>();
   }
 }
 
