@@ -13,6 +13,7 @@
 #include "DVDStreamInfo.h"
 #include "IVideoPlayer.h"
 #include "cores/AudioEngine/Utils/AELimiter.h"
+#include "settings/lib/ISettingCallback.h"
 #include "threads/Thread.h"
 #include "utils/BitstreamStats.h"
 
@@ -48,7 +49,7 @@ class StarfishMediaAPIs;
  * @class CMediaPipelineWebOS
  * @brief WebOS media pipeline for audio/video playback.
  */
-class CMediaPipelineWebOS final : public CThread
+class CMediaPipelineWebOS final : public CThread, public ISettingCallback
 {
 public:
   /**
@@ -255,6 +256,8 @@ public:
    */
   void GetVideoResolution(unsigned int& width, unsigned int& height) const;
 
+  void OnSettingChanged(const std::shared_ptr<const CSetting>& setting) override;
+
 protected:
   /**
    * @brief Video processing thread loop.
@@ -445,6 +448,15 @@ private:
 
   std::atomic<bool> m_videoClosed{true};
   std::atomic<bool> m_audioClosed{true};
+  std::atomic<bool> m_allowPassthrough{false};
+  std::atomic<bool> m_passthroughSetting{false};
+  std::atomic<bool> m_convertDovi{false};
+  std::atomic<int> m_processQuality{0};
+  std::atomic<double> m_mixSubLevel{0.0};
+  std::atomic<bool> m_stereoUpmix{false};
+  std::atomic<bool> m_maintainOriginalVolume{false};
+  std::atomic<bool> m_doviZeroLevel5{false};
+  std::atomic<bool> m_allowDovi{true};
 
   std::atomic<std::chrono::nanoseconds> m_fedAudioPts{NO_PTS};
   std::atomic<std::chrono::nanoseconds> m_fedVideoPts{NO_PTS};
