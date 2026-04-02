@@ -8,6 +8,9 @@
 
 #include "WebOSTVPlatformConfig.h"
 
+#include "ServiceBroker.h"
+#include "settings/Settings.h"
+#include "settings/SettingsComponent.h"
 #include "utils/JSONVariantParser.h"
 #include "utils/JSONVariantWriter.h"
 #include "utils/Variant.h"
@@ -74,7 +77,31 @@ int WebOSTVPlatformConfig::GetWebOSVersion()
 
 bool WebOSTVPlatformConfig::SupportsDTS()
 {
-  return ms_config[EDID_TYPE].asString().find(DTS) != std::string::npos;
+  const bool edidSupportsDTS = ms_config[EDID_TYPE].asString().find(DTS) != std::string::npos;
+  const bool overrideDTS = CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
+      "audiooutput.webosdtspassthrough");
+
+  if (edidSupportsDTS && !overrideDTS)
+  {
+    CLog::LogF(LOGDEBUG, "DTS is supported by EDID, but disabled via user setting audiooutput.webosdtspassthrough.");
+    return false;
+  }
+
+  if (!edidSupportsDTS && overrideDTS)
+  {
+    CLog::LogF(LOGDEBUG, "DTS is not supported by EDID, but enabled via user setting audiooutput.webosdtspassthrough.");
+    return true;
+  }
+
+  return edidSupportsDTS;
+}
+
+bool WebOSTVPlatformConfig::SupportsDTSHD()
+{
+  // DTS-HD defaults to false unless explicitly enabled by the user or
+  // via a future EDID check if needed.
+  return CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
+      "audiooutput.webosdtshdpassthrough");
 }
 
 bool WebOSTVPlatformConfig::SupportsHDR()

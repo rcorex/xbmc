@@ -27,6 +27,12 @@
           <default>true</default>
           <visible>true</visible>
         </setting>
+        <setting id="audiooutput.webosdtspassthrough">
+          <visible>true</visible>
+        </setting>
+        <setting id="audiooutput.webosdtshdpassthrough">
+          <visible>true</visible>
+        </setting>
         <setting id="audiooutput.passthroughdevice">
           <visible>false</visible>
         </setting>
