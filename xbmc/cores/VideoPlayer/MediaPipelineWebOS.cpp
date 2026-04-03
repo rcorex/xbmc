@@ -1776,11 +1776,11 @@ void CMediaPipelineWebOS::ProcessAudio()
             if (m_bypassDialnorm)
             {
               bool shouldDefeat = true;
-              // if (m_audioHint.profile == AV_PROFILE_EAC3_DDP_ATMOS)
-              // {
-              //   if (!m_audioCodec)
-              //     shouldDefeat = false;
-              // }
+              if (m_audioHint.profile == AV_PROFILE_EAC3_DDP_ATMOS)
+              {
+                if (!CSettings::GetInstance().GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS))
+                  shouldDefeat = false;
+              }
 
               if (shouldDefeat)
                 DefeatDialnorm(packet->pData, packet->iSize);
