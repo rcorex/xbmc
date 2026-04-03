@@ -201,6 +201,8 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
 CMediaPipelineWebOS::~CMediaPipelineWebOS()
 {
   Unload(false);
+  if (const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer))
+    buffer->ResetAcbHandle();
 }
 
 int CMediaPipelineWebOS::GetVideoBitrate() const
@@ -625,12 +627,15 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
   else
   {
     auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
-    const std::unique_ptr<AcbHandle>& acb = buffer->CreateAcbHandle();
-    if (acb->Id())
+    if (!buffer->GetAcbHandle())
     {
-      if (!AcbAPI_initialize(acb->Id(), PLAYER_TYPE_MSE, getenv("APPID"), &AcbCallback))
+      const std::unique_ptr<AcbHandle>& acb = buffer->CreateAcbHandle();
+      if (acb->Id())
       {
-        buffer->ResetAcbHandle();
+        if (!AcbAPI_initialize(acb->Id(), PLAYER_TYPE_MSE, getenv("APPID"), &AcbCallback))
+        {
+          buffer->ResetAcbHandle();
+        }
       }
     }
   }
@@ -695,12 +700,16 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
   int32_t maxWidth = 0;
   int32_t maxHeight = 0;
   int32_t maxFramerate = 0;
-  smp::util::getMaxVideoResolution(ms_codecMap.at(videoHint.codec).data(), &maxWidth, &maxHeight,
-                                   &maxFramerate);
-  p["option"]["adaptiveStreaming"]["adaptiveResolution"] = true;
-  p["option"]["adaptiveStreaming"]["maxWidth"] = maxWidth;
-  p["option"]["adaptiveStreaming"]["maxHeight"] = maxHeight;
-  p["option"]["adaptiveStreaming"]["maxFrameRate"] = maxFramerate;
+  if (GetMaxVideoResolution(ms_codecMap.at(videoHint.codec).data(), maxWidth, maxHeight,
+                            maxFramerate))
+  {
+    p["option"]["adaptiveStreaming"]["adaptiveResolution"] = true;
+    p["option"]["adaptiveStreaming"]["maxWidth"] = maxWidth;
+    p["option"]["adaptiveStreaming"]["maxHeight"] = maxHeight;
+    p["option"]["adaptiveStreaming"]["maxFrameRate"] = maxFramerate;
+  }
+  else
+    CLog::LogF(LOGERROR, "Failed to get max resolution");
 
   CVariant payloadArgs;
   payloadArgs["args"] = CVariant(CVariant::VariantTypeArray);
@@ -735,6 +744,17 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
   m_picture.stereoMode = videoHint.stereo_mode;
   m_picture.hdrType = videoHint.hdrType;
   m_picture.color_transfer = videoHint.colorTransferCharacteristic;
+
+  // apply forced aspect
+  if (videoHint.forced_aspect && videoHint.aspect > 0.0)
+  {
+    m_picture.iDisplayWidth = std::lround(m_picture.iDisplayHeight * videoHint.aspect);
+    if (m_picture.iDisplayWidth > m_picture.iWidth)
+    {
+      m_picture.iDisplayWidth = m_picture.iWidth;
+      m_picture.iDisplayHeight = std::lround(m_picture.iDisplayWidth / videoHint.aspect);
+    }
+  }
 
   const int sorient = m_processInfo.GetVideoSettings().m_Orientation;
   const int orientation =
@@ -800,9 +820,6 @@ void CMediaPipelineWebOS::Unload(const bool sync)
 
   if (!m_mediaAPIs->Unload())
     CLog::LogF(LOGERROR, "Unload failed");
-
-  const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
-  buffer->ResetAcbHandle();
 
   if (sync)
   {
@@ -1515,6 +1532,25 @@ void CMediaPipelineWebOS::GetVideoResolution(unsigned int& width, unsigned int& 
     width = m_videoHint.width;
     height = m_videoHint.height;
   }
+}
+
+bool CMediaPipelineWebOS::GetMaxVideoResolution(const std::string& codec,
+                                                int& width,
+                                                int& height,
+                                                int& framerate) const
+{
+  // webOS 11+ changed the signature from std::string to const std::string&
+  // So we just need to disambiguate for the compiler.
+  if (m_webOSVersion >= 11)
+  {
+    const auto fn = static_cast<bool (*)(const std::string&, int32_t*, int32_t*, int32_t*)>(
+        &smp::util::getMaxVideoResolution);
+    return fn(codec, &width, &height, &framerate);
+  }
+
+  const auto fn = static_cast<bool (*)(std::string, int32_t*, int32_t*, int32_t*)>(
+      &smp::util::getMaxVideoResolution);
+  return fn(codec, &width, &height, &framerate);
 }
 
 void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, const char* strValue)
