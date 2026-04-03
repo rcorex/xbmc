@@ -167,6 +167,15 @@ void DefeatDialnorm(uint8_t* data, size_t size)
         if (fscod < 3 && frmsizcod < 38)
         {
           frame_size = ac3_frame_size_tab[frmsizcod][fscod] * 2;
+
+          // ATSC A/52 allows 44.1kHz frames to be 2 bytes larger to maintain bitrate.
+          if (fscod == 1)
+          {
+            if (i + frame_size + 2 == size) frame_size += 2;
+            else if (i + frame_size + 3 < size && data[i + frame_size + 2] == 0x0B && data[i + frame_size + 3] == 0x77)
+              frame_size += 2;
+          }
+
           uint8_t acmod = data[i + 6] >> 5;
           offset = GetDialnormOffsetAC3(acmod);
         }
@@ -209,10 +218,22 @@ void DefeatDialnorm(uint8_t* data, size_t size)
 
         if (bsid <= 10)
         {
-          // AC-3: Recalculate and write CRC at the tail end of the frame
-          uint16_t new_crc = CalculateAC3CRC(data + i, frame_size - 2);
-          data[i + frame_size - 2] = (new_crc >> 8) & 0xFF;
-          data[i + frame_size - 1] = new_crc & 0xFF;
+          // AC-3: We MUST recalculate BOTH crc1 and crc2.
+
+          // 1. Calculate crc1 (covers first 5/8 of the frame)
+          size_t frame_size_58 = ((frame_size >> 2) + (frame_size >> 4)) << 1;
+          if (frame_size_58 >= 4 && i + frame_size_58 <= size)
+          {
+            // crc1 computation skips the first 4 bytes (sync word + crc1 itself)
+            uint16_t new_crc1 = CalculateAC3CRC(data + i + 4, frame_size_58 - 4);
+            data[i + 2] = (new_crc1 >> 8) & 0xFF;
+            data[i + 3] = new_crc1 & 0xFF;
+          }
+
+          // 2. Calculate crc2 (covers entire frame, excluding the trailing crc2 word)
+          uint16_t new_crc2 = CalculateAC3CRC(data + i, frame_size - 2);
+          data[i + frame_size - 2] = (new_crc2 >> 8) & 0xFF;
+          data[i + frame_size - 1] = new_crc2 & 0xFF;
         }
 
         // Advance parser safely to the next frame
