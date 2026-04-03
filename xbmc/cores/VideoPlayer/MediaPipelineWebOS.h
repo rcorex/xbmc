@@ -447,6 +447,8 @@ private:
   CDVDOverlayContainer& m_overlayContainer;
   bool m_hasAudio{true};
 
+  std::atomic<bool> m_convertDovi{false};
+
   std::atomic<bool> m_videoClosed{true};
   std::atomic<bool> m_audioClosed{true};
   std::atomic<bool> m_allowPassthrough{false};
@@ -458,6 +460,9 @@ private:
   std::atomic<bool> m_downmixStereo{false};
   std::atomic<bool> m_downmixStereoOnly71{false};
   std::atomic<bool> m_bypassDialnorm{false};
+
+  std::atomic<std::chrono::nanoseconds> m_videoSyncPts{NO_PTS};
+  std::atomic<bool> m_audioReady{false};
 
   std::atomic<std::chrono::nanoseconds> m_fedAudioPts{NO_PTS};
   std::atomic<std::chrono::nanoseconds> m_fedVideoPts{NO_PTS};
