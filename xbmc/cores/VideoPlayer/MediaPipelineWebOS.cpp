@@ -195,7 +195,6 @@ void DefeatDialnorm(uint8_t* data, size_t size)
         if (fscod < 3 && frmsizcod < 38)
         {
           frame_size = ac3_frame_size_tab[frmsizcod][fscod] * 2;
-
           uint8_t acmod = data[i + 6] >> 5;
           if (acmod == 0) // AC-3 Dual Mono (1+1)
           {
@@ -211,14 +210,16 @@ void DefeatDialnorm(uint8_t* data, size_t size)
         frame_size = (frmsiz + 1) * 2;
 
         uint8_t strmtyp = data[i + 2] >> 6;
-        // if (strmtyp == 1 || strmtyp == 3)
-        // {
-        //   i += frame_size; // Safely jump over the dependent stream
-        //   continue;
-        // }
+        if (strmtyp == 1 || strmtyp == 3)
+        {
+          i += frame_size;
+          // Safely jump over the dependent stream
+          continue;
+        }
 
         offset = 45; // E-AC3 dialnorm is consistently at bit 45
       }
+      
       if (offset != -1 && frame_size > 0)
       {
         // Ensure the entire frame is present in this buffer before patching
@@ -247,6 +248,7 @@ void DefeatDialnorm(uint8_t* data, size_t size)
           // CRC1: self-verifying CRC — CRC(bytes[2..frame_58−1]) must equal 0.
           // Polynomial inversion in GF(2^16) is required.
           size_t frame_size_58 = ((frame_size >> 2) + (frame_size >> 4)) << 1;
+
           if (frame_size_58 > 4 && i + frame_size_58 <= size)
           {
             data[i + 2] = 0;
@@ -257,6 +259,7 @@ void DefeatDialnorm(uint8_t* data, size_t size)
             const unsigned int power = static_cast<unsigned int>(8 * (frame_size_58 - 2));
             const unsigned int inv_power = 32767 - (power % 32767);
             const uint16_t crc1 = static_cast<uint16_t>(MulPolyAC3(PowPolyAC3(2, inv_power), raw_crc1));
+
             data[i + 2] = (crc1 >> 8) & 0xFF;
             data[i + 3] = crc1 & 0xFF;
           }
@@ -266,6 +269,19 @@ void DefeatDialnorm(uint8_t* data, size_t size)
             const uint16_t new_crc2 = CalculateAC3CRC(data + i + 2, frame_size - 4);
             data[i + frame_size - 2] = (new_crc2 >> 8) & 0xFF;
             data[i + frame_size - 1] = new_crc2 & 0xFF;
+          }
+        }
+        else 
+        {
+          // E-AC-3 CRC Recalculation (bsid > 10)
+          // E-AC-3 has a single CRC at the end of the syncframe.
+          // Skips the 2-byte syncword (+ 2) and excludes the 2-byte CRC itself (- 4).
+          if (frame_size > 4 && i + frame_size <= size)
+          {
+            const uint16_t new_eac3_crc = CalculateAC3CRC(data + i + 2, frame_size - 4);
+            
+            data[i + frame_size - 2] = (new_eac3_crc >> 8) & 0xFF;
+            data[i + frame_size - 1] = new_eac3_crc & 0xFF;
           }
         }
 
