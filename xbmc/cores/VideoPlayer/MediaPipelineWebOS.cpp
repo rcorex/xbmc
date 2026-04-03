@@ -364,14 +364,6 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
   m_mixSubLevel = settings->GetNumber(CSettings::SETTING_AUDIOOUTPUT_MIXSUBLEVEL);
   m_stereoUpmix = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_STEREOUPMIX);
   m_maintainOriginalVolume = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_MAINTAINORIGINALVOLUME);
-  m_convertDovi = settings->GetBool(CSettings::SETTING_VIDEOPLAYER_CONVERTDOVI);
-  m_doviZeroLevel5 = settings->GetBool(CSettings::SETTING_VIDEOPLAYER_DOVIZEROLEVEL5);
-
-  const std::shared_ptr<CSettingList> allowedHdrFormatsSetting(
-      std::dynamic_pointer_cast<CSettingList>(
-          settings->GetSetting(CSettings::SETTING_VIDEOPLAYER_ALLOWEDHDRFORMATS)));
-  m_allowDovi = CSettingUtils::FindIntInList(allowedHdrFormatsSetting,
-                                             CSettings::VIDEOPLAYER_ALLOWED_HDR_TYPE_DOLBY_VISION);
 
   m_downmixStereo = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO);
   m_downmixStereoOnly71 = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71);
@@ -382,9 +374,6 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
                                     CSettings::SETTING_AUDIOOUTPUT_MIXSUBLEVEL,
                                     CSettings::SETTING_AUDIOOUTPUT_STEREOUPMIX,
                                     CSettings::SETTING_AUDIOOUTPUT_MAINTAINORIGINALVOLUME,
-                                    CSettings::SETTING_VIDEOPLAYER_CONVERTDOVI,
-                                    CSettings::SETTING_VIDEOPLAYER_DOVIZEROLEVEL5,
-                                    CSettings::SETTING_VIDEOPLAYER_ALLOWEDHDRFORMATS,
                                     CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO,
                                     CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71,
                                     CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM});
@@ -414,18 +403,6 @@ void CMediaPipelineWebOS::OnSettingChanged(const std::shared_ptr<const CSetting>
     m_stereoUpmix = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_STEREOUPMIX);
   else if (settingId == CSettings::SETTING_AUDIOOUTPUT_MAINTAINORIGINALVOLUME)
     m_maintainOriginalVolume = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_MAINTAINORIGINALVOLUME);
-  else if (settingId == CSettings::SETTING_VIDEOPLAYER_CONVERTDOVI)
-    m_convertDovi = settings->GetBool(CSettings::SETTING_VIDEOPLAYER_CONVERTDOVI);
-  else if (settingId == CSettings::SETTING_VIDEOPLAYER_DOVIZEROLEVEL5)
-    m_doviZeroLevel5 = settings->GetBool(CSettings::SETTING_VIDEOPLAYER_DOVIZEROLEVEL5);
-  else if (settingId == CSettings::SETTING_VIDEOPLAYER_ALLOWEDHDRFORMATS)
-  {
-    const std::shared_ptr<CSettingList> allowedHdrFormatsSetting(
-        std::dynamic_pointer_cast<CSettingList>(
-            settings->GetSetting(CSettings::SETTING_VIDEOPLAYER_ALLOWEDHDRFORMATS)));
-    m_allowDovi = CSettingUtils::FindIntInList(
-        allowedHdrFormatsSetting, CSettings::VIDEOPLAYER_ALLOWED_HDR_TYPE_DOLBY_VISION);
-  }
   else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO)
     m_downmixStereo = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO);
   else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71)
@@ -1215,10 +1192,15 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
 
 void CMediaPipelineWebOS::SetupBitstreamConverter(CDVDStreamInfo& hint)
 {
-  const bool convertDovi = hint.dovi.el_present_flag || m_convertDovi;
-  const bool doviZeroLevel5 = m_doviZeroLevel5;
+  const std::shared_ptr<CSettings> settings = CServiceBroker::GetSettingsComponent()->GetSettings();
+  const bool convertDovi =
+      hint.dovi.el_present_flag || settings->GetBool(CSettings::SETTING_VIDEOPLAYER_CONVERTDOVI);
+  const bool doviZeroLevel5 = settings->GetBool(CSettings::SETTING_VIDEOPLAYER_DOVIZEROLEVEL5);
 
-  const bool removeDovi = !m_allowDovi;
+  const std::shared_ptr allowedHdrFormatsSetting(std::dynamic_pointer_cast<CSettingList>(
+      settings->GetSetting(CSettings::SETTING_VIDEOPLAYER_ALLOWEDHDRFORMATS)));
+  const bool removeDovi = !CSettingUtils::FindIntInList(
+      allowedHdrFormatsSetting, CSettings::VIDEOPLAYER_ALLOWED_HDR_TYPE_DOLBY_VISION);
 
   if (hint.codec == AV_CODEC_ID_AVS || hint.codec == AV_CODEC_ID_CAVS ||
       hint.codec == AV_CODEC_ID_H264 || hint.codec == AV_CODEC_ID_HEVC)

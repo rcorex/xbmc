@@ -451,13 +451,10 @@ private:
   std::atomic<bool> m_audioClosed{true};
   std::atomic<bool> m_allowPassthrough{false};
   std::atomic<bool> m_passthroughSetting{false};
-  std::atomic<bool> m_convertDovi{false};
   std::atomic<int> m_processQuality{0};
   std::atomic<double> m_mixSubLevel{0.0};
   std::atomic<bool> m_stereoUpmix{false};
   std::atomic<bool> m_maintainOriginalVolume{false};
-  std::atomic<bool> m_doviZeroLevel5{false};
-  std::atomic<bool> m_allowDovi{true};
   std::atomic<bool> m_downmixStereo{false};
   std::atomic<bool> m_downmixStereoOnly71{false};
   std::atomic<bool> m_bypassDialnorm{false};
