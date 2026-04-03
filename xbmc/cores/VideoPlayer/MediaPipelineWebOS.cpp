@@ -196,14 +196,6 @@ void DefeatDialnorm(uint8_t* data, size_t size)
         {
           frame_size = ac3_frame_size_tab[frmsizcod][fscod] * 2;
 
-          // ATSC A/52 allows 44.1kHz frames to be 2 bytes larger to maintain bitrate.
-          if (fscod == 1)
-          {
-            if (i + frame_size + 2 == size) frame_size += 2;
-            else if (i + frame_size + 3 < size && data[i + frame_size + 2] == 0x0B && data[i + frame_size + 3] == 0x77)
-              frame_size += 2;
-          }
-
           uint8_t acmod = data[i + 6] >> 5;
           offset = GetDialnormOffsetAC3(acmod);
         }
@@ -247,17 +239,17 @@ void DefeatDialnorm(uint8_t* data, size_t size)
 
         if (bsid <= 10)
         {
-          // CRC1: self-verifying CRC — CRC(bytes[0..frame_58−1]) must equal 0.
+          // CRC1: self-verifying CRC — CRC(bytes[2..frame_58−1]) must equal 0.
           // Polynomial inversion in GF(2^16) is required.
           size_t frame_size_58 = ((frame_size >> 2) + (frame_size >> 4)) << 1;
-          if (frame_size_58 > 2 && i + frame_size_58 <= size)
+          if (frame_size_58 > 4 && i + frame_size_58 <= size)
           {
             data[i + 2] = 0;
             data[i + 3] = 0;
-            const uint16_t raw_crc1 = CalculateAC3CRC(data + i, frame_size_58);
+            const uint16_t raw_crc1 = CalculateAC3CRC(data + i + 2, frame_size_58 - 2);
 
-            // Invert: find crc1 s.t. CRC([bytes[0..frame_58−1]]) == 0
-            const unsigned int power = static_cast<unsigned int>(8 * (frame_size_58 - 2));
+            // Invert: find crc1 s.t. CRC([bytes[2..frame_58−1]]) == 0
+            const unsigned int power = static_cast<unsigned int>(8 * (frame_size_58 - 4));
             const unsigned int inv_power = 32767 - (power % 32767);
             const uint16_t crc1 = static_cast<uint16_t>(MulPolyAC3(PowPolyAC3(2, inv_power), raw_crc1));
             data[i + 2] = (crc1 >> 8) & 0xFF;
@@ -266,7 +258,7 @@ void DefeatDialnorm(uint8_t* data, size_t size)
 
           if (frame_size > 4 && i + frame_size <= size)
           {
-            const uint16_t new_crc2 = CalculateAC3CRC(data + i, frame_size - 2);
+            const uint16_t new_crc2 = CalculateAC3CRC(data + i + 2, frame_size - 4);
             data[i + frame_size - 2] = (new_crc2 >> 8) & 0xFF;
             data[i + frame_size - 1] = new_crc2 & 0xFF;
           }
