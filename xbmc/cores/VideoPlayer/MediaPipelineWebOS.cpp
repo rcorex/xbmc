@@ -249,7 +249,7 @@ void DefeatDialnorm(uint8_t* data, size_t size)
             const uint16_t raw_crc1 = CalculateAC3CRC(data + i + 2, frame_size_58 - 2);
 
             // Invert: find crc1 s.t. CRC([bytes[2..frame_58−1]]) == 0
-            const unsigned int power = static_cast<unsigned int>(8 * (frame_size_58 - 4));
+            const unsigned int power = static_cast<unsigned int>(8 * (frame_size_58 - 2));
             const unsigned int inv_power = 32767 - (power % 32767);
             const uint16_t crc1 = static_cast<uint16_t>(MulPolyAC3(PowPolyAC3(2, inv_power), raw_crc1));
             data[i + 2] = (crc1 >> 8) & 0xFF;
