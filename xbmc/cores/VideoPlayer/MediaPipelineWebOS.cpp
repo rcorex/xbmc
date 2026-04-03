@@ -167,30 +167,22 @@ void DefeatDialnorm(uint8_t* data, size_t size)
         if (fscod < 3 && frmsizcod < 38)
         {
           frame_size = ac3_frame_size_tab[frmsizcod][fscod] * 2;
-
-          // ATSC A/52 allows 44.1kHz frames to be 2 bytes larger to maintain bitrate.
-          if (fscod == 1)
-          {
-            if (i + frame_size + 2 == size) frame_size += 2;
-            else if (i + frame_size + 3 < size && data[i + frame_size + 2] == 0x0B && data[i + frame_size + 3] == 0x77)
-              frame_size += 2;
-          }
-
           uint8_t acmod = data[i + 6] >> 5;
           offset = GetDialnormOffsetAC3(acmod);
         }
       }
       else
       {
+        uint16_t frmsiz = ((data[i + 2] & 0x07) << 8) | data[i + 3];
+        frame_size = (frmsiz + 1) * 2;
+
         uint8_t strmtyp = data[i + 2] >> 6;
         if (strmtyp == 1 || strmtyp == 3)
         {
-          i++;
+          i += frame_size; // Safely jump over the dependent stream
           continue;
         }
 
-        uint16_t frmsiz = ((data[i + 2] & 0x07) << 8) | data[i + 3];
-        frame_size = (frmsiz + 1) * 2;
         offset = 45; // E-AC3 dialnorm is consistently at bit 45
       }
       if (offset != -1 && frame_size > 0)
