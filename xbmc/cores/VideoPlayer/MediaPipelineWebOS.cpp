@@ -43,6 +43,7 @@
 #include "platform/linux/WebOSTVPlatformConfig.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -87,6 +88,50 @@ constexpr std::chrono::nanoseconds MAX_FEED_AHEAD_TIME = 1300ms;
 constexpr unsigned int SVP_VERSION_30 = 30;
 constexpr unsigned int SVP_VERSION_40 = 40;
 
+// ATSC A/52 Table 5.13: Frame Size Code Table (words -> bytes requires * 2)
+constexpr uint16_t ac3_frame_size_tab[38][3] = {
+    { 64,   69,   96   }, { 64,   70,   96   }, { 80,   87,   120  }, { 80,   88,   120  },
+    { 96,   104,  144  }, { 96,   105,  144  }, { 112,  121,  168  }, { 112,  122,  168  },
+    { 128,  139,  192  }, { 128,  140,  192  }, { 160,  174,  240  }, { 160,  175,  240  },
+    { 192,  208,  288  }, { 192,  209,  288  }, { 224,  243,  336  }, { 224,  244,  336  },
+    { 256,  278,  384  }, { 256,  279,  384  }, { 320,  348,  480  }, { 320,  349,  480  },
+    { 384,  417,  576  }, { 384,  418,  576  }, { 448,  487,  672  }, { 448,  488,  672  },
+    { 512,  557,  768  }, { 512,  558,  768  }, { 640,  696,  960  }, { 640,  697,  960  },
+    { 768,  835,  1152 }, { 768,  836,  1152 }, { 896,  975,  1344 }, { 896,  976,  1344 },
+    { 1024, 1114, 1536 }, { 1024, 1115, 1536 }, { 1152, 1253, 1728 }, { 1152, 1254, 1728 },
+    { 1280, 1393, 1920 }, { 1280, 1394, 1920 }
+};
+
+// Generate the CRC16 table at compile-time for zero runtime initialization cost
+constexpr std::array<uint16_t, 256> GenerateAC3CRCTable()
+{
+  std::array<uint16_t, 256> table{};
+  for (int i = 0; i < 256; i++)
+  {
+    uint16_t crc = i << 8;
+    for (int j = 0; j < 8; j++)
+    {
+      if (crc & 0x8000)
+        crc = (crc << 1) ^ 0x8005;
+      else
+        crc <<= 1;
+    }
+    table[i] = crc;
+  }
+  return table;
+}
+
+constexpr auto ac3_crc_tab = GenerateAC3CRCTable();
+
+// Optimized Byte-by-Byte CRC calculation
+uint16_t CalculateAC3CRC(const uint8_t* data, size_t size)
+{
+  uint16_t crc = 0;
+  for (size_t i = 0; i < size; i++)
+    crc = (crc << 8) ^ ac3_crc_tab[(crc >> 8) ^ data[i]];
+  return crc;
+}
+
 int GetDialnormOffsetAC3(uint8_t acmod)
 {
   int offset = 16 + 16 + 2 + 6 + 5 + 3 + 3;
@@ -105,31 +150,26 @@ void DefeatDialnorm(uint8_t* data, size_t size)
   if (size < 8)
     return;
 
-  const size_t max_idx = size - 8;
   size_t i = 0;
 
-  if (data[0] == 0x0B && data[1] == 0x77)
-  {
-    i = 0;
-  }
-  else
-  {
-    const void* next = std::memchr(data, 0x0B, max_idx + 1);
-    if (!next)
-      return;
-    i = static_cast<size_t>(static_cast<const uint8_t*>(next) - data);
-  }
-
-  while (i <= max_idx)
+  while (i <= size - 8)
   {
     if (data[i] == 0x0B && data[i + 1] == 0x77)
     {
       uint8_t bsid = data[i + 5] >> 3;
       int offset = -1;
+      size_t frame_size = 0;
+
       if (bsid <= 10)
       {
-        uint8_t acmod = data[i + 6] >> 5;
-        offset = GetDialnormOffsetAC3(acmod);
+        uint8_t fscod = data[i + 4] >> 6;
+        uint8_t frmsizcod = (data[i + 4] & 0x3F);
+        if (fscod < 3 && frmsizcod < 38)
+        {
+          frame_size = ac3_frame_size_tab[frmsizcod][fscod] * 2;
+          uint8_t acmod = data[i + 6] >> 5;
+          offset = GetDialnormOffsetAC3(acmod);
+        }
       }
       else
       {
@@ -140,46 +180,48 @@ void DefeatDialnorm(uint8_t* data, size_t size)
           continue;
         }
 
-        uint8_t fscod = data[i + 4] >> 6;
-        if (fscod == 3)
-          offset = 47;
-        else
-          offset = 45;
+        uint16_t frmsiz = ((data[i + 2] & 0x07) << 8) | data[i + 3];
+        frame_size = (frmsiz + 1) * 2;
+        offset = 45; // E-AC3 dialnorm is consistently at bit 45
       }
-      if (offset != -1)
+      if (offset != -1 && frame_size > 0)
       {
+        // Ensure the entire frame is present in this buffer before patching
+        if (i + frame_size > size)
+        {
+          break; // Fragmented frame, safely exit buffer processing
+        }
+
         size_t byte_idx = i + offset / 8;
         int bit_idx = offset % 8;
 
-        if (byte_idx < size)
+        int bits_in_first = 8 - bit_idx;
+        if (bits_in_first >= 5)
         {
-          int bits_in_first = 8 - bit_idx;
-          if (bits_in_first >= 5)
-          {
-            data[byte_idx] |= (0x1F << (bits_in_first - 5));
-          }
-          else
-          {
-            data[byte_idx] |= ((1 << bits_in_first) - 1);
-            if (byte_idx + 1 < size)
-            {
-              int bits_in_second = 5 - bits_in_first;
-              data[byte_idx + 1] |= (((1 << bits_in_second) - 1) << (8 - bits_in_second));
-            }
-          }
-          break; // Early exit
+          data[byte_idx] |= (0x1F << (bits_in_first - 5));
         }
+        else
+        {
+          data[byte_idx] |= ((1 << bits_in_first) - 1);
+          int bits_in_second = 5 - bits_in_first;
+          data[byte_idx + 1] |= (((1 << bits_in_second) - 1) << (8 - bits_in_second));
+        }
+
+        if (bsid <= 10)
+        {
+          // AC-3: Recalculate and write CRC at the tail end of the frame
+          uint16_t new_crc = CalculateAC3CRC(data + i, frame_size - 2);
+          data[i + frame_size - 2] = (new_crc >> 8) & 0xFF;
+          data[i + frame_size - 1] = new_crc & 0xFF;
+        }
+
+        // Advance parser safely to the next frame
+        i += frame_size;
+        continue;
       }
     }
 
-    if (i >= max_idx)
-      break;
-
-    const void* next = std::memchr(data + i + 1, 0x0B, max_idx - i);
-    if (!next)
-      break;
-
-    i = static_cast<size_t>(static_cast<const uint8_t*>(next) - data);
+    i++;
   }
 }
 
