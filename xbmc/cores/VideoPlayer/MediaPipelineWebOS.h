@@ -460,6 +460,7 @@ private:
   std::atomic<bool> m_downmixStereo{false};
   std::atomic<bool> m_downmixStereoOnly71{false};
   std::atomic<bool> m_bypassDialnorm{false};
+  std::atomic<bool> m_bypassDialnormAtmos{true};
 
   std::atomic<std::chrono::nanoseconds> m_videoSyncPts{NO_PTS};
   std::atomic<bool> m_audioReady{false};
