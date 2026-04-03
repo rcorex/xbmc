@@ -103,9 +103,9 @@ bool CAEEncoderFFmpeg::Initialize(AEAudioFormat& format, bool allow_planar_input
         CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHEAC3BITRATE);
 
     if (bitrateSetting == 1) // High
-      m_BitRate = 1536000;
-    else if (bitrateSetting == 2) // Max
       m_BitRate = 2048000;
+    else if (bitrateSetting == 2) // Max
+      m_BitRate = 2176000;
 #endif
 
     codec = avcodec_find_encoder(m_CodecID);
