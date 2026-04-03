@@ -132,6 +132,34 @@ uint16_t CalculateAC3CRC(const uint8_t* data, size_t size)
   return crc;
 }
 
+// GF(2^16) polynomial helpers for AC3 CRC1 inversion
+// Polynomial P(x) = x^16 + x^15 + x^2 + 1 = 0x18005
+constexpr uint32_t MulPolyAC3(uint32_t a, uint32_t b)
+{
+  constexpr uint32_t poly = 0x18005;
+  uint32_t c = 0;
+  while (a)
+  {
+    if (a & 1) c ^= b;
+    a >>= 1;
+    b <<= 1;
+    if (b & 0x10000) b ^= poly;
+  }
+  return c & 0xFFFF;
+}
+
+constexpr uint32_t PowPolyAC3(uint32_t a, unsigned int n)
+{
+  uint32_t r = 1;
+  while (n)
+  {
+    if (n & 1) r = MulPolyAC3(r, a);
+    a = MulPolyAC3(a, a);
+    n >>= 1;
+  }
+  return r;
+}
+
 int GetDialnormOffsetAC3(uint8_t acmod)
 {
   int offset = 16 + 16 + 2 + 6 + 5 + 3 + 3;
@@ -167,6 +195,15 @@ void DefeatDialnorm(uint8_t* data, size_t size)
         if (fscod < 3 && frmsizcod < 38)
         {
           frame_size = ac3_frame_size_tab[frmsizcod][fscod] * 2;
+
+          // ATSC A/52 allows 44.1kHz frames to be 2 bytes larger to maintain bitrate.
+          if (fscod == 1)
+          {
+            if (i + frame_size + 2 == size) frame_size += 2;
+            else if (i + frame_size + 3 < size && data[i + frame_size + 2] == 0x0B && data[i + frame_size + 3] == 0x77)
+              frame_size += 2;
+          }
+
           uint8_t acmod = data[i + 6] >> 5;
           offset = GetDialnormOffsetAC3(acmod);
         }
@@ -210,22 +247,30 @@ void DefeatDialnorm(uint8_t* data, size_t size)
 
         if (bsid <= 10)
         {
-          // AC-3: We MUST recalculate BOTH crc1 and crc2.
-
-          // 1. Calculate crc1 (covers first 5/8 of the frame)
+          // CRC1: self-verifying CRC — CRC(bytes[2..frame_58−1]) must equal 0.
+          // Polynomial inversion in GF(2^16) is required.
           size_t frame_size_58 = ((frame_size >> 2) + (frame_size >> 4)) << 1;
-          if (frame_size_58 >= 4 && i + frame_size_58 <= size)
+          if (frame_size_58 > 2 && i + frame_size_58 <= size)
           {
-            // crc1 computation skips the first 4 bytes (sync word + crc1 itself)
-            uint16_t new_crc1 = CalculateAC3CRC(data + i + 4, frame_size_58 - 4);
-            data[i + 2] = (new_crc1 >> 8) & 0xFF;
-            data[i + 3] = new_crc1 & 0xFF;
+            data[i + 2] = 0;
+            data[i + 3] = 0;
+            const uint16_t raw_crc1 = CalculateAC3CRC(data + i + 2, frame_size_58 - 2);
+
+            // Invert: find crc1 s.t. CRC([crc1, bytes[4..frame_58−1]]) == 0
+            const unsigned int n_bits = static_cast<unsigned int>(8 * (frame_size_58 - 2) - 16);
+            const uint16_t crc1 = static_cast<uint16_t>(MulPolyAC3(PowPolyAC3(2, n_bits), raw_crc1));
+            data[i + 2] = (crc1 >> 8) & 0xFF;
+            data[i + 3] = crc1 & 0xFF;
           }
 
-          // 2. Calculate crc2 (covers entire frame, excluding the trailing crc2 word)
-          uint16_t new_crc2 = CalculateAC3CRC(data + i, frame_size - 2);
-          data[i + frame_size - 2] = (new_crc2 >> 8) & 0xFF;
-          data[i + frame_size - 1] = new_crc2 & 0xFF;
+          // CRC2: self-verifying CRC — CRC(bytes[2..frame_size−1]) must equal 0.
+          // NOTE: region starts at byte 2 (crc1 field), NOT byte 0 (sync word).
+          if (frame_size > 4 && i + frame_size <= size)
+          {
+            const uint16_t new_crc2 = CalculateAC3CRC(data + i + 2, frame_size - 4);
+            data[i + frame_size - 2] = (new_crc2 >> 8) & 0xFF;
+            data[i + frame_size - 1] = new_crc2 & 0xFF;
+          }
         }
 
         // Advance parser safely to the next frame
