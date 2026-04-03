@@ -1160,10 +1160,30 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
     }
     m_audioEncoder = std::make_unique<CAEEncoderFFmpeg>();
 
+    int transcodedChannels = m_audioCodec->GetFormat().m_channelLayout.Count();
+    if (transcodedChannels == 0)
+      transcodedChannels = audioHint.channels;
+
+    if (m_downmixStereo)
+    {
+      bool only71 = m_downmixStereoOnly71;
+      if (!only71 || transcodedChannels > 6)
+      {
+        transcodedChannels = 2;
+      }
+    }
+
     if (WebOSTVPlatformConfig::SupportsEAC3())
     {
       codecName = "AC3 PLUS";
-      setAC3PlusInfo(audioHint, optInfo);
+      optInfo["ac3PlusInfo"]["channels"] = transcodedChannels;
+      optInfo["ac3PlusInfo"]["frequency"] = SelectTranscodingSampleRate(audioHint.samplerate) / 1000.0;
+    }
+    else
+    {
+      // AC3 maximum is 6 channels
+      optInfo["ac3Info"]["channels"] = std::min(transcodedChannels, 6);
+      optInfo["ac3Info"]["frequency"] = SelectTranscodingSampleRate(audioHint.samplerate) / 1000.0;
     }
 
     return codecName;
