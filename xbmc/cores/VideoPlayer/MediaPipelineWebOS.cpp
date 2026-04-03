@@ -195,7 +195,6 @@ void DefeatDialnorm(uint8_t* data, size_t size)
         if (fscod < 3 && frmsizcod < 38)
         {
           frame_size = ac3_frame_size_tab[frmsizcod][fscod] * 2;
-
           uint8_t acmod = data[i + 6] >> 5;
           if (acmod == 0) // AC-3 Dual Mono (1+1)
           {
@@ -213,12 +212,14 @@ void DefeatDialnorm(uint8_t* data, size_t size)
         uint8_t strmtyp = data[i + 2] >> 6;
         if (strmtyp == 1 || strmtyp == 3)
         {
-          i += frame_size; // Safely jump over the dependent stream
+          i += frame_size;
+          // Safely jump over the dependent stream
           continue;
         }
 
         offset = 45; // E-AC3 dialnorm is consistently at bit 45
       }
+      
       if (offset != -1 && frame_size > 0)
       {
         // Ensure the entire frame is present in this buffer before patching
@@ -247,6 +248,7 @@ void DefeatDialnorm(uint8_t* data, size_t size)
           // CRC1: self-verifying CRC — CRC(bytes[2..frame_58−1]) must equal 0.
           // Polynomial inversion in GF(2^16) is required.
           size_t frame_size_58 = ((frame_size >> 2) + (frame_size >> 4)) << 1;
+
           if (frame_size_58 > 4 && i + frame_size_58 <= size)
           {
             data[i + 2] = 0;
@@ -257,6 +259,7 @@ void DefeatDialnorm(uint8_t* data, size_t size)
             const unsigned int power = static_cast<unsigned int>(8 * (frame_size_58 - 2));
             const unsigned int inv_power = 32767 - (power % 32767);
             const uint16_t crc1 = static_cast<uint16_t>(MulPolyAC3(PowPolyAC3(2, inv_power), raw_crc1));
+
             data[i + 2] = (crc1 >> 8) & 0xFF;
             data[i + 3] = crc1 & 0xFF;
           }
@@ -266,6 +269,19 @@ void DefeatDialnorm(uint8_t* data, size_t size)
             const uint16_t new_crc2 = CalculateAC3CRC(data + i + 2, frame_size - 4);
             data[i + frame_size - 2] = (new_crc2 >> 8) & 0xFF;
             data[i + frame_size - 1] = new_crc2 & 0xFF;
+          }
+        }
+        else 
+        {
+          // E-AC-3 CRC Recalculation (bsid > 10)
+          // E-AC-3 has a single CRC at the end of the syncframe.
+          // Skips the 2-byte syncword (+ 2) and excludes the 2-byte CRC itself (- 4).
+          if (frame_size > 4 && i + frame_size <= size)
+          {
+            const uint16_t new_eac3_crc = CalculateAC3CRC(data + i + 2, frame_size - 4);
+            
+            data[i + frame_size - 2] = (new_eac3_crc >> 8) & 0xFF;
+            data[i + frame_size - 1] = new_eac3_crc & 0xFF;
           }
         }
 
@@ -606,7 +622,14 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
     // API introduced in webOS 6.0, so we need to handle older versions differently
     Unload(true);
 
-    m_mediaAPIs = std::make_unique<StarfishMediaAPIs>();
+    FlushAudioMessages();
+    FlushVideoMessages();
+    if (m_bitstream)
+      m_bitstream->ResetStartDecode();
+    m_videoSyncPts = NO_PTS;
+    m_audioReady = false;
+    m_flushed = true;
+
     m_audioClosed = false;
   }
 
@@ -653,7 +676,13 @@ bool CMediaPipelineWebOS::OpenVideoStream(CDVDStreamInfo hint)
     // Different codec => unload the current stream
     Unload(true);
 
-    m_mediaAPIs = std::make_unique<StarfishMediaAPIs>();
+    FlushAudioMessages();
+    FlushVideoMessages();
+    if (m_bitstream)
+      m_bitstream->ResetStartDecode();
+    m_videoSyncPts = NO_PTS;
+    m_audioReady = false;
+    m_flushed = true;
   }
 
   m_videoHint = hint;
@@ -672,7 +701,6 @@ void CMediaPipelineWebOS::CloseAudioStream(const bool waitForBuffers)
     Unload(waitForBuffers);
     m_audioHint = CDVDStreamInfo();
     m_videoHint = CDVDStreamInfo();
-    m_mediaAPIs = std::make_unique<StarfishMediaAPIs>();
   }
 }
 
@@ -685,7 +713,6 @@ void CMediaPipelineWebOS::CloseVideoStream(const bool waitForBuffers)
     Unload(waitForBuffers);
     m_audioHint = CDVDStreamInfo();
     m_videoHint = CDVDStreamInfo();
-    m_mediaAPIs = std::make_unique<StarfishMediaAPIs>();
   }
 }
 
@@ -700,6 +727,8 @@ void CMediaPipelineWebOS::Flush(bool sync)
   FlushVideoMessages();
   if (m_bitstream)
     m_bitstream->ResetStartDecode();
+  m_videoSyncPts = NO_PTS;
+  m_audioReady = false;
   m_fedAudioPts = NO_PTS;
   m_fedVideoPts = NO_PTS;
   m_started = false;
@@ -1282,8 +1311,9 @@ void CMediaPipelineWebOS::SetupBitstreamConverter(CDVDStreamInfo& hint)
 
           // Only set for profile 7, container hint allows to skip parsing unnecessarily
           // set profile 8 and single layer when converting
-          if (!removeDovi && convertDovi && hint.dovi.dv_profile == 7)
+          if (!removeDovi && convertDovi && (hint.dovi.dv_profile == 7 || m_convertDovi))
           {
+            m_convertDovi = true;
             m_bitstream->SetConvertDovi(true);
             hint.dovi.dv_profile = 8;
             hint.dovi.el_present_flag = false;
@@ -1401,6 +1431,18 @@ bool CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
   if (pts < 0ns)
     return true;
 
+  if (m_flushed)
+  {
+    if (m_videoSyncPts.load() == NO_PTS)
+      return false; // Wait for video thread to establish a sync pts
+
+    if (pts < m_videoSyncPts.load())
+      return true; // Drop packets before the video sync pts
+
+    m_audioReady = true;
+    return false; // Wait until flushed state is cleared by the video thread
+  }
+
   const std::chrono::nanoseconds fedAudioPts = m_fedAudioPts.load();
   if (m_started && fedAudioPts != NO_PTS && fedAudioPts - m_pts.load() > MAX_FEED_AHEAD_TIME)
     return false;
@@ -1457,7 +1499,7 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
   {
     m_bitstream->Convert(data, static_cast<int>(size));
 
-    if (!m_bitstream->CanStartDecode())
+    if (m_flushed && !m_bitstream->CanStartDecode() && !packet->recoveryPoint)
     {
       CLog::LogF(LOGDEBUG, "Waiting for keyframe (bitstream)");
       return true;
@@ -1469,6 +1511,12 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
 
   if (m_flushed)
   {
+    if (m_hasAudio && !m_audioClosed && !m_audioReady)
+    {
+      m_videoSyncPts = pts;
+      return false; // Wait until audio is ready
+    }
+
     CVariant time;
     time["position"] = pts.count();
     std::string payload;
@@ -1505,6 +1553,7 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
     m_messageQueueParent.Put(
         std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, startMsg));
     m_flushed = false;
+    m_videoSyncPts = NO_PTS;
   }
 
   const std::chrono::nanoseconds fedVideoPts = m_fedVideoPts.load();
@@ -1727,11 +1776,11 @@ void CMediaPipelineWebOS::ProcessAudio()
             if (m_bypassDialnorm)
             {
               bool shouldDefeat = true;
-              if (m_audioHint.profile == AV_PROFILE_EAC3_DDP_ATMOS)
-              {
-                if (!m_audioCodec)
-                  shouldDefeat = false;
-              }
+              // if (m_audioHint.profile == AV_PROFILE_EAC3_DDP_ATMOS)
+              // {
+              //   if (!m_audioCodec)
+              //     shouldDefeat = false;
+              // }
 
               if (shouldDefeat)
                 DefeatDialnorm(packet->pData, packet->iSize);
@@ -1982,12 +2031,6 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       m_pipeline = pipeline->GetGStreamerElements(
           {0, MIN_SRC_BUFFER_LEVEL_VIDEO, MAX_SRC_BUFFER_LEVEL_VIDEO, MAX_BUFFER_LEVEL});
 
-      if (acb)
-      {
-        AcbAPI_setSinkType(acb->Id(), SINK_TYPE_MAIN);
-        AcbAPI_setMediaId(acb->Id(), m_mediaAPIs->getMediaID());
-        AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_LOADED, &acb->TaskId());
-      }
       m_renderManager.ShowVideo(true);
       if (!m_mediaAPIs->Play())
         CLog::LogF(LOGERROR, "Failed to play");
@@ -2024,7 +2067,12 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       m_messageQueueParent.Put(
           std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, msg));
       if (acb)
+      {
+        AcbAPI_setSinkType(acb->Id(), SINK_TYPE_MAIN);
+        AcbAPI_setMediaId(acb->Id(), m_mediaAPIs->getMediaID());
+        AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_LOADED, &acb->TaskId());
         AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PLAYING, &acb->TaskId());
+      }
       UpdateGUISounds(true);
       break;
     }
