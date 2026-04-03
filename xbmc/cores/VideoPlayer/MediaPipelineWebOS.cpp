@@ -219,7 +219,7 @@ void DefeatDialnorm(uint8_t* data, size_t size)
 
         offset = 45; // E-AC3 dialnorm is consistently at bit 45
       }
-      
+
       if (offset != -1 && frame_size > 0)
       {
         // Ensure the entire frame is present in this buffer before patching
@@ -271,7 +271,7 @@ void DefeatDialnorm(uint8_t* data, size_t size)
             data[i + frame_size - 1] = new_crc2 & 0xFF;
           }
         }
-        else 
+        else
         {
           // E-AC-3 CRC Recalculation (bsid > 10)
           // E-AC-3 has a single CRC at the end of the syncframe.
@@ -279,7 +279,7 @@ void DefeatDialnorm(uint8_t* data, size_t size)
           if (frame_size > 4 && i + frame_size <= size)
           {
             const uint16_t new_eac3_crc = CalculateAC3CRC(data + i + 2, frame_size - 4);
-            
+
             data[i + frame_size - 2] = (new_eac3_crc >> 8) & 0xFF;
             data[i + frame_size - 1] = new_eac3_crc & 0xFF;
           }
@@ -425,6 +425,7 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
   m_downmixStereo = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO);
   m_downmixStereoOnly71 = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71);
   m_bypassDialnorm = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM);
+  m_bypassDialnormAtmos = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS);
 
   settings->RegisterCallback(this, {CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH,
                                     CSettings::SETTING_AUDIOOUTPUT_PROCESSQUALITY,
@@ -433,7 +434,8 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
                                     CSettings::SETTING_AUDIOOUTPUT_MAINTAINORIGINALVOLUME,
                                     CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO,
                                     CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71,
-                                    CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM});
+                                    CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM,
+                                    CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS});
 }
 
 CMediaPipelineWebOS::~CMediaPipelineWebOS()
@@ -466,6 +468,8 @@ void CMediaPipelineWebOS::OnSettingChanged(const std::shared_ptr<const CSetting>
     m_downmixStereoOnly71 = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71);
   else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM)
     m_bypassDialnorm = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM);
+  else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS)
+    m_bypassDialnormAtmos = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS);
 }
 
 int CMediaPipelineWebOS::GetVideoBitrate() const
@@ -1776,11 +1780,11 @@ void CMediaPipelineWebOS::ProcessAudio()
             if (m_bypassDialnorm)
             {
               bool shouldDefeat = true;
-              // if (m_audioHint.profile == AV_PROFILE_EAC3_DDP_ATMOS)
-              // {
-              //   if (!m_audioCodec)
-              //     shouldDefeat = false;
-              // }
+              if (m_audioHint.profile == AV_PROFILE_EAC3_DDP_ATMOS)
+              {
+                if (!m_bypassDialnormAtmos)
+                  shouldDefeat = false;
+              }
 
               if (shouldDefeat)
                 DefeatDialnorm(packet->pData, packet->iSize);
@@ -1818,14 +1822,14 @@ void CMediaPipelineWebOS::ProcessAudio()
               m_audioLimiter.SetSamplerate(dstFormat.m_sampleRate);
               float volumeAmplification = m_processInfo.GetVideoSettings().m_VolumeAmplification;
               float boost = 0.0f;
-              
+
               if ((m_audioHint.codec == AV_CODEC_ID_AC3 || m_audioHint.codec == AV_CODEC_ID_EAC3) &&
                   m_audioCodec->GetFormat().m_channelLayout.Count() > 2 &&
                   dstFormat.m_channelLayout == CAEChannelInfo(AE_CH_LAYOUT_2_0))
               {
                 boost = 6.0f; //boost for AC3 & EAC3
               }
-              
+
               m_volumeAmplificationBoost.store(boost);
               volumeAmplification += boost;
               m_audioLimiter.SetAmplification(std::pow(10.0f, volumeAmplification / 20.0f));

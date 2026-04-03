@@ -24392,14 +24392,24 @@ msgctxt "#39224"
 msgid "When enabled, multichannel audio will be downmixed to stereo using Dolby Pro Logic II matrix encoding."
 msgstr ""
 
-#. Setting "Restore AC3 & EAC3 Volume / Bypass Dialog Normalization"
+#. Setting "Restore Volume / Bypass Dialog Normalization for AC3 & EAC3"
 msgctxt "#39225"
-msgid "Restore AC3 & EAC3 Volume / Bypass Dialog Normalization"
+msgid "Restore Volume / Bypass Dialog Normalization for AC3 & EAC3"
 msgstr ""
 
-#. Help text for setting "Restore AC3 & EAC3 Volume / Override Dialog Normalization" of label #39225
+#. Help text for setting "Restore Volume / Bypass Dialog Normalization for AC3 & EAC3" of label #39225
 msgctxt "#39226"
-msgid "Overrides the Dialog Normalization in AC-3 and E-AC-3 streams. Restores the original volume level. Does not affect E-AC-3 Atmos during passthrough."
+msgid "Restores original volume for AC-3 and E-AC-3 streams, by overriding the dialog normalization metadata."
+msgstr ""
+
+#. Setting "Restore Volume / Bypass Dialog Normalization for EAC3 Atmos"
+msgctxt "#39227"
+msgid "Restore Volume / Bypass Dialog Normalization for EAC3 Atmos"
+msgstr ""
+
+#. Help text for setting "Override Dialog Normalization for EAC3 Atmos" of label #39227
+msgctxt "#39228"
+msgid "Restores original volume for E-AC-3 Atmos streams, but may cause Atmos issues on some devices."
 msgstr ""
 
 #empty strings from id 39229 to 39999
