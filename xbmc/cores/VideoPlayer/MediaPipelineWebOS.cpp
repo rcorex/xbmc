@@ -197,6 +197,11 @@ void DefeatDialnorm(uint8_t* data, size_t size)
           frame_size = ac3_frame_size_tab[frmsizcod][fscod] * 2;
 
           uint8_t acmod = data[i + 6] >> 5;
+          if (acmod == 0) // AC-3 Dual Mono (1+1)
+          {
+            i += frame_size;
+            continue;
+          }
           offset = GetDialnormOffsetAC3(acmod);
         }
       }
