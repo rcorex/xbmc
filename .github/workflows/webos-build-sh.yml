@@ -2,7 +2,12 @@ name: webOS Build Self-Hosted
 
 on:
   workflow_dispatch:
-
+    inputs:
+      target_branch:
+        description: 'Which branch should I build?'
+        required: true
+        default: 'master'
+        
 jobs:
   build:
     runs-on: self-hosted
