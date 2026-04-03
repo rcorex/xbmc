@@ -407,6 +407,7 @@ public:
   static constexpr auto SETTING_AUDIOOUTPUT_PASSTHROUGH = "audiooutput.passthrough";
   static constexpr auto SETTING_AUDIOOUTPUT_PASSTHROUGHDEVICE = "audiooutput.passthroughdevice";
   static constexpr auto SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM = "audiooutput.webosbypassdialnorm";
+  static constexpr auto SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS = "audiooutput.webosbypassdialnormatmos";
   static constexpr auto SETTING_AUDIOOUTPUT_AC3PASSTHROUGH = "audiooutput.ac3passthrough";
   static constexpr auto SETTING_AUDIOOUTPUT_AC3TRANSCODE = "audiooutput.ac3transcode";
   static constexpr auto SETTING_AUDIOOUTPUT_EAC3PASSTHROUGH = "audiooutput.eac3passthrough";

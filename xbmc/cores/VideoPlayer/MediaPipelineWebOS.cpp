@@ -425,6 +425,7 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
   m_downmixStereo = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO);
   m_downmixStereoOnly71 = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71);
   m_bypassDialnorm = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM);
+  m_bypassDialnormAtmos = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS);
 
   settings->RegisterCallback(this, {CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH,
                                     CSettings::SETTING_AUDIOOUTPUT_PROCESSQUALITY,
@@ -433,7 +434,8 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
                                     CSettings::SETTING_AUDIOOUTPUT_MAINTAINORIGINALVOLUME,
                                     CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO,
                                     CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71,
-                                    CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM});
+                                    CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM,
+                                    CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS});
 }
 
 CMediaPipelineWebOS::~CMediaPipelineWebOS()
@@ -466,6 +468,8 @@ void CMediaPipelineWebOS::OnSettingChanged(const std::shared_ptr<const CSetting>
     m_downmixStereoOnly71 = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71);
   else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM)
     m_bypassDialnorm = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM);
+  else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS)
+    m_bypassDialnormAtmos = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS);
 }
 
 int CMediaPipelineWebOS::GetVideoBitrate() const
@@ -1776,11 +1780,11 @@ void CMediaPipelineWebOS::ProcessAudio()
             if (m_bypassDialnorm)
             {
               bool shouldDefeat = true;
-              // if (m_audioHint.profile == AV_PROFILE_EAC3_DDP_ATMOS)
-              // {
-              //   if (!m_audioCodec)
-              //     shouldDefeat = false;
-              // }
+              if (m_audioHint.profile == AV_PROFILE_EAC3_DDP_ATMOS)
+              {
+                if (!m_bypassDialnormAtmos)
+                  shouldDefeat = false;
+              }
 
               if (shouldDefeat)
                 DefeatDialnorm(packet->pData, packet->iSize);
