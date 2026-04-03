@@ -211,11 +211,11 @@ void DefeatDialnorm(uint8_t* data, size_t size)
         frame_size = (frmsiz + 1) * 2;
 
         uint8_t strmtyp = data[i + 2] >> 6;
-        if (strmtyp == 1 || strmtyp == 3)
-        {
-          i += frame_size; // Safely jump over the dependent stream
-          continue;
-        }
+        // if (strmtyp == 1 || strmtyp == 3)
+        // {
+        //   i += frame_size; // Safely jump over the dependent stream
+        //   continue;
+        // }
 
         offset = 45; // E-AC3 dialnorm is consistently at bit 45
       }
@@ -1760,11 +1760,11 @@ void CMediaPipelineWebOS::ProcessAudio()
             if (m_bypassDialnorm)
             {
               bool shouldDefeat = true;
-              if (m_audioHint.profile == AV_PROFILE_EAC3_DDP_ATMOS)
-              {
-                if (!m_audioCodec)
-                  shouldDefeat = false;
-              }
+              // if (m_audioHint.profile == AV_PROFILE_EAC3_DDP_ATMOS)
+              // {
+              //   if (!m_audioCodec)
+              //     shouldDefeat = false;
+              // }
 
               if (shouldDefeat)
                 DefeatDialnorm(packet->pData, packet->iSize);
