@@ -24333,7 +24333,7 @@ msgstr ""
 #. Description of setting with label #39229 "Use alternate method for audio track change"
 #: system/settings/settings.xml
 msgctxt "#39230"
-msgid "Only applicable for WebOS 6+, force a stream reload instead of using changeAudioCodec API."
+msgid "Only for WebOS 6+, uses a stream reload instead of changeAudioCodec API. This setting has no effect on WebOS <6."
 msgstr ""
 
 #empty strings from id 39231 to 39999
