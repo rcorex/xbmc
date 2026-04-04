@@ -3498,6 +3498,14 @@
           </dependencies>
           <control type="toggle" />
         </setting>
+        <setting id="audiooutput.webosaltaudiotrackchange" type="boolean" parent="audiooutput.passthrough" label="39211" help="39212">
+          <level>1</level>
+          <default>false</default>
+          <requirement>
+            <condition>HAVE_WEBOS</condition>
+          </requirement>
+          <control type="toggle" />
+        </setting>
       </group>
     </category>
     <category id="input" label="14125" help="36374">
