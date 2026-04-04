@@ -3365,7 +3365,7 @@
         </setting>
       </group>
       <group id="3" label="14252">
-        <setting id="audiooutput.webosaltaudiotrackchange" type="boolean" label="39211" help="39212">
+        <setting id="audiooutput.webosaltaudiotrackchange" type="boolean" label="39229" help="39230">
           <level>1</level>
           <default>false</default>
           <requirement>
