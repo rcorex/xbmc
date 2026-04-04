@@ -23,6 +23,9 @@
   <section id="system">
     <category id="audio">
       <group id="3">
+        <setting id="audiooutput.webosaltaudiotrackchange">
+          <visible>true</visible>
+        </setting>
         <setting id="audiooutput.passthrough">
           <default>true</default>
           <visible>true</visible>
@@ -32,9 +35,6 @@
         </setting>
         <setting id="audiooutput.ac3passthrough">
           <visible>false</visible>
-        </setting>
-        <setting id="audiooutput.webosaltaudiotrackchange">
-          <visible>true</visible>
         </setting>
       </group>
     </category>
