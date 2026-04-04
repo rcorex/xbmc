@@ -72,6 +72,15 @@ void WebOSTVPlatformConfig::Load()
     CLog::LogF(LOGWARNING, "Luna get config request call failed");
   }
 
+  auto settingsManager = CServiceBroker::GetSettingsComponent()->GetSettings()->GetSettingsManager();
+  if (settingsManager)
+  {
+    settingsManager->AddDynamicCondition(
+        "iswebos6orlater", [](const std::string&, const std::string&, const SettingConstPtr&) {
+          return GetWebOSVersion() >= 6;
+        });
+  }
+
   if (GetWebOSVersion() < 6)
   {
     const std::shared_ptr<CSetting> altMethod =
@@ -81,7 +90,7 @@ void WebOSTVPlatformConfig::Load()
     {
       SettingDependencies deps;
       CSettingDependency dep(SettingDependencyType::Visible, nullptr);
-      dep.And()->Add(std::make_shared<CSettingDependencyCondition>("", "false", SettingDependencyOperator::Equals, true, nullptr));
+      dep.And()->Add(std::make_shared<CSettingDependencyCondition>("iswebos6orlater", "true", "", false, settingsManager));
       deps.push_back(dep);
       altMethod->SetDependencies(deps);
     }
