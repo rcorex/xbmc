@@ -18,6 +18,7 @@
 #include "settings/lib/Setting.h"
 #include "settings/lib/SettingDependency.h"
 #include "settings/lib/SettingConditions.h"
+#include "settings/lib/SettingsManager.h"
 
 namespace
 {
