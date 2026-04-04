@@ -80,8 +80,8 @@ void WebOSTVPlatformConfig::Load()
     if (altMethod)
     {
       SettingDependencies deps;
-      SettingDependency dep(SettingDependencyType::Visible, nullptr);
-      dep.And()->Add(std::make_shared<CSettingDependencyCondition>("", "false", "", true, false));
+      CSettingDependency dep(SettingDependencyType::Visible, nullptr);
+      dep.And()->Add(std::make_shared<CSettingDependencyCondition>("", "false", SettingDependencyOperator::Equals, true, nullptr));
       deps.push_back(dep);
       altMethod->SetDependencies(deps);
     }
