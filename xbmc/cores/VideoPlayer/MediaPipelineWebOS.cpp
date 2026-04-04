@@ -1202,7 +1202,7 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
   {
     m_bitstream->Convert(data, static_cast<int>(size));
 
-    if (m_flushed && !m_bitstream->CanStartDecode() && !packet->recoveryPoint)
+    if (!m_bitstream->CanStartDecode())
     {
       CLog::LogF(LOGDEBUG, "Waiting for keyframe (bitstream)");
       return true;
