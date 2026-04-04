@@ -13,7 +13,10 @@ jobs:
     runs-on: self-hosted
     steps:
       - name: Sync WSL Clock
-        run: sudo hwclock -s
+        run: |
+          for i in 1 2 3; do
+            sudo hwclock -s && break || echo "Clock locked, retrying..." && sleep 3
+          done
     
       - name: Checkout Code
         uses: actions/checkout@v4
