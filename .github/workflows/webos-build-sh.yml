@@ -6,7 +6,7 @@ on:
       target_branch:
         description: 'Which branch should I build?'
         required: true
-        default: 'master'
+        default: ''
         
 jobs:
   build:
