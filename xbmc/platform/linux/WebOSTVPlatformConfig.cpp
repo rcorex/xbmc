@@ -12,14 +12,6 @@
 #include "utils/JSONVariantWriter.h"
 #include "utils/Variant.h"
 #include "utils/log.h"
-#include "ServiceBroker.h"
-#include "settings/Settings.h"
-#include "settings/SettingsComponent.h"
-#include "settings/lib/Setting.h"
-#include "settings/lib/SettingDependency.h"
-#include "settings/lib/SettingConditions.h"
-#include "settings/lib/SettingsManager.h"
-
 namespace
 {
 constexpr const char* LUNA_GET_CONFIG = "luna://com.webos.service.config/getConfigs";
@@ -73,29 +65,6 @@ void WebOSTVPlatformConfig::Load()
     CLog::LogF(LOGWARNING, "Luna get config request call failed");
   }
 
-  auto settingsManager = CServiceBroker::GetSettingsComponent()->GetSettings()->GetSettingsManager();
-  if (settingsManager)
-  {
-    settingsManager->AddDynamicCondition(
-        "iswebos6orlater", [](const std::string&, const std::string&, const SettingConstPtr&) {
-          return GetWebOSVersion() >= 6;
-        });
-  }
-
-  if (GetWebOSVersion() < 6)
-  {
-    const std::shared_ptr<CSetting> altMethod =
-        CServiceBroker::GetSettingsComponent()->GetSettings()->GetSetting(
-            CSettings::SETTING_AUDIOOUTPUT_WEBOS_ALT_AUDIOTRACK_CHANGE);
-    if (altMethod)
-    {
-      SettingDependencies deps;
-      CSettingDependency dep(SettingDependencyType::Visible, nullptr);
-      dep.And()->Add(std::make_shared<CSettingDependencyCondition>("iswebos6orlater", "true", "", false, settingsManager));
-      deps.push_back(dep);
-      altMethod->SetDependencies(deps);
-    }
-  }
 }
 
 int WebOSTVPlatformConfig::GetWebOSVersion()

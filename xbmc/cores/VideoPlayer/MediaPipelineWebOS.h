@@ -455,6 +455,9 @@ private:
   std::atomic<std::chrono::nanoseconds> m_fedVideoPts{NO_PTS};
   std::atomic<bool> m_started{false};
 
+  int m_audioFeedErrorCount{0};
+  int m_videoFeedErrorCount{0};
+
   std::mutex m_audioInfoMutex;
   std::string m_audioInfo;
   std::mutex m_videoInfoMutex;
