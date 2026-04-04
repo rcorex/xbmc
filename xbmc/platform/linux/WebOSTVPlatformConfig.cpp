@@ -15,6 +15,12 @@
 #include "utils/JSONVariantWriter.h"
 #include "utils/Variant.h"
 #include "utils/log.h"
+#include "ServiceBroker.h"
+#include "settings/Settings.h"
+#include "settings/SettingsComponent.h"
+#include "settings/lib/Setting.h"
+#include "settings/lib/SettingDependency.h"
+#include "settings/lib/SettingConditions.h"
 
 namespace
 {
@@ -67,6 +73,21 @@ void WebOSTVPlatformConfig::Load()
   if (HLunaServiceCall(LUNA_GET_CONFIG, payload.c_str(), &requestContext))
   {
     CLog::LogF(LOGWARNING, "Luna get config request call failed");
+  }
+
+  if (GetWebOSVersion() < 6)
+  {
+    const std::shared_ptr<CSetting> altMethod =
+        CServiceBroker::GetSettingsComponent()->GetSettings()->GetSetting(
+            CSettings::SETTING_AUDIOOUTPUT_WEBOS_ALT_AUDIOTRACK_CHANGE);
+    if (altMethod)
+    {
+      SettingDependencies deps;
+      SettingDependency dep(SettingDependencyType::Visible, nullptr);
+      dep.And()->Add(std::make_shared<CSettingDependencyCondition>("", "false", "", true, false));
+      deps.push_back(dep);
+      altMethod->SetDependencies(deps);
+    }
   }
 }
 

@@ -24412,7 +24412,19 @@ msgctxt "#39228"
 msgid "Restores original volume for E-AC-3 Atmos streams, but may cause Atmos issues on some devices."
 msgstr ""
 
-#empty strings from id 39229 to 39999
+# Use alternate method for audio track change
+#: system/settings/settings.xml
+msgctxt "#39229"
+msgid "Use alternate method for audio track change"
+msgstr ""
+
+#. Description of setting with label #39229 "Use alternate method for audio track change"
+#: system/settings/settings.xml
+msgctxt "#39230"
+msgid "Only applicable for WebOS 6+, force a stream reload instead of using changeAudioCodec API."
+msgstr ""
+
+#empty strings from id 39231 to 39999
 
 # 40000 to 40800 are reserved for Video Versions feature
 
