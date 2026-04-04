@@ -1219,6 +1219,8 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
       m_videoSyncPts = pts;
       return false; // Wait until audio is ready
     }
+    
+    std::this_thread::sleep_for(50ms); // Wait for pipeline flush to settle
 
     CVariant time;
     time["position"] = pts.count();
