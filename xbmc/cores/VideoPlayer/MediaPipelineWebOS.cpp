@@ -757,6 +757,7 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
   if (!m_mediaAPIs->notifyForeground())
     CLog::LogF(LOGERROR, "notifyForeground failed");
   CLog::LogFC(LOGDEBUG, LOGVIDEO, "Sending Load payload {}", payload);
+  m_waitForPlaying = true;
   if (!m_mediaAPIs->Load(payload.c_str(), &CMediaPipelineWebOS::PlayerCallback, this))
   {
     CLog::LogF(LOGERROR, "Load failed");
@@ -1220,7 +1221,10 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
       return false; // Wait until audio is ready
     }
     
-    std::this_thread::sleep_for(50ms); // Wait for pipeline flush to settle
+    if (m_waitForPlaying)
+    {
+      return false;
+    }
 
     CVariant time;
     time["position"] = pts.count();
@@ -1724,6 +1728,7 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       if (m_audioThread.joinable())
         m_audioThread.join();
       m_loaded = false;
+      m_waitForPlaying = false;
       m_pipeline = nullptr;
       UpdateGUISounds(false);
       break;
@@ -1734,6 +1739,7 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       break;
     case PF_EVENT_TYPE_STR_STATE_UPDATE__PLAYING:
     {
+      m_waitForPlaying = false;
       SStartMsg msg{.timestamp = GetCurrentPts(),
                     .player = VideoPlayer_VIDEO,
                     .cachetime = DVD_MSEC_TO_TIME(50),
