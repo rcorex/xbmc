@@ -3367,7 +3367,7 @@
       <group id="3" label="14252">
         <setting id="audiooutput.webosaltaudiotrackchange" type="boolean" label="39229" help="39230">
           <level>1</level>
-          <default>false</default>
+          <default>true</default>
           <requirement>
             <condition>HAVE_WEBOS</condition>
           </requirement>
