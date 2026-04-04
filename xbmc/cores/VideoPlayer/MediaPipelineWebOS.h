@@ -415,7 +415,7 @@ private:
   std::atomic<bool> m_loaded{false};
   std::atomic<bool> m_flushed{false};
   std::atomic<bool> m_subtitle{false};
-  std::atomic<bool> m_waitForPlaying{false};
+  std::atomic<bool> m_pendingPlay{false};
   std::atomic<double> m_subtitleDelay{0.0};
   std::atomic<bool> m_needsTranscode{false};
   std::atomic<std::chrono::nanoseconds> m_pts{std::chrono::nanoseconds(0)};
