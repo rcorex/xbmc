@@ -1140,7 +1140,7 @@ bool CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
   return true;
 }
 
-void CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg, std::unique_lock<CCriticalSection>& lock)
+void CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg, std::unique_lock<std::mutex>& lock)
 {
   DemuxPacket* packet = std::static_pointer_cast<CDVDMsgDemuxerPacket>(msg)->GetPacket();
 

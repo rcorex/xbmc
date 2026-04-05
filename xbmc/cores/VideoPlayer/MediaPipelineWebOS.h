@@ -282,7 +282,7 @@ private:
    * @param msg Demux packet wrapped in a CDVDMsg.
    * @param lock The unique_lock currently held by the processing thread.
    */
-  void FeedVideoData(const std::shared_ptr<CDVDMsg>& msg, std::unique_lock<CCriticalSection>& lock);
+  void FeedVideoData(const std::shared_ptr<CDVDMsg>& msg, std::unique_lock<std::mutex>& lock);
 
   /**
    * @brief Render subtitle and overlay graphics at given timestamp.
