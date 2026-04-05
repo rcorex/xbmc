@@ -14,7 +14,6 @@
 #include "DVDCodecs/Audio/DVDAudioCodecPassthrough.h"
 #include "DVDCodecs/DVDCodecs.h"
 #include "DVDCodecs/DVDFactoryCodec.h"
-#include "DVDDemuxers/DVDDemux.h"
 #include "DVDDemuxers/DVDDemuxUtils.h"
 #include "DVDOverlayContainer.h"
 #include "Interface/TimingConstants.h"
@@ -172,8 +171,7 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
                                          CDVDClock& clock,
                                          CDVDMessageQueue& parent,
                                          CDVDOverlayContainer& overlay,
-                                         const bool hasAudio,
-                                         CDVDDemux* demuxer)
+                                         const bool hasAudio)
   : CThread("MediaPipelineWebOS"),
     m_mediaAPIs(std::make_unique<StarfishMediaAPIs>()),
     m_messageQueueAudio("audio"),
@@ -183,8 +181,7 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
     m_renderManager(renderManager),
     m_clock(clock),
     m_overlayContainer(overlay),
-    m_hasAudio(hasAudio),
-    m_demuxer(demuxer)
+    m_hasAudio(hasAudio)
 {
   m_messageQueueAudio.Init();
   m_messageQueueVideo.Init();
@@ -358,11 +355,6 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
 
     FlushAudioMessages();
     FlushVideoMessages();
-
-    // Explicitly flush the demuxer to avoid feeding stale packets to the new hardware pipeline
-    if (m_demuxer)
-      m_demuxer->Flush();
-
     if (m_bitstream)
       m_bitstream->ResetStartDecode();
     m_videoSyncPts = NO_PTS;
