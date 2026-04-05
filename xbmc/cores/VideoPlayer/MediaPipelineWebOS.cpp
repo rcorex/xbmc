@@ -1380,9 +1380,8 @@ void CMediaPipelineWebOS::Process()
     {
       if (msg->IsType(CDVDMsg::DEMUXER_PACKET))
       {
-        if (!FeedVideoData(msg))
+        while (!m_bStop && !FeedVideoData(msg))
         {
-          m_messageQueueVideo.PutBack(msg);
           std::this_thread::sleep_for(10ms);
         }
       }
@@ -1544,9 +1543,8 @@ void CMediaPipelineWebOS::ProcessAudio()
                     m_audioEncoder->Encode(buf->pkt->data[0], buf->pkt->planes * buf->pkt->linesize,
                                            p->m_packet->pData, p->m_packet->iSize);
                 buf->Return();
-                if (!FeedAudioData(p))
+                while (!m_bStop && !FeedAudioData(p))
                 {
-                  m_messageQueueAudio.PutBack(p);
                   std::this_thread::sleep_for(10ms);
                 }
               }
@@ -1556,9 +1554,8 @@ void CMediaPipelineWebOS::ProcessAudio()
         }
         else
         {
-          if (!FeedAudioData(msg))
+          while (!m_bStop && !FeedAudioData(msg))
           {
-            m_messageQueueAudio.PutBack(msg);
             std::this_thread::sleep_for(10ms);
           }
         }
