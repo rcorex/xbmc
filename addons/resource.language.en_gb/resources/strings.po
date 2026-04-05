@@ -24407,9 +24407,9 @@ msgctxt "#39227"
 msgid "Restore Volume / Bypass Dialog Normalization for EAC3 Atmos"
 msgstr ""
 
-#. Help text for setting "Override Dialog Normalization for EAC3 Atmos" of label #39227
+#. Help text for setting "Restore Volume / Bypass Dialog Normalization for EAC3 Atmos" of label #39227
 msgctxt "#39228"
-msgid "Restores original volume for E-AC-3 Atmos streams, but may cause Atmos issues on some devices."
+msgid "Restores original volume for E-AC-3 Atmos streams, but may cause Atmos to be disabled."
 msgstr ""
 
 # Use alternate method for audio track change
