@@ -3003,6 +3003,7 @@ void CVideoPlayer::HandleMessages()
       SelectionStream& st = m_SelectionStreams.Get(StreamType::AUDIO, pMsg2->GetStreamId());
       if(st.source != STREAM_SOURCE_NONE)
       {
+#if defined(TARGET_WEBOS)
         if (NeedsFullMediaRestartOnAudioChange())
         {
           if (st.id == m_CurrentAudio.id && st.demuxerId == m_CurrentAudio.demuxerId && st.source == m_CurrentAudio.source)
@@ -3016,6 +3017,7 @@ void CVideoPlayer::HandleMessages()
           }
           continue; // abort further processing of this message
         }
+#endif
 
         if(st.source == STREAM_SOURCE_NAV && m_pInputStream && m_pInputStream->IsStreamType(DVDSTREAM_TYPE_DVD))
         {
