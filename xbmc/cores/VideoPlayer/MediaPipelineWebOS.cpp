@@ -1139,6 +1139,9 @@ bool CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
     return false; // Wait until flushed state is cleared by the video thread
   }
 
+  if (!m_videoClosed.load() && m_fedVideoPts.load() == NO_PTS)
+    return false; // Wait until the first video packet is fed
+
   const std::chrono::nanoseconds fedAudioPts = m_fedAudioPts.load();
   if (m_started && fedAudioPts != NO_PTS && fedAudioPts - m_pts.load() > MAX_FEED_AHEAD_TIME)
     return false;
