@@ -24324,16 +24324,16 @@ msgstr ""
 
 #empty strings from id 39211 to 39228
 
-# Use alternate method for audio track change
+# Use safe method for audio track change
 #: system/settings/settings.xml
 msgctxt "#39229"
-msgid "Use alternate method for audio track change"
+msgid "Use safe method for audio track change"
 msgstr ""
 
-#. Description of setting with label #39229 "Use alternate method for audio track change"
+#. Description of setting with label #39229 "Use safe method for audio track change"
 #: system/settings/settings.xml
 msgctxt "#39230"
-msgid "Only for WebOS 6+, uses a stream reload instead of changeAudioCodec API. This setting has no effect on WebOS <6."
+msgid "Does a full media restart when changing audio tracks. This should be more stable but slower."
 msgstr ""
 
 #empty strings from id 39231 to 39999
