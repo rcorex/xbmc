@@ -3021,22 +3021,8 @@ void CVideoPlayer::HandleMessages()
         }
         else
         {
-          if (NeedsVideoRestartOnAudioChange())
-          {
-            int64_t vidDemuxerId = m_CurrentVideo.demuxerId;
-            int vidId = m_CurrentVideo.id;
-            int vidSource = m_CurrentVideo.source;
-
-            CloseStream(m_CurrentVideo, false);
-            CloseStream(m_CurrentAudio, false);
-            OpenStream(m_CurrentVideo, vidDemuxerId, vidId, vidSource);
-            OpenStream(m_CurrentAudio, st.demuxerId, st.id, st.source);
-          }
-          else
-          {
-            CloseStream(m_CurrentAudio, false);
-            OpenStream(m_CurrentAudio, st.demuxerId, st.id, st.source);
-          }
+          CloseStream(m_CurrentAudio, false);
+          OpenStream(m_CurrentAudio, st.demuxerId, st.id, st.source);
           AdaptForcedSubtitles();
 
           CDVDMsgPlayerSeek::CMode mode;
