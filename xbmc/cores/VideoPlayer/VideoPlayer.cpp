@@ -3021,6 +3021,9 @@ void CVideoPlayer::HandleMessages()
         }
         else
         {
+          if (NeedsDemuxerFlushOnAudioChange() && m_pDemuxer)
+            m_pDemuxer->Flush();
+
           CloseStream(m_CurrentAudio, false);
           OpenStream(m_CurrentAudio, st.demuxerId, st.id, st.source);
           AdaptForcedSubtitles();

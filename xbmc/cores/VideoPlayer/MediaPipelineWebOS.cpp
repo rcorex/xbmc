@@ -355,27 +355,6 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
 
     FlushAudioMessages();
     FlushVideoMessages();
-
-    // The video stream is not closed/opened during an audio track change in Kodi core,
-    // so we manually trigger the necessary video initialization steps here.
-    {
-      std::scoped_lock lock(m_videoCriticalSection);
-      SetupBitstreamConverter(m_videoHint);
-
-      m_processInfo.SetVideoInterlaced(m_videoHint.interlaced);
-      m_processInfo.SetVideoDimensions(m_videoHint.width, m_videoHint.height);
-      m_processInfo.SetVideoDAR(static_cast<float>(m_videoHint.aspect));
-      if (m_videoHint.fpsrate && m_videoHint.fpsscale)
-      {
-        m_processInfo.SetVideoFps(static_cast<float>(m_videoHint.fpsrate) /
-                                  static_cast<float>(m_videoHint.fpsscale));
-      }
-      else
-      {
-        m_processInfo.SetVideoFps(1.0);
-      }
-    }
-
     if (m_bitstream)
       m_bitstream->ResetStartDecode();
     m_videoSyncPts = NO_PTS;

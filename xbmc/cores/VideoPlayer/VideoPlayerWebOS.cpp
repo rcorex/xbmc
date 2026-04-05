@@ -14,6 +14,7 @@
 #include "VideoPlayerVideoWebOS.h"
 #include "settings/Settings.h"
 #include "settings/SettingsComponent.h"
+#include "platform/linux/WebOSTVPlatformConfig.h"
 
 #include <algorithm>
 
@@ -87,6 +88,18 @@ void CVideoPlayerWebOS::GetVideoResolution(unsigned int& width, unsigned int& he
   }
   else
     CVideoPlayer::GetVideoResolution(width, height);
+}
+
+bool CVideoPlayerWebOS::NeedsDemuxerFlushOnAudioChange() const
+{
+  if (!m_mediaPipelineWebOS)
+    return false;
+
+  bool altMethod = CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
+      CSettings::SETTING_AUDIOOUTPUT_WEBOS_ALT_AUDIOTRACK_CHANGE);
+  unsigned int webOSVersion = WebOSTVPlatformConfig::GetWebOSVersion();
+
+  return webOSVersion < 6 || altMethod;
 }
 
 void CVideoPlayerWebOS::UpdateContent()
