@@ -280,9 +280,9 @@ private:
   /**
    * @brief Feed a video packet to the media API.
    * @param msg Demux packet wrapped in a CDVDMsg.
-   * @return true if the packet was consumed, false if not.
+   * @param lock The unique_lock currently held by the processing thread.
    */
-  bool FeedVideoData(const std::shared_ptr<CDVDMsg>& msg);
+  void FeedVideoData(const std::shared_ptr<CDVDMsg>& msg, std::unique_lock<CCriticalSection>& lock);
 
   /**
    * @brief Render subtitle and overlay graphics at given timestamp.
