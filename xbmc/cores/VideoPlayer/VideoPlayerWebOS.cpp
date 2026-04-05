@@ -50,7 +50,8 @@ void CVideoPlayerWebOS::CreatePlayers()
     if (!m_mediaPipelineWebOS)
     {
       m_mediaPipelineWebOS = std::make_unique<CMediaPipelineWebOS>(
-          *m_processInfo, m_renderManager, m_clock, m_messenger, m_overlayContainer, hasAudio);
+          *m_processInfo, m_renderManager, m_clock, m_messenger, m_overlayContainer, hasAudio,
+          m_pDemuxer.get());
       m_VideoPlayerVideo =
           std::make_unique<CVideoPlayerVideoWebOS>(*m_mediaPipelineWebOS, *m_processInfo);
       m_VideoPlayerAudio =
@@ -88,18 +89,6 @@ void CVideoPlayerWebOS::GetVideoResolution(unsigned int& width, unsigned int& he
   }
   else
     CVideoPlayer::GetVideoResolution(width, height);
-}
-
-bool CVideoPlayerWebOS::NeedsDemuxerFlushOnAudioChange() const
-{
-  if (!m_mediaPipelineWebOS)
-    return false;
-
-  bool altMethod = CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
-      CSettings::SETTING_AUDIOOUTPUT_WEBOS_ALT_AUDIOTRACK_CHANGE);
-  unsigned int webOSVersion = WebOSTVPlatformConfig::GetWebOSVersion();
-
-  return webOSVersion < 6 || altMethod;
 }
 
 void CVideoPlayerWebOS::UpdateContent()

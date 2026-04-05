@@ -41,6 +41,7 @@ class CAEEncoderFFmpeg;
 class CBitstreamConverter;
 class CRenderManager;
 class CDVDOverlayContainer;
+class CDVDDemux;
 class CDVDAudioCodec;
 class StarfishMediaAPIs;
 
@@ -65,7 +66,8 @@ public:
                                CDVDClock& clock,
                                CDVDMessageQueue& parent,
                                CDVDOverlayContainer& overlay,
-                               bool hasAudio);
+                      bool hasAudio,
+                      CDVDDemux* demuxer = nullptr);
 
   /**
    * @brief Destructor, cleans up and unloads streams.
@@ -443,6 +445,8 @@ private:
   CDVDClock& m_clock;
   CDVDOverlayContainer& m_overlayContainer;
   bool m_hasAudio{true};
+
+  CDVDDemux* m_demuxer{nullptr};
 
   std::atomic<bool> m_convertDovi{false};
 
