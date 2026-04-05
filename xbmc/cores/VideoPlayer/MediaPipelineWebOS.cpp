@@ -316,10 +316,7 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
     m_fedAudioPts = NO_PTS;
     m_started = false;
 
-    bool altMethod = CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
-        CSettings::SETTING_AUDIOOUTPUT_WEBOS_ALT_AUDIOTRACK_CHANGE);
-
-    if (m_webOSVersion >= 6 && !altMethod)
+    if (m_webOSVersion >= 6)
     {
       std::scoped_lock lock(m_audioCriticalSection);
       CVariant optInfo = CVariant::VariantTypeObject;
