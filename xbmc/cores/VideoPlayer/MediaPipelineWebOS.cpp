@@ -1380,8 +1380,9 @@ void CMediaPipelineWebOS::Process()
     {
       if (msg->IsType(CDVDMsg::DEMUXER_PACKET))
       {
-        while (!m_bStop && !FeedVideoData(msg))
+        if (!FeedVideoData(msg))
         {
+          m_messageQueueVideo.PutBack(msg);
           std::this_thread::sleep_for(10ms);
         }
       }
@@ -1504,6 +1505,7 @@ void CMediaPipelineWebOS::ProcessAudio()
 
             m_audioResample->m_inputSamples.emplace_back(buffer);
 
+            bool flushed = false;
             while (m_audioResample->ResampleBuffers())
             {
               for (const auto& buf : m_audioResample->m_outputSamples)
@@ -1543,19 +1545,38 @@ void CMediaPipelineWebOS::ProcessAudio()
                     m_audioEncoder->Encode(buf->pkt->data[0], buf->pkt->planes * buf->pkt->linesize,
                                            p->m_packet->pData, p->m_packet->iSize);
                 buf->Return();
-                while (!m_bStop && !FeedAudioData(p))
+
+                auto initialFedPts = m_fedAudioPts.load();
+                while (!m_bStop)
                 {
+                  if (FeedAudioData(p))
+                    break;
+
+                  lock.unlock();
                   std::this_thread::sleep_for(10ms);
+                  lock.lock();
+
+                  if (initialFedPts != NO_PTS && m_fedAudioPts.load() == NO_PTS)
+                  {
+                    flushed = true;
+                    break;
+                  }
                 }
+
+                if (flushed)
+                  break;
               }
               m_audioResample->m_outputSamples.clear();
+              if (flushed)
+                break;
             }
           }
         }
         else
         {
-          while (!m_bStop && !FeedAudioData(msg))
+          if (!FeedAudioData(msg))
           {
+            m_messageQueueAudio.PutBack(msg);
             std::this_thread::sleep_for(10ms);
           }
         }
