@@ -105,7 +105,14 @@ bool CAEEncoderFFmpeg::Initialize(AEAudioFormat& format, bool allow_planar_input
     if (bitrateSetting == 1) // High
       m_BitRate = 1536000;
     else if (bitrateSetting == 2) // Max
-      m_BitRate = 2048000;
+    {
+      if (format.m_sampleRate == 32000)
+        m_BitRate = 4096000;
+      else if (format.m_sampleRate == 44100)
+        m_BitRate = 5644800;
+      else
+        m_BitRate = 6144000;
+    }
 #endif
 
     codec = avcodec_find_encoder(m_CodecID);
