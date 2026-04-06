@@ -1215,8 +1215,6 @@ void CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg, std
     pipeline->sendSegmentEvent();
 
     m_pts = pts;
-    m_fedVideoPts = NO_PTS;
-    m_fedAudioPts = NO_PTS;
     m_started = false;
 
     SStartMsg startMsg{.timestamp = GetCurrentPts(),
