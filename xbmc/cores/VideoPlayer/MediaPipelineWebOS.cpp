@@ -448,6 +448,7 @@ void CMediaPipelineWebOS::Flush(bool sync)
   m_fedVideoPts = NO_PTS;
   m_started = false;
   m_flushed = true;
+  m_flushCount++;
 }
 
 bool CMediaPipelineWebOS::AcceptsAudioData() const
@@ -1158,6 +1159,7 @@ void CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg, std
   if (pts < 0ns)
     return;
 
+  auto initialFlushCount = m_flushCount.load();
   while (!m_bStop)
   {
     const std::chrono::nanoseconds fedVideoPts = m_fedVideoPts.load();
@@ -1166,7 +1168,7 @@ void CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg, std
       lock.unlock();
       std::this_thread::sleep_for(10ms);
       lock.lock();
-      if (m_fedVideoPts.load() == NO_PTS)
+      if (initialFlushCount != m_flushCount.load())
         return;
       continue;
     }
@@ -1257,11 +1259,10 @@ void CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg, std
 
       if (result.find("BufferFull") != std::string::npos)
       {
-        auto initialFedPts = m_fedVideoPts.load();
         lock.unlock();
         std::this_thread::sleep_for(10ms);
         lock.lock();
-        if (initialFedPts != NO_PTS && m_fedVideoPts.load() == NO_PTS)
+        if (initialFlushCount != m_flushCount.load())
           return;
         continue;
       }
@@ -1562,7 +1563,7 @@ void CMediaPipelineWebOS::ProcessAudio()
                                            p->m_packet->pData, p->m_packet->iSize);
                 buf->Return();
 
-                auto initialFedPts = m_fedAudioPts.load();
+                auto initialFlushCount = m_flushCount.load();
                 while (!m_bStop)
                 {
                   if (FeedAudioData(p))
@@ -1572,7 +1573,7 @@ void CMediaPipelineWebOS::ProcessAudio()
                   std::this_thread::sleep_for(10ms);
                   lock.lock();
 
-                  if (initialFedPts != NO_PTS && m_fedAudioPts.load() == NO_PTS)
+                  if (initialFlushCount != m_flushCount.load())
                   {
                     flushed = true;
                     break;
@@ -1590,7 +1591,7 @@ void CMediaPipelineWebOS::ProcessAudio()
         }
         else
         {
-          auto initialFedPts = m_fedAudioPts.load();
+          auto initialFlushCount = m_flushCount.load();
           while (!m_bStop)
           {
             if (FeedAudioData(msg))
@@ -1600,7 +1601,7 @@ void CMediaPipelineWebOS::ProcessAudio()
             std::this_thread::sleep_for(10ms);
             lock.lock();
 
-            if (initialFedPts != NO_PTS && m_fedAudioPts.load() == NO_PTS)
+            if (initialFlushCount != m_flushCount.load())
               break; // Stream flushed or seeked
           }
         }
