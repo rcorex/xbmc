@@ -257,6 +257,7 @@ void CMediaPipelineWebOS::UpdateVideoInfo()
 
 void CMediaPipelineWebOS::UpdateGUISounds(const bool playing)
 {
+/*
   IAE* activeAE = CServiceBroker::GetActiveAE();
   const int guiSoundMode = CServiceBroker::GetSettingsComponent()->GetSettings()->GetInt(
       CSettings::SETTING_AUDIOOUTPUT_GUISOUNDMODE);
@@ -268,6 +269,7 @@ void CMediaPipelineWebOS::UpdateGUISounds(const bool playing)
     activeAE->SetVolume(0.0);
   else
     activeAE->SetVolume(1.0);
+*/
 }
 
 std::string CMediaPipelineWebOS::GetAudioInfo()
