@@ -2004,7 +2004,7 @@ bool CApplication::PlayFile(CFileItem item, const std::string& player, bool bRes
       CUtil::ClearSubtitles();
 
 #if defined(TARGET_WEBOS)
-      CServiceBroker::GetGUIComponent()->GetAudioManager().Enable(false);
+      CServiceBroker::GetGUI()->GetAudioManager().Enable(false);
       if (!CServiceBroker::GetActiveAE()->IsSuspended())
         CServiceBroker::GetActiveAE()->Suspend();
 #endif
@@ -2017,7 +2017,7 @@ bool CApplication::PlayFile(CFileItem item, const std::string& player, bool bRes
       if (CServiceBroker::GetActiveAE()->IsSuspended())
       {
         CServiceBroker::GetActiveAE()->Resume();
-        CServiceBroker::GetGUIComponent()->GetAudioManager().Enable(true);
+        CServiceBroker::GetGUI()->GetAudioManager().Enable(true);
       }
 #endif
     }
@@ -2185,7 +2185,7 @@ void CApplication::StopPlaying()
       if (bIsPlayingVideo)
       {
         CServiceBroker::GetActiveAE()->Resume();
-        CServiceBroker::GetGUIComponent()->GetAudioManager().Enable(true);
+        CServiceBroker::GetGUI()->GetAudioManager().Enable(true);
       }
 #endif
     }
