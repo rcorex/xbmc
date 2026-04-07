@@ -1385,7 +1385,9 @@ void CMediaPipelineWebOS::Process()
         if (!FeedVideoData(msg))
         {
           m_messageQueueVideo.PutBack(msg);
+          videoLock.unlock();
           std::this_thread::sleep_for(10ms);
+          continue;
         }
       }
       else if (msg->IsType(CDVDMsg::PLAYER_REQUEST_STATE))
@@ -1567,7 +1569,9 @@ void CMediaPipelineWebOS::ProcessAudio()
           if (!FeedAudioData(msg))
           {
             m_messageQueueAudio.PutBack(msg);
+            lock.unlock();
             std::this_thread::sleep_for(10ms);
+            continue;
           }
         }
       }
