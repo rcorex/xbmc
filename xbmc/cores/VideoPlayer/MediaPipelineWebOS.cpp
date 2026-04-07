@@ -740,6 +740,7 @@ void CMediaPipelineWebOS::Flush(bool sync)
   m_fedVideoPts = NO_PTS;
   m_started = false;
   m_flushed = true;
+  m_lastConvertedPacket = nullptr;
 }
 
 bool CMediaPipelineWebOS::AcceptsAudioData() const
@@ -1515,11 +1516,16 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
   // we have an input buffer, fill it.
   if (data && m_bitstream)
   {
-    m_bitstream->Convert(data, static_cast<int>(size));
+    if (packet != m_lastConvertedPacket)
+    {
+      m_bitstream->Convert(data, static_cast<int>(size));
+      m_lastConvertedPacket = packet;
+    }
 
     if (!m_bitstream->CanStartDecode())
     {
       CLog::LogF(LOGDEBUG, "Waiting for keyframe (bitstream)");
+      m_lastConvertedPacket = nullptr;
       return true;
     }
 
@@ -1601,6 +1607,7 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
           CLog::LogF(LOGERROR, "Failed to play");
       }
 
+      m_lastConvertedPacket = nullptr;
       m_fedVideoPts = feedPts;
       m_videoStats.AddSampleBytes(packet->iSize);
       m_videoFeedErrorCount = 0;
@@ -1746,7 +1753,15 @@ void CMediaPipelineWebOS::Process()
     std::unique_lock videoLock(m_videoCriticalSection);
     std::shared_ptr<CDVDMsg> msg = nullptr;
     int priority = 0;
-    m_messageQueueVideo.Get(msg, 10ms, priority);
+    m_messageQueueVideo.Get(msg, 0ms, priority);
+
+    if (!msg)
+    {
+      videoLock.unlock();
+      std::this_thread::sleep_for(10ms);
+      continue;
+    }
+
     UpdateVideoInfo();
 
     if (msg)
@@ -1756,7 +1771,9 @@ void CMediaPipelineWebOS::Process()
         if (!FeedVideoData(msg))
         {
           m_messageQueueVideo.PutBack(msg);
+          videoLock.unlock();
           std::this_thread::sleep_for(10ms);
+          continue;
         }
       }
       else if (msg->IsType(CDVDMsg::PLAYER_REQUEST_STATE))
@@ -1792,7 +1809,15 @@ void CMediaPipelineWebOS::ProcessAudio()
 
     std::shared_ptr<CDVDMsg> msg = nullptr;
     int priority = 0;
-    m_messageQueueAudio.Get(msg, 10ms, priority);
+    m_messageQueueAudio.Get(msg, 0ms, priority);
+
+    if (!msg)
+    {
+      lock.unlock();
+      std::this_thread::sleep_for(10ms);
+      continue;
+    }
+
     UpdateAudioInfo();
     if (msg)
     {
@@ -1973,7 +1998,9 @@ void CMediaPipelineWebOS::ProcessAudio()
           if (!FeedAudioData(msg))
           {
             m_messageQueueAudio.PutBack(msg);
+            lock.unlock();
             std::this_thread::sleep_for(10ms);
+            continue;
           }
         }
       }
