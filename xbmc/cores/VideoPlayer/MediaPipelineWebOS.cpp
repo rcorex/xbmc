@@ -1211,8 +1211,9 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
 
     if (WebOSTVPlatformConfig::SupportsEAC3())
     {
+      // EAC3 maximum is 6 channels
       codecName = "AC3 PLUS";
-      optInfo["ac3PlusInfo"]["channels"] = transcodedChannels;
+      optInfo["ac3PlusInfo"]["channels"] = std::min(transcodedChannels, 6);
       optInfo["ac3PlusInfo"]["frequency"] = SelectTranscodingSampleRate(audioHint.samplerate) / 1000.0;
     }
     else
