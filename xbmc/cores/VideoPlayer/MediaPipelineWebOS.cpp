@@ -1410,7 +1410,6 @@ void CMediaPipelineWebOS::Process()
     }
     msg = nullptr;
     videoLock.unlock();
-    std::this_thread::yield();
   }
 }
 
@@ -1592,7 +1591,6 @@ void CMediaPipelineWebOS::ProcessAudio()
 
     msg = nullptr;
     lock.unlock();
-    std::this_thread::yield();
   }
 }
 
