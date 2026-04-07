@@ -449,6 +449,7 @@ void CMediaPipelineWebOS::Flush(bool sync)
   m_fedVideoPts = NO_PTS;
   m_started = false;
   m_flushed = true;
+  m_lastConvertedPacket = nullptr;
 }
 
 bool CMediaPipelineWebOS::AcceptsAudioData() const
@@ -1165,11 +1166,16 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
   // we have an input buffer, fill it.
   if (data && m_bitstream)
   {
-    m_bitstream->Convert(data, static_cast<int>(size));
+    if (packet != m_lastConvertedPacket)
+    {
+      m_bitstream->Convert(data, static_cast<int>(size));
+      m_lastConvertedPacket = packet;
+    }
 
     if (!m_bitstream->CanStartDecode())
     {
       CLog::LogF(LOGDEBUG, "Waiting for keyframe (bitstream)");
+      m_lastConvertedPacket = nullptr;
       return true;
     }
 
@@ -1238,6 +1244,7 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
 
     if (result.find("Ok") != std::string::npos)
     {
+      m_lastConvertedPacket = nullptr;
       m_fedVideoPts = feedPts;
       m_videoStats.AddSampleBytes(packet->iSize);
       const unsigned int level = GetQueueLevel(StreamType::VIDEO);
