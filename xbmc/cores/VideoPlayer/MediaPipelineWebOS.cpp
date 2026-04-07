@@ -1371,10 +1371,11 @@ void CMediaPipelineWebOS::Process()
 {
   while (!m_bStop)
   {
-    std::unique_lock videoLock(m_videoCriticalSection);
     std::shared_ptr<CDVDMsg> msg = nullptr;
     int priority = 0;
     m_messageQueueVideo.Get(msg, 10ms, priority);
+
+    std::unique_lock videoLock(m_videoCriticalSection);
     UpdateVideoInfo();
 
     if (msg)
@@ -1416,11 +1417,11 @@ void CMediaPipelineWebOS::ProcessAudio()
   m_audioStats.Start();
   while (!m_bStop)
   {
-    std::unique_lock lock(m_audioCriticalSection);
-
     std::shared_ptr<CDVDMsg> msg = nullptr;
     int priority = 0;
     m_messageQueueAudio.Get(msg, 10ms, priority);
+
+    std::unique_lock lock(m_audioCriticalSection);
     UpdateAudioInfo();
     if (msg)
     {
