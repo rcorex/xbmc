@@ -466,16 +466,10 @@ private:
   std::atomic<std::chrono::nanoseconds> m_videoSyncPts{NO_PTS};
   std::atomic<bool> m_audioReady{false};
 
-  std::atomic<std::chrono::nanoseconds> m_videoSyncPts{NO_PTS};
-  std::atomic<bool> m_audioReady{false};
-
   std::atomic<std::chrono::nanoseconds> m_fedAudioPts{NO_PTS};
   std::atomic<std::chrono::nanoseconds> m_fedVideoPts{NO_PTS};
   std::atomic<bool> m_started{false};
   double m_lastConvertedDts{DVD_NOPTS_VALUE};
-
-  int m_audioFeedErrorCount{0};
-  int m_videoFeedErrorCount{0};
 
   int m_audioFeedErrorCount{0};
   int m_videoFeedErrorCount{0};
