@@ -15,7 +15,6 @@
 #include "utils/JSONVariantWriter.h"
 #include "utils/Variant.h"
 #include "utils/log.h"
-
 namespace
 {
 constexpr const char* LUNA_GET_CONFIG = "luna://com.webos.service.config/getConfigs";
@@ -68,6 +67,7 @@ void WebOSTVPlatformConfig::Load()
   {
     CLog::LogF(LOGWARNING, "Luna get config request call failed");
   }
+
 }
 
 int WebOSTVPlatformConfig::GetWebOSVersion()
