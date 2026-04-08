@@ -13,6 +13,7 @@
 #include "DVDStreamInfo.h"
 #include "IVideoPlayer.h"
 #include "cores/AudioEngine/Utils/AELimiter.h"
+#include "settings/lib/ISettingCallback.h"
 #include "threads/Thread.h"
 #include "utils/BitstreamStats.h"
 
@@ -48,7 +49,7 @@ class StarfishMediaAPIs;
  * @class CMediaPipelineWebOS
  * @brief WebOS media pipeline for audio/video playback.
  */
-class CMediaPipelineWebOS final : public CThread
+class CMediaPipelineWebOS final : public CThread, public ISettingCallback
 {
 public:
   /**
@@ -255,6 +256,8 @@ public:
    */
   void GetVideoResolution(unsigned int& width, unsigned int& height) const;
 
+  void OnSettingChanged(const std::shared_ptr<const CSetting>& setting) override;
+
 protected:
   /**
    * @brief Video processing thread loop.
@@ -428,6 +431,7 @@ private:
   std::unique_ptr<ActiveAE::CActiveAEBufferPoolResample> m_audioResample{nullptr};
   std::unique_ptr<CAEEncoderFFmpeg> m_audioEncoder{nullptr};
   CAELimiter m_audioLimiter;
+  std::atomic<float> m_volumeAmplificationBoost{0.0f};
   std::atomic<unsigned long> m_droppedFrames{0};
   std::chrono::duration<double, std::ratio<1, DVD_TIME_BASE>> m_audioClock{0.0};
 
@@ -445,6 +449,16 @@ private:
 
   std::atomic<bool> m_videoClosed{true};
   std::atomic<bool> m_audioClosed{true};
+  std::atomic<bool> m_allowPassthrough{false};
+  std::atomic<bool> m_passthroughSetting{false};
+  std::atomic<int> m_processQuality{0};
+  std::atomic<double> m_mixSubLevel{0.0};
+  std::atomic<bool> m_stereoUpmix{false};
+  std::atomic<bool> m_maintainOriginalVolume{false};
+  std::atomic<bool> m_downmixStereo{false};
+  std::atomic<bool> m_downmixStereoOnly71{false};
+  std::atomic<bool> m_bypassDialnorm{false};
+  std::atomic<bool> m_bypassDialnormAtmos{true};
 
   std::atomic<std::chrono::nanoseconds> m_fedAudioPts{NO_PTS};
   std::atomic<std::chrono::nanoseconds> m_fedVideoPts{NO_PTS};

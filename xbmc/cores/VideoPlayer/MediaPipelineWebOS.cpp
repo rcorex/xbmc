@@ -43,8 +43,10 @@
 #include "platform/linux/WebOSTVPlatformConfig.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <exception>
 #include <map>
 #include <ranges>
@@ -87,6 +89,213 @@ constexpr std::chrono::nanoseconds MAX_FEED_AHEAD_TIME = 2000ms; //1300ms;
 constexpr unsigned int SVP_VERSION_30 = 30;
 constexpr unsigned int SVP_VERSION_40 = 40;
 
+// ATSC A/52 Table 5.13: Frame Size Code Table (words -> bytes requires * 2)
+constexpr uint16_t ac3_frame_size_tab[38][3] = {
+    { 64,   69,   96   }, { 64,   70,   96   }, { 80,   87,   120  }, { 80,   88,   120  },
+    { 96,   104,  144  }, { 96,   105,  144  }, { 112,  121,  168  }, { 112,  122,  168  },
+    { 128,  139,  192  }, { 128,  140,  192  }, { 160,  174,  240  }, { 160,  175,  240  },
+    { 192,  208,  288  }, { 192,  209,  288  }, { 224,  243,  336  }, { 224,  244,  336  },
+    { 256,  278,  384  }, { 256,  279,  384  }, { 320,  348,  480  }, { 320,  349,  480  },
+    { 384,  417,  576  }, { 384,  418,  576  }, { 448,  487,  672  }, { 448,  488,  672  },
+    { 512,  557,  768  }, { 512,  558,  768  }, { 640,  696,  960  }, { 640,  697,  960  },
+    { 768,  835,  1152 }, { 768,  836,  1152 }, { 896,  975,  1344 }, { 896,  976,  1344 },
+    { 1024, 1114, 1536 }, { 1024, 1115, 1536 }, { 1152, 1253, 1728 }, { 1152, 1254, 1728 },
+    { 1280, 1393, 1920 }, { 1280, 1394, 1920 }
+};
+
+// Generate the CRC16 table at compile-time for zero runtime initialization cost
+constexpr std::array<uint16_t, 256> GenerateAC3CRCTable()
+{
+  std::array<uint16_t, 256> table{};
+  for (int i = 0; i < 256; i++)
+  {
+    uint16_t crc = i << 8;
+    for (int j = 0; j < 8; j++)
+    {
+      if (crc & 0x8000)
+        crc = (crc << 1) ^ 0x8005;
+      else
+        crc <<= 1;
+    }
+    table[i] = crc;
+  }
+  return table;
+}
+
+constexpr auto ac3_crc_tab = GenerateAC3CRCTable();
+
+// Optimized Byte-by-Byte CRC calculation
+uint16_t CalculateAC3CRC(const uint8_t* data, size_t size)
+{
+  uint16_t crc = 0;
+  for (size_t i = 0; i < size; i++)
+    crc = (crc << 8) ^ ac3_crc_tab[(crc >> 8) ^ data[i]];
+  return crc;
+}
+
+// GF(2^16) polynomial helpers for AC3 CRC1 inversion
+// Polynomial P(x) = x^16 + x^15 + x^2 + 1 = 0x18005
+constexpr uint32_t MulPolyAC3(uint32_t a, uint32_t b)
+{
+  constexpr uint32_t poly = 0x18005;
+  uint32_t c = 0;
+  while (a)
+  {
+    if (a & 1) c ^= b;
+    a >>= 1;
+    b <<= 1;
+    if (b & 0x10000) b ^= poly;
+  }
+  return c & 0xFFFF;
+}
+
+constexpr uint32_t PowPolyAC3(uint32_t a, unsigned int n)
+{
+  uint32_t r = 1;
+  while (n)
+  {
+    if (n & 1) r = MulPolyAC3(r, a);
+    a = MulPolyAC3(a, a);
+    n >>= 1;
+  }
+  return r;
+}
+
+int GetDialnormOffsetAC3(uint8_t acmod)
+{
+  int offset = 16 + 16 + 2 + 6 + 5 + 3 + 3;
+  if ((acmod & 1) && (acmod != 1))
+    offset += 2;
+  if (acmod & 4)
+    offset += 2;
+  if (acmod == 2)
+    offset += 2;
+  offset += 1;
+  return offset;
+}
+
+void DefeatDialnorm(uint8_t* data, size_t size)
+{
+  if (size < 8)
+    return;
+
+  size_t i = 0;
+
+  while (i <= size - 8)
+  {
+    if (data[i] == 0x0B && data[i + 1] == 0x77)
+    {
+      uint8_t bsid = data[i + 5] >> 3;
+      int offset = -1;
+      size_t frame_size = 0;
+
+      if (bsid <= 10)
+      {
+        uint8_t fscod = data[i + 4] >> 6;
+        uint8_t frmsizcod = (data[i + 4] & 0x3F);
+        if (fscod < 3 && frmsizcod < 38)
+        {
+          frame_size = ac3_frame_size_tab[frmsizcod][fscod] * 2;
+          uint8_t acmod = data[i + 6] >> 5;
+          if (acmod == 0) // AC-3 Dual Mono (1+1)
+          {
+            i += frame_size;
+            continue;
+          }
+          offset = GetDialnormOffsetAC3(acmod);
+        }
+      }
+      else
+      {
+        uint16_t frmsiz = ((data[i + 2] & 0x07) << 8) | data[i + 3];
+        frame_size = (frmsiz + 1) * 2;
+
+        uint8_t strmtyp = data[i + 2] >> 6;
+        if (strmtyp == 1 || strmtyp == 3)
+        {
+          i += frame_size;
+          // Safely jump over the dependent stream
+          continue;
+        }
+
+        offset = 45; // E-AC3 dialnorm is consistently at bit 45
+      }
+
+      if (offset != -1 && frame_size > 0)
+      {
+        // Ensure the entire frame is present in this buffer before patching
+        if (i + frame_size > size)
+        {
+          break; // Fragmented frame, safely exit buffer processing
+        }
+
+        size_t byte_idx = i + offset / 8;
+        int bit_idx = offset % 8;
+
+        int bits_in_first = 8 - bit_idx;
+        if (bits_in_first >= 5)
+        {
+          data[byte_idx] |= (0x1F << (bits_in_first - 5));
+        }
+        else
+        {
+          data[byte_idx] |= ((1 << bits_in_first) - 1);
+          int bits_in_second = 5 - bits_in_first;
+          data[byte_idx + 1] |= (((1 << bits_in_second) - 1) << (8 - bits_in_second));
+        }
+
+        if (bsid <= 10)
+        {
+          // CRC1: self-verifying CRC — CRC(bytes[2..frame_58−1]) must equal 0.
+          // Polynomial inversion in GF(2^16) is required.
+          size_t frame_size_58 = ((frame_size >> 2) + (frame_size >> 4)) << 1;
+
+          if (frame_size_58 > 4 && i + frame_size_58 <= size)
+          {
+            data[i + 2] = 0;
+            data[i + 3] = 0;
+            const uint16_t raw_crc1 = CalculateAC3CRC(data + i + 2, frame_size_58 - 2);
+
+            // Invert: find crc1 s.t. CRC([bytes[2..frame_58−1]]) == 0
+            const unsigned int power = static_cast<unsigned int>(8 * (frame_size_58 - 2));
+            const unsigned int inv_power = 32767 - (power % 32767);
+            const uint16_t crc1 = static_cast<uint16_t>(MulPolyAC3(PowPolyAC3(2, inv_power), raw_crc1));
+
+            data[i + 2] = (crc1 >> 8) & 0xFF;
+            data[i + 3] = crc1 & 0xFF;
+          }
+
+          if (frame_size > 4 && i + frame_size <= size)
+          {
+            const uint16_t new_crc2 = CalculateAC3CRC(data + i + 2, frame_size - 4);
+            data[i + frame_size - 2] = (new_crc2 >> 8) & 0xFF;
+            data[i + frame_size - 1] = new_crc2 & 0xFF;
+          }
+        }
+        else
+        {
+          // E-AC-3 CRC Recalculation (bsid > 10)
+          // E-AC-3 has a single CRC at the end of the syncframe.
+          // Skips the 2-byte syncword (+ 2) and excludes the 2-byte CRC itself (- 4).
+          if (frame_size > 4 && i + frame_size <= size)
+          {
+            const uint16_t new_eac3_crc = CalculateAC3CRC(data + i + 2, frame_size - 4);
+
+            data[i + frame_size - 2] = (new_eac3_crc >> 8) & 0xFF;
+            data[i + frame_size - 1] = new_eac3_crc & 0xFF;
+          }
+        }
+
+        // Advance parser safely to the next frame
+        i += frame_size;
+        continue;
+      }
+    }
+
+    i++;
+  }
+}
+
 auto ms_codecMap = std::map<AVCodecID, std::string_view>({{AV_CODEC_ID_VP8, "VP8"},
                                                           {AV_CODEC_ID_VP9, "VP9"},
                                                           {AV_CODEC_ID_AVS, "H264"},
@@ -97,6 +306,7 @@ auto ms_codecMap = std::map<AVCodecID, std::string_view>({{AV_CODEC_ID_VP8, "VP8
                                                           {AV_CODEC_ID_AC3, "AC3"},
                                                           {AV_CODEC_ID_EAC3, "AC3 PLUS"},
                                                           {AV_CODEC_ID_AC4, "AC4"},
+                                                          {AV_CODEC_ID_DTS, "DTS"},
                                                           {AV_CODEC_ID_OPUS, "OPUS"},
                                                           {AV_CODEC_ID_MP3, "MP3"},
                                                           {AV_CODEC_ID_AAC, "AAC"},
@@ -205,6 +415,28 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
   if (WebOSTVPlatformConfig::SupportsDTS())
     ms_codecMap.emplace(AV_CODEC_ID_DTS, "DTS");
   m_processInfo.GetVideoBufferManager().ReleasePools();
+
+  const std::shared_ptr<CSettings> settings = CServiceBroker::GetSettingsComponent()->GetSettings();
+  m_passthroughSetting = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH);
+  m_processQuality = settings->GetInt(CSettings::SETTING_AUDIOOUTPUT_PROCESSQUALITY);
+  m_mixSubLevel = settings->GetNumber(CSettings::SETTING_AUDIOOUTPUT_MIXSUBLEVEL);
+  m_stereoUpmix = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_STEREOUPMIX);
+  m_maintainOriginalVolume = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_MAINTAINORIGINALVOLUME);
+
+  m_downmixStereo = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO);
+  m_downmixStereoOnly71 = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71);
+  m_bypassDialnorm = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM);
+  m_bypassDialnormAtmos = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS);
+
+  settings->RegisterCallback(this, {CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH,
+                                    CSettings::SETTING_AUDIOOUTPUT_PROCESSQUALITY,
+                                    CSettings::SETTING_AUDIOOUTPUT_MIXSUBLEVEL,
+                                    CSettings::SETTING_AUDIOOUTPUT_STEREOUPMIX,
+                                    CSettings::SETTING_AUDIOOUTPUT_MAINTAINORIGINALVOLUME,
+                                    CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO,
+                                    CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71,
+                                    CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM,
+                                    CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS});
 }
 
 CMediaPipelineWebOS::~CMediaPipelineWebOS()
@@ -212,6 +444,33 @@ CMediaPipelineWebOS::~CMediaPipelineWebOS()
   Unload(false);
   if (const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer))
     buffer->ResetAcbHandle();
+
+  CServiceBroker::GetSettingsComponent()->GetSettings()->UnregisterCallback(this);
+}
+
+void CMediaPipelineWebOS::OnSettingChanged(const std::shared_ptr<const CSetting>& setting)
+{
+  const std::string& settingId = setting->GetId();
+  const std::shared_ptr<CSettings> settings = CServiceBroker::GetSettingsComponent()->GetSettings();
+
+  if (settingId == CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH)
+    m_passthroughSetting = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH);
+  else if (settingId == CSettings::SETTING_AUDIOOUTPUT_PROCESSQUALITY)
+    m_processQuality = settings->GetInt(CSettings::SETTING_AUDIOOUTPUT_PROCESSQUALITY);
+  else if (settingId == CSettings::SETTING_AUDIOOUTPUT_MIXSUBLEVEL)
+    m_mixSubLevel = settings->GetNumber(CSettings::SETTING_AUDIOOUTPUT_MIXSUBLEVEL);
+  else if (settingId == CSettings::SETTING_AUDIOOUTPUT_STEREOUPMIX)
+    m_stereoUpmix = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_STEREOUPMIX);
+  else if (settingId == CSettings::SETTING_AUDIOOUTPUT_MAINTAINORIGINALVOLUME)
+    m_maintainOriginalVolume = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_MAINTAINORIGINALVOLUME);
+  else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO)
+    m_downmixStereo = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO);
+  else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71)
+    m_downmixStereoOnly71 = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71);
+  else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM)
+    m_bypassDialnorm = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM);
+  else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS)
+    m_bypassDialnormAtmos = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS);
 }
 
 int CMediaPipelineWebOS::GetVideoBitrate() const
@@ -287,6 +546,16 @@ bool CMediaPipelineWebOS::Supports(const AVCodecID codec, const int profile)
   if ((codec == AV_CODEC_ID_H264 || codec == AV_CODEC_ID_AVS || codec == AV_CODEC_ID_CAVS) &&
       profile == AV_PROFILE_H264_HIGH_10)
     return false;
+
+  if (codec == AV_CODEC_ID_DTS)
+  {
+    if (profile == AV_PROFILE_DTS_HD_HRA || profile == AV_PROFILE_DTS_HD_MA ||
+        profile == AV_PROFILE_DTS_HD_MA_X || profile == AV_PROFILE_DTS_HD_MA_X_IMAX)
+      return WebOSTVPlatformConfig::SupportsDTSHD();
+
+    return WebOSTVPlatformConfig::SupportsDTS();
+  }
+
   return ms_codecMap.contains(codec);
 }
 
@@ -317,7 +586,10 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
     m_fedAudioPts = NO_PTS;
     m_started = false;
 
-    if (m_webOSVersion >= 6)
+    bool altMethod = CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
+        CSettings::SETTING_AUDIOOUTPUT_WEBOS_ALT_AUDIOTRACK_CHANGE);
+
+    if (m_webOSVersion >= 6 && !altMethod)
     {
       std::scoped_lock lock(m_audioCriticalSection);
       CVariant optInfo = CVariant::VariantTypeObject;
@@ -335,15 +607,22 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
 
       m_processInfo.SetAudioChannels(CAEUtil::GetAEChannelLayout(audioHint.channellayout));
       m_processInfo.SetAudioSampleRate(audioHint.samplerate);
-      m_processInfo.SetAudioBitsPerSample(audioHint.bitspersample);
       if (Supports(audioHint.codec, audioHint.profile))
+      {
+        m_processInfo.SetAudioBitsPerSample(audioHint.bitspersample);
         m_processInfo.SetAudioDecoderName("starfish-" +
                                           std::string(ms_codecMap.at(audioHint.codec).data()));
+      }
       else if (m_audioEncoder)
       {
+        m_processInfo.SetAudioBitsPerSample(m_audioEncoder->GetBitRate());
         m_processInfo.SetAudioDecoderName((m_audioEncoder->GetCodecID() == AV_CODEC_ID_EAC3)
                                               ? "starfish-EAC3 (transcoding)"
                                               : "starfish-AC3 (transcoding)");
+      }
+      else
+      {
+        m_processInfo.SetAudioBitsPerSample(audioHint.bitspersample);
       }
       m_audioClosed = false;
       return true;
@@ -816,15 +1095,22 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
     else
       m_processInfo.SetAudioChannels(CAEUtil::GuessChLayout(audioHint.channels));
     m_processInfo.SetAudioSampleRate(audioHint.samplerate);
-    m_processInfo.SetAudioBitsPerSample(audioHint.bitspersample);
     if (Supports(audioHint.codec, audioHint.profile))
+    {
+      m_processInfo.SetAudioBitsPerSample(audioHint.bitspersample);
       m_processInfo.SetAudioDecoderName(std::string("starfish-") +
                                         ms_codecMap.at(audioHint.codec).data());
+    }
     else if (m_audioEncoder)
     {
+      m_processInfo.SetAudioBitsPerSample(m_audioEncoder->GetBitRate());
       m_processInfo.SetAudioDecoderName((m_audioEncoder->GetCodecID() == AV_CODEC_ID_EAC3)
                                             ? "starfish-EAC3 (transcoding)"
                                             : "starfish-AC3 (transcoding)");
+    }
+    else
+    {
+      m_processInfo.SetAudioBitsPerSample(audioHint.bitspersample);
     }
   }
 
@@ -880,9 +1166,8 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
   };
 
   std::string codecName = "AC3";
-  const bool allowPassthrough = CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
-                                    CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH) ||
-                                audioHint.cryptoSession;
+  const bool allowPassthrough = m_passthroughSetting || audioHint.cryptoSession;
+  m_allowPassthrough = allowPassthrough;
   const bool supported = Supports(audioHint.codec, audioHint.profile);
 
   if (!supported && audioHint.cryptoSession)
@@ -902,10 +1187,31 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
     }
     m_audioEncoder = std::make_unique<CAEEncoderFFmpeg>();
 
+    int transcodedChannels = m_audioCodec->GetFormat().m_channelLayout.Count();
+    if (transcodedChannels == 0)
+      transcodedChannels = audioHint.channels;
+
+    if (m_downmixStereo)
+    {
+      bool only71 = m_downmixStereoOnly71;
+      if (!only71 || transcodedChannels > 6)
+      {
+        transcodedChannels = 2;
+      }
+    }
+
     if (WebOSTVPlatformConfig::SupportsEAC3())
     {
+      // EAC3 maximum is 6 channels
       codecName = "AC3 PLUS";
-      setAC3PlusInfo(audioHint, optInfo);
+      optInfo["ac3PlusInfo"]["channels"] = std::min(transcodedChannels, 6);
+      optInfo["ac3PlusInfo"]["frequency"] = SelectTranscodingSampleRate(audioHint.samplerate) / 1000.0;
+    }
+    else
+    {
+      // AC3 maximum is 6 channels
+      optInfo["ac3Info"]["channels"] = std::min(transcodedChannels, 6);
+      optInfo["ac3Info"]["frequency"] = SelectTranscodingSampleRate(audioHint.samplerate) / 1000.0;
     }
 
     return codecName;
@@ -916,6 +1222,18 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
   {
     setAC3PlusInfo(audioHint, optInfo);
   }
+
+    if (m_downmixStereo)
+    {
+      bool only71 = m_downmixStereoOnly71;
+      if (!only71 || audioHint.channels > 6)
+      {
+        if (codecName == "AC3 PLUS")
+          optInfo["ac3PlusInfo"]["channels"] = 2;
+        else if (codecName == "AC3")
+          optInfo["ac3Info"]["channels"] = 2;
+      }
+    }
   if (audioHint.codec == AV_CODEC_ID_AC4)
   {
     optInfo["ac4Info"]["channels"] = audioHint.channels;
@@ -926,11 +1244,8 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
     optInfo["dtsInfo"]["channels"] = audioHint.channels;
     optInfo["dtsInfo"]["frequency"] = audioHint.samplerate / 1000.0;
 
-    if (audioHint.profile == AV_PROFILE_DTS_ES)
+    if (audioHint.profile == AV_PROFILE_DTS_EXPRESS)
       codecName = "DTSE";
-    if (audioHint.profile == AV_PROFILE_DTS_HD_MA_X ||
-        audioHint.profile == AV_PROFILE_DTS_HD_MA_X_IMAX)
-      codecName = "DTSX";
   }
   else if (audioHint.codec == AV_CODEC_ID_OPUS)
   {
@@ -1176,7 +1491,7 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
       m_bitstream->Convert(data, static_cast<int>(size));
     }
 
-    if (!m_bitstream->CanStartDecode())
+    if (m_flushed && !m_bitstream->CanStartDecode() && !packet->recoveryPoint)
     {
       CLog::LogF(LOGDEBUG, "Waiting for keyframe (bitstream)");
       return true;
@@ -1376,7 +1691,8 @@ unsigned int CMediaPipelineWebOS::GetQueueLevel(const StreamType type) const
 
 void CMediaPipelineWebOS::SetDynamicRangeCompression(const long drc)
 {
-  m_audioLimiter.SetAmplification(std::pow(10.0f, static_cast<float>(drc) / 2000.0f));
+  m_audioLimiter.SetAmplification(std::pow(
+      10.0f, (static_cast<float>(drc) / 100.0f + m_volumeAmplificationBoost.load()) / 20.0f));
 }
 
 void CMediaPipelineWebOS::Process()
@@ -1466,6 +1782,26 @@ void CMediaPipelineWebOS::ProcessAudio()
       {
         const DemuxPacket* packet =
             std::static_pointer_cast<CDVDMsgDemuxerPacket>(msg)->GetPacket();
+
+        if (packet->iStreamId != RESAMPLED_STREAM_ID)
+        {
+          if (m_audioHint.codec == AV_CODEC_ID_AC3 || m_audioHint.codec == AV_CODEC_ID_EAC3)
+          {
+            if (m_bypassDialnorm)
+            {
+              bool shouldDefeat = true;
+              if (m_audioHint.profile == AV_PROFILE_EAC3_DDP_ATMOS)
+              {
+                if (!m_bypassDialnormAtmos)
+                  shouldDefeat = false;
+              }
+
+              if (shouldDefeat)
+                DefeatDialnorm(packet->pData, packet->iSize);
+            }
+          }
+        }
+
         if (m_audioCodec && packet->iStreamId != RESAMPLED_STREAM_ID)
         {
           if (!m_audioCodec->AddData(*packet))
@@ -1483,20 +1819,34 @@ void CMediaPipelineWebOS::ProcessAudio()
               dstFormat.m_streamInfo.m_type = WebOSTVPlatformConfig::SupportsEAC3()
                                                   ? CAEStreamInfo::DataType::STREAM_TYPE_EAC3
                                                   : CAEStreamInfo::DataType::STREAM_TYPE_AC3;
+              if (m_downmixStereo)
+              {
+                bool only71 = m_downmixStereoOnly71;
+                if (!only71 || dstFormat.m_channelLayout.Count() > 6)
+                  dstFormat.m_channelLayout = CAEChannelInfo(AE_CH_LAYOUT_2_0);
+              }
               m_audioEncoder->Initialize(dstFormat, true);
-              const std::shared_ptr<CSettings> settings =
-                  CServiceBroker::GetSettingsComponent()->GetSettings();
-              auto quality = static_cast<AEQuality>(
-                  settings->GetInt(CSettings::SETTING_AUDIOOUTPUT_PROCESSQUALITY));
+              auto quality = static_cast<AEQuality>(m_processQuality.load());
               m_audioResample = std::make_unique<ActiveAE::CActiveAEBufferPoolResample>(
                   m_audioCodec->GetFormat(), dstFormat, quality);
               m_audioLimiter.SetSamplerate(dstFormat.m_sampleRate);
-              const double sublevel =
-                  settings->GetNumber(CSettings::SETTING_AUDIOOUTPUT_MIXSUBLEVEL) / 100.0;
-              m_audioResample->Create(
-                  0, false, settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_STEREOUPMIX),
-                  !settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_MAINTAINORIGINALVOLUME),
-                  static_cast<float>(sublevel));
+              float volumeAmplification = m_processInfo.GetVideoSettings().m_VolumeAmplification;
+              float boost = 0.0f;
+
+              if ((m_audioHint.codec == AV_CODEC_ID_AC3 || m_audioHint.codec == AV_CODEC_ID_EAC3) &&
+                  m_audioCodec->GetFormat().m_channelLayout.Count() > 2 &&
+                  dstFormat.m_channelLayout == CAEChannelInfo(AE_CH_LAYOUT_2_0))
+              {
+                boost = 6.0f; //boost for AC3 & EAC3
+              }
+
+              m_volumeAmplificationBoost.store(boost);
+              volumeAmplification += boost;
+              m_audioLimiter.SetAmplification(std::pow(10.0f, volumeAmplification / 20.0f));
+              const double sublevel = m_mixSubLevel.load() / 100.0;
+              m_audioResample->Create(0, false, m_stereoUpmix.load(),
+                                      !m_maintainOriginalVolume.load(),
+                                      static_cast<float>(sublevel));
               m_audioResample->FillBuffer();
 
               AEAudioFormat input = m_audioCodec->GetFormat();
@@ -1508,9 +1858,11 @@ void CMediaPipelineWebOS::ProcessAudio()
               m_processInfo.SetAudioDecoderName((m_audioEncoder->GetCodecID() == AV_CODEC_ID_EAC3)
                                                     ? "starfish-EAC3 (transcoding)"
                                                     : "starfish-AC3 (transcoding)");
-              m_processInfo.SetAudioChannels(frame.format.m_channelLayout);
-              m_processInfo.SetAudioSampleRate(frame.format.m_sampleRate);
-              m_processInfo.SetAudioBitsPerSample(frame.bits_per_sample);
+              m_processInfo.SetAudioChannels(dstFormat.m_channelLayout);
+              m_processInfo.SetAudioSampleRate(dstFormat.m_sampleRate);
+              m_processInfo.SetAudioBitsPerSample(
+                  m_audioEncoder ? m_audioEncoder->GetBitRate()
+                                 : CAEUtil::DataFormatToBits(dstFormat.m_dataFormat));
             }
 
             using dvdTime = std::ratio<1, DVD_TIME_BASE>;
@@ -1557,8 +1909,7 @@ void CMediaPipelineWebOS::ProcessAudio()
                     CDVDDemuxUtils::AllocateDemuxPacket(maxSize));
 
                 const bool passthrough =
-                    CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
-                        CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH);
+                    m_allowPassthrough && !(m_audioEncoder && buf->pkt->config.channels == 2);
                 if (!passthrough && buf->pkt->config.fmt == AV_SAMPLE_FMT_FLTP)
                 {
                   float volume = CServiceBroker::GetAppComponents()
