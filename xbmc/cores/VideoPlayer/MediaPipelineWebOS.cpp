@@ -382,6 +382,7 @@ bool CMediaPipelineWebOS::OpenVideoStream(CDVDStreamInfo hint)
     m_fedVideoPts = NO_PTS;
     m_started = false;
     m_videoClosed = false;
+    m_lastConvertedDts = DVD_NOPTS_VALUE;
     if (m_videoHint.codec == hint.codec && m_videoHint.hdrType == hint.hdrType)
     {
       std::scoped_lock lock(m_videoCriticalSection);
@@ -464,6 +465,7 @@ void CMediaPipelineWebOS::Flush(bool sync)
   m_fedVideoPts = NO_PTS;
   m_started = false;
   m_flushed = true;
+  m_lastConvertedDts = DVD_NOPTS_VALUE;
 }
 
 bool CMediaPipelineWebOS::AcceptsAudioData() const
@@ -864,6 +866,7 @@ void CMediaPipelineWebOS::Unload(const bool sync)
   m_fedAudioPts = NO_PTS;
   m_fedVideoPts = NO_PTS;
   m_started = false;
+  m_lastConvertedDts = DVD_NOPTS_VALUE;
 
   if (sync)
   {
@@ -1200,10 +1203,16 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
   uint8_t* data = packet->pData;
   size_t size = packet->iSize;
 
+  bool isRetry = (packet->dts != DVD_NOPTS_VALUE && packet->dts == m_lastConvertedDts);
+  m_lastConvertedDts = DVD_NOPTS_VALUE;
+
   // we have an input buffer, fill it.
   if (data && m_bitstream)
   {
-    m_bitstream->Convert(data, static_cast<int>(size));
+    if (!isRetry)
+    {
+      m_bitstream->Convert(data, static_cast<int>(size));
+    }
 
     if (!m_bitstream->CanStartDecode())
     {
@@ -1302,7 +1311,10 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
     }
 
     if (result.find("BufferFull") != std::string::npos)
+    {
+      m_lastConvertedDts = packet->dts;
       return false;
+    }
 
     CLog::LogF(LOGWARNING, "Buffer submit returned error: {}", result);
     if (++m_videoFeedErrorCount > 10)
@@ -1437,7 +1449,15 @@ void CMediaPipelineWebOS::Process()
     std::unique_lock videoLock(m_videoCriticalSection);
     std::shared_ptr<CDVDMsg> msg = nullptr;
     int priority = 0;
-    m_messageQueueVideo.Get(msg, 10ms, priority);
+    m_messageQueueVideo.Get(msg, 0ms, priority);
+
+    if (!msg)
+    {
+      videoLock.unlock();
+      std::this_thread::sleep_for(10ms);
+      continue;
+    }
+
     UpdateVideoInfo();
 
     if (msg)
@@ -1447,7 +1467,9 @@ void CMediaPipelineWebOS::Process()
         if (!FeedVideoData(msg))
         {
           m_messageQueueVideo.PutBack(msg);
+          videoLock.unlock();
           std::this_thread::sleep_for(10ms);
+          continue;
         }
       }
       else if (msg->IsType(CDVDMsg::PLAYER_REQUEST_STATE))
@@ -1462,6 +1484,14 @@ void CMediaPipelineWebOS::Process()
         CLog::LogF(LOGDEBUG, "Received video message: {}", msg->GetMessageType());
         if (!m_mediaAPIs->pushEOS())
           CLog::LogF(LOGERROR, "Failed to push EOS message");
+      }
+      else if (msg->IsType(CDVDMsg::GENERAL_SYNCHRONIZE))
+      {
+        if (std::static_pointer_cast<CDVDMsgGeneralSynchronize>(msg)->Wait(100ms, SYNCSOURCE_VIDEO))
+          CLog::Log(LOGDEBUG, "CDVDMsg::GENERAL_SYNCHRONIZE");
+        else
+          // push back as prio message, to process other prio messages
+          m_messageQueueVideo.Put(msg, 1);
       }
       else
       {
@@ -1483,7 +1513,15 @@ void CMediaPipelineWebOS::ProcessAudio()
 
     std::shared_ptr<CDVDMsg> msg = nullptr;
     int priority = 0;
-    m_messageQueueAudio.Get(msg, 10ms, priority);
+    m_messageQueueAudio.Get(msg, 0ms, priority);
+
+    if (!msg)
+    {
+      lock.unlock();
+      std::this_thread::sleep_for(10ms);
+      continue;
+    }
+
     UpdateAudioInfo();
     if (msg)
     {
@@ -1629,7 +1667,9 @@ void CMediaPipelineWebOS::ProcessAudio()
           if (!FeedAudioData(msg))
           {
             m_messageQueueAudio.PutBack(msg);
+            lock.unlock();
             std::this_thread::sleep_for(10ms);
+            continue;
           }
         }
       }
@@ -1641,6 +1681,14 @@ void CMediaPipelineWebOS::ProcessAudio()
         };
         m_messageQueueParent.Put(
             std::make_shared<CDVDMsgType<SStateMsg>>(CDVDMsg::PLAYER_REPORT_STATE, stateMsg));
+      }
+      else if (msg->IsType(CDVDMsg::GENERAL_SYNCHRONIZE))
+      {
+        if (std::static_pointer_cast<CDVDMsgGeneralSynchronize>(msg)->Wait(100ms, SYNCSOURCE_AUDIO))
+          CLog::Log(LOGDEBUG, "CDVDMsg::GENERAL_SYNCHRONIZE");
+        else
+          // push back as prio message, to process other prio messages
+          m_messageQueueAudio.Put(msg, 1);
       }
       else
       {
