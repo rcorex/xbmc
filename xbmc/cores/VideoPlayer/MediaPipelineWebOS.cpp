@@ -1219,7 +1219,11 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
   {
     if (m_hasAudio && !m_audioClosed && !m_audioReady)
     {
-      m_videoSyncPts = pts;
+      // Optimized: Only write to the atomic if it hasn't been set yet
+      if (m_videoSyncPts.load() == NO_PTS)
+      {
+        m_videoSyncPts = pts;
+      }
       return false; // Wait until audio is ready
     }
 
