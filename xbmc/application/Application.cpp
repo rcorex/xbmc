@@ -2000,27 +2000,7 @@ bool CApplication::PlayFile(CFileItem item, const std::string& player, bool bRes
     stackHelper->Clear();
 
     if (VIDEO::IsVideo(item))
-    {
       CUtil::ClearSubtitles();
-
-#if defined(TARGET_WEBOS)
-      CServiceBroker::GetGUI()->GetAudioManager().Enable(false);
-      if (!CServiceBroker::GetActiveAE()->IsSuspended())
-        CServiceBroker::GetActiveAE()->Suspend();
-#endif
-    }
-    else
-    {
-#if defined(TARGET_WEBOS)
-      // If we are transitioning from video to audio in a seamless playlist,
-      // ensure we resume the audio engine and GUI sounds.
-      if (CServiceBroker::GetActiveAE()->IsSuspended())
-      {
-        CServiceBroker::GetActiveAE()->Resume();
-        CServiceBroker::GetGUI()->GetAudioManager().Enable(true);
-      }
-#endif
-    }
   }
 
   using enum CApplicationPlay::GatherPlaybackDetailsResult;
@@ -2168,8 +2148,6 @@ void CApplication::StopPlaying()
     const auto appPlayer = GetComponent<CApplicationPlayer>();
     if (appPlayer->IsPlaying())
     {
-      bool bIsPlayingVideo = appPlayer->IsPlayingVideo();
-
       appPlayer->ClosePlayer();
 
       // turn off visualisation window when stopping
@@ -2180,14 +2158,6 @@ void CApplication::StopPlaying()
         gui->GetWindowManager().PreviousWindow();
 
       g_partyModeManager.Disable();
-
-#if defined(TARGET_WEBOS)
-      if (bIsPlayingVideo)
-      {
-        CServiceBroker::GetActiveAE()->Resume();
-        CServiceBroker::GetGUI()->GetAudioManager().Enable(true);
-      }
-#endif
     }
   }
 }
