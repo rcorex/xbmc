@@ -449,6 +449,7 @@ private:
   std::atomic<std::chrono::nanoseconds> m_fedAudioPts{NO_PTS};
   std::atomic<std::chrono::nanoseconds> m_fedVideoPts{NO_PTS};
   std::atomic<bool> m_started{false};
+  double m_lastConvertedDts{DVD_NOPTS_VALUE};
 
   std::mutex m_audioInfoMutex;
   std::string m_audioInfo;
