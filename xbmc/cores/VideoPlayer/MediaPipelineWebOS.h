@@ -415,6 +415,7 @@ private:
   std::atomic<bool> m_loaded{false};
   std::atomic<bool> m_flushed{false};
   std::atomic<bool> m_subtitle{false};
+  std::atomic<bool> m_pendingPlay{false};
   std::atomic<double> m_subtitleDelay{0.0};
   std::atomic<bool> m_needsTranscode{false};
   std::atomic<std::chrono::nanoseconds> m_pts{std::chrono::nanoseconds(0)};
@@ -443,13 +444,21 @@ private:
   CDVDOverlayContainer& m_overlayContainer;
   bool m_hasAudio{true};
 
+  std::atomic<bool> m_convertDovi{false};
+
   std::atomic<bool> m_videoClosed{true};
   std::atomic<bool> m_audioClosed{true};
+
+  std::atomic<std::chrono::nanoseconds> m_videoSyncPts{NO_PTS};
+  std::atomic<bool> m_audioReady{false};
 
   std::atomic<std::chrono::nanoseconds> m_fedAudioPts{NO_PTS};
   std::atomic<std::chrono::nanoseconds> m_fedVideoPts{NO_PTS};
   std::atomic<bool> m_started{false};
   double m_lastConvertedDts{DVD_NOPTS_VALUE};
+
+  int m_audioFeedErrorCount{0};
+  int m_videoFeedErrorCount{0};
 
   std::mutex m_audioInfoMutex;
   std::string m_audioInfo;
