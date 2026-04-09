@@ -1137,8 +1137,6 @@ bool CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
 
   if (result.find("Ok") != std::string::npos)
   {
-    if (m_fedAudioPts.load() == NO_PTS)
-      CLog::LogF(LOGINFO, "First audio packet fed, pts: {}", pts.count());
     m_fedAudioPts = pts;
     m_audioStats.AddSampleBytes(packet->iSize);
     m_audioFeedErrorCount = 0;
@@ -1260,8 +1258,6 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
 
     if (result.find("Ok") != std::string::npos)
     {
-      if (m_fedVideoPts.load() == NO_PTS)
-        CLog::LogF(LOGINFO, "First video packet fed, pts: {}", feedPts.count());
       m_fedVideoPts = feedPts;
       m_videoStats.AddSampleBytes(packet->iSize);
       m_videoFeedErrorCount = 0;
