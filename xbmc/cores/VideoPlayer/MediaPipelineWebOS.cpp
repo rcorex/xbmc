@@ -83,7 +83,7 @@ constexpr unsigned int MIN_SRC_BUFFER_LEVEL_AUDIO = 1 * 1024 * 1024; // 1 MB
 constexpr unsigned int MIN_SRC_BUFFER_LEVEL_VIDEO = 1 * 1024 * 1024; // 1 MB
 constexpr unsigned int MAX_SRC_BUFFER_LEVEL_AUDIO = 2 * 1024 * 1024; // 2 MB
 constexpr unsigned int MAX_SRC_BUFFER_LEVEL_VIDEO = 8 * 1024 * 1024; // 8 MB
-constexpr std::chrono::nanoseconds MAX_FEED_AHEAD_TIME = 1300ms;
+constexpr std::chrono::nanoseconds MAX_FEED_AHEAD_TIME = 1600ms;
 
 constexpr unsigned int SVP_VERSION_30 = 30;
 constexpr unsigned int SVP_VERSION_40 = 40;
@@ -451,7 +451,6 @@ void CMediaPipelineWebOS::Flush(bool sync)
   m_started = false;
   m_flushed = true;
   m_audioReady = false;
-  m_videoSyncPts = NO_PTS;
 }
 
 bool CMediaPipelineWebOS::AcceptsAudioData() const
@@ -853,7 +852,6 @@ void CMediaPipelineWebOS::Unload(const bool sync)
   m_fedVideoPts = NO_PTS;
   m_started = false;
   m_audioReady = false;
-  m_videoSyncPts = NO_PTS;
 
   if (sync)
   {
@@ -1117,14 +1115,8 @@ bool CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
   if (pts < 0ns)
     return true;
 
-  if (m_videoHint.codec != AV_CODEC_ID_NONE)
-  {
-    if (!m_audioReady)
-      return false;
-
-    if (m_videoSyncPts.load() != NO_PTS && pts < m_videoSyncPts.load())
-      return true;
-  }
+  if (!m_audioReady)
+    return false;
 
   const std::chrono::nanoseconds fedAudioPts = m_fedAudioPts.load();
   if (m_started && fedAudioPts != NO_PTS && fedAudioPts - m_pts.load() > MAX_FEED_AHEAD_TIME)
@@ -1225,7 +1217,6 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
     m_fedAudioPts = NO_PTS;
     m_started = false;
 
-    m_videoSyncPts = pts;
     m_audioReady = true;
 
     SStartMsg startMsg{.timestamp = GetCurrentPts(),
