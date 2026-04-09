@@ -450,6 +450,8 @@ void CMediaPipelineWebOS::Flush(bool sync)
   m_fedVideoPts = NO_PTS;
   m_started = false;
   m_flushed = true;
+  m_audioReady = false;
+  m_videoSyncPts = NO_PTS;
 }
 
 bool CMediaPipelineWebOS::AcceptsAudioData() const
@@ -850,6 +852,8 @@ void CMediaPipelineWebOS::Unload(const bool sync)
   m_fedAudioPts = NO_PTS;
   m_fedVideoPts = NO_PTS;
   m_started = false;
+  m_audioReady = false;
+  m_videoSyncPts = NO_PTS;
 
   if (sync)
   {
@@ -1113,6 +1117,15 @@ bool CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
   if (pts < 0ns)
     return true;
 
+  if (m_videoHint.codec != AV_CODEC_ID_NONE)
+  {
+    if (!m_audioReady)
+      return false;
+
+    if (m_videoSyncPts.load() != NO_PTS && pts < m_videoSyncPts.load())
+      return true;
+  }
+
   const std::chrono::nanoseconds fedAudioPts = m_fedAudioPts.load();
   if (m_started && fedAudioPts != NO_PTS && fedAudioPts - m_pts.load() > MAX_FEED_AHEAD_TIME)
     return false;
@@ -1211,6 +1224,9 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
     m_fedVideoPts = NO_PTS;
     m_fedAudioPts = NO_PTS;
     m_started = false;
+
+    m_videoSyncPts = pts;
+    m_audioReady = true;
 
     SStartMsg startMsg{.timestamp = GetCurrentPts(),
                        .player = VideoPlayer_VIDEO,
