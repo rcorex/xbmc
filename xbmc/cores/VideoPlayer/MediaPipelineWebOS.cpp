@@ -352,8 +352,11 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
     // API introduced in webOS 6.0, so we need to handle older versions differently
     Unload(true);
 
-    CLog::Log(LOGINFO, "Creating new StarfishMediaAPIs in OpenAudioStream");
-    m_mediaAPIs = std::make_unique<StarfishMediaAPIs>();
+    FlushAudioMessages();
+    FlushVideoMessages();
+    if (m_bitstream)
+      m_bitstream->ResetStartDecode();
+    m_flushed = true;
     m_audioClosed = false;
   }
 
@@ -400,8 +403,11 @@ bool CMediaPipelineWebOS::OpenVideoStream(CDVDStreamInfo hint)
     // Different codec => unload the current stream
     Unload(true);
 
-    CLog::Log(LOGINFO, "Creating new StarfishMediaAPIs in OpenVideoStream");
-    m_mediaAPIs = std::make_unique<StarfishMediaAPIs>();
+    FlushAudioMessages();
+    FlushVideoMessages();
+    if (m_bitstream)
+      m_bitstream->ResetStartDecode();
+    m_flushed = true;
   }
 
   m_videoHint = hint;
@@ -420,8 +426,6 @@ void CMediaPipelineWebOS::CloseAudioStream(const bool waitForBuffers)
     Unload(waitForBuffers);
     m_audioHint = CDVDStreamInfo();
     m_videoHint = CDVDStreamInfo();
-    CLog::Log(LOGINFO, "Creating new StarfishMediaAPIs in CloseAudioStream");
-    m_mediaAPIs = std::make_unique<StarfishMediaAPIs>();
   }
 }
 
@@ -434,8 +438,6 @@ void CMediaPipelineWebOS::CloseVideoStream(const bool waitForBuffers)
     Unload(waitForBuffers);
     m_audioHint = CDVDStreamInfo();
     m_videoHint = CDVDStreamInfo();
-    CLog::Log(LOGINFO, "Creating new StarfishMediaAPIs in CloseVideoStream");
-    m_mediaAPIs = std::make_unique<StarfishMediaAPIs>();
   }
 }
 
