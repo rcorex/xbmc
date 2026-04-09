@@ -352,6 +352,7 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
     // API introduced in webOS 6.0, so we need to handle older versions differently
     Unload(true);
 
+    CLog::Log(LOGINFO, "Creating new StarfishMediaAPIs in OpenAudioStream");
     m_mediaAPIs = std::make_unique<StarfishMediaAPIs>();
     m_audioClosed = false;
   }
@@ -399,6 +400,7 @@ bool CMediaPipelineWebOS::OpenVideoStream(CDVDStreamInfo hint)
     // Different codec => unload the current stream
     Unload(true);
 
+    CLog::Log(LOGINFO, "Creating new StarfishMediaAPIs in OpenVideoStream");
     m_mediaAPIs = std::make_unique<StarfishMediaAPIs>();
   }
 
@@ -418,6 +420,7 @@ void CMediaPipelineWebOS::CloseAudioStream(const bool waitForBuffers)
     Unload(waitForBuffers);
     m_audioHint = CDVDStreamInfo();
     m_videoHint = CDVDStreamInfo();
+    CLog::Log(LOGINFO, "Creating new StarfishMediaAPIs in CloseAudioStream");
     m_mediaAPIs = std::make_unique<StarfishMediaAPIs>();
   }
 }
@@ -431,6 +434,7 @@ void CMediaPipelineWebOS::CloseVideoStream(const bool waitForBuffers)
     Unload(waitForBuffers);
     m_audioHint = CDVDStreamInfo();
     m_videoHint = CDVDStreamInfo();
+    CLog::Log(LOGINFO, "Creating new StarfishMediaAPIs in CloseVideoStream");
     m_mediaAPIs = std::make_unique<StarfishMediaAPIs>();
   }
 }
@@ -450,7 +454,6 @@ void CMediaPipelineWebOS::Flush(bool sync)
   m_fedVideoPts = NO_PTS;
   m_started = false;
   m_flushed = true;
-  m_audioReady = false;
 }
 
 bool CMediaPipelineWebOS::AcceptsAudioData() const
@@ -851,7 +854,6 @@ void CMediaPipelineWebOS::Unload(const bool sync)
   m_fedAudioPts = NO_PTS;
   m_fedVideoPts = NO_PTS;
   m_started = false;
-  m_audioReady = false;
 
   if (sync)
   {
@@ -1115,9 +1117,6 @@ bool CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
   if (pts < 0ns)
     return true;
 
-  if (!m_audioReady)
-    return false;
-
   const std::chrono::nanoseconds fedAudioPts = m_fedAudioPts.load();
   if (m_started && fedAudioPts != NO_PTS && fedAudioPts - m_pts.load() > MAX_FEED_AHEAD_TIME)
     return false;
@@ -1136,6 +1135,8 @@ bool CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
 
   if (result.find("Ok") != std::string::npos)
   {
+    if (m_fedAudioPts == NO_PTS)
+      CLog::LogF(LOGINFO, "First audio packet fed, pts: {}", pts.count());
     m_fedAudioPts = pts;
     m_audioStats.AddSampleBytes(packet->iSize);
     m_audioFeedErrorCount = 0;
@@ -1224,8 +1225,6 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
     m_fedAudioPts = NO_PTS;
     m_started = false;
 
-    m_audioReady = true;
-
     SStartMsg startMsg{.timestamp = GetCurrentPts(),
                        .player = VideoPlayer_VIDEO,
                        .cachetime = DVD_MSEC_TO_TIME(50),
@@ -1259,6 +1258,8 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
 
     if (result.find("Ok") != std::string::npos)
     {
+      if (m_fedVideoPts == NO_PTS)
+        CLog::LogF(LOGINFO, "First video packet fed, pts: {}", feedPts.count());
       m_fedVideoPts = feedPts;
       m_videoStats.AddSampleBytes(packet->iSize);
       m_videoFeedErrorCount = 0;
