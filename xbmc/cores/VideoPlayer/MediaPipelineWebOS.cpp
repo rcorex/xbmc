@@ -473,7 +473,9 @@ bool CMediaPipelineWebOS::HasAudioData() const
   if (!m_pipeline)
     return false;
 
-  return GetQueuedBytes(StreamType::AUDIO) > 0;
+  if (!m_messageQueueAudio.IsDataBased())
+    return m_messageQueueAudio.GetTimeSize() > 0.0;
+  return m_messageQueueAudio.GetDataSize() > 0;
 }
 
 bool CMediaPipelineWebOS::HasVideoData() const
@@ -481,7 +483,9 @@ bool CMediaPipelineWebOS::HasVideoData() const
   if (!m_pipeline)
     return false;
 
-  return GetQueuedBytes(StreamType::VIDEO) > 0;
+  if (!m_messageQueueVideo.IsDataBased())
+    return m_messageQueueVideo.GetTimeSize() > 0.0;
+  return m_messageQueueVideo.GetDataSize() > 0;
 }
 
 bool CMediaPipelineWebOS::IsAudioInited() const
