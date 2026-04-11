@@ -1120,6 +1120,11 @@ void CMediaPipelineWebOS::SetHDR(const CDVDStreamInfo& hint) const
 
 bool CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
 {
+  if (m_flushed && m_videoHint.codec)
+  {
+    return false;
+  }
+
   DemuxPacket* packet = std::static_pointer_cast<CDVDMsgDemuxerPacket>(msg)->GetPacket();
 
   const auto pts = std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -1167,6 +1172,11 @@ bool CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
 
 bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
 {
+  if (m_flushed && m_hasAudio && !HasAudioData())
+  {
+    return false;
+  }
+
   DemuxPacket* packet = std::static_pointer_cast<CDVDMsgDemuxerPacket>(msg)->GetPacket();
 
   auto pts = std::chrono::duration_cast<std::chrono::nanoseconds>(
