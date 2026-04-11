@@ -550,6 +550,8 @@ private:
   std::atomic<std::chrono::nanoseconds> m_fedAudioPts{NO_PTS};
   std::atomic<std::chrono::nanoseconds> m_fedVideoPts{NO_PTS};
   std::atomic<bool> m_started{false};
+  std::atomic<int> m_audioPacketsFed{0};
+  std::atomic<int> m_videoPacketsFed{0};
 
   int m_audioFeedErrorCount{0};
   int m_videoFeedErrorCount{0};
