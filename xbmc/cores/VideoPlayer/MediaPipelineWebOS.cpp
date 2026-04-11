@@ -1449,9 +1449,38 @@ bool CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
   if (pts < 0ns)
     return true;
 
-  const std::chrono::nanoseconds fedAudioPts = m_fedAudioPts.load();
+  /*const std::chrono::nanoseconds fedAudioPts = m_fedAudioPts.load();
   if (m_started && fedAudioPts != NO_PTS && fedAudioPts - m_pts.load() > MAX_FEED_AHEAD_TIME)
-    return false;
+    return false;*/
+  if (m_started)
+  {
+    const double bitrate = m_audioStats.GetBitrate();
+
+    if (bitrate > 0)
+    {
+      const double maxFeedAheadSec = std::chrono::duration<double>(MAX_FEED_AHEAD_TIME).count();
+      const uint64_t maxAllowedBytes = static_cast<uint64_t>((bitrate / 8.0) * maxFeedAheadSec);
+
+      uint64_t queuedSrcBytes = 0;
+      uint32_t queuedBytes = 0;
+      uint32_t queuedSinkBytes = 0;
+
+      if (m_pipeline)
+      {
+        if (m_pipeline->audioSrc)
+          g_object_get(m_pipeline->audioSrc, "current-level-bytes", &queuedSrcBytes, nullptr);
+        if (m_pipeline->audioQueue)
+          g_object_get(m_pipeline->audioQueue, "current-level-bytes", &queuedBytes, nullptr);
+        if (m_pipeline->audioSinkQueue)
+          g_object_get(m_pipeline->audioSinkQueue, "current-level-bytes", &queuedSinkBytes, nullptr);
+      }
+
+      const uint64_t totalHardwareBytes = queuedSrcBytes + queuedBytes + queuedSinkBytes;
+
+      if (totalHardwareBytes > maxAllowedBytes)
+        return false;
+    }
+  }
 
   CVariant payload;
   payload["bufferAddr"] = fmt::format("{:#x}", reinterpret_cast<std::uintptr_t>(packet->pData));
@@ -1572,9 +1601,38 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
     m_flushed = false;
   }
 
-  const std::chrono::nanoseconds fedVideoPts = m_fedVideoPts.load();
+  /*const std::chrono::nanoseconds fedVideoPts = m_fedVideoPts.load();
   if (m_started && fedVideoPts != NO_PTS && fedVideoPts - m_pts.load() > MAX_FEED_AHEAD_TIME)
-    return false;
+    return false;*/
+  if (m_started)
+  {
+    const int bitrate = GetVideoBitrate();
+
+    if (bitrate > 0)
+    {
+      const double maxFeedAheadSec = std::chrono::duration<double>(MAX_FEED_AHEAD_TIME).count();
+      const uint64_t maxAllowedBytes = static_cast<uint64_t>((bitrate / 8.0) * maxFeedAheadSec);
+
+      uint64_t queuedSrcBytes = 0;
+      uint32_t queuedBytes = 0;
+      uint32_t queuedSinkBytes = 0;
+
+      if (m_pipeline)
+      {
+        if (m_pipeline->videoSrc)
+          g_object_get(m_pipeline->videoSrc, "current-level-bytes", &queuedSrcBytes, nullptr);
+        if (m_pipeline->videoQueue)
+          g_object_get(m_pipeline->videoQueue, "current-level-bytes", &queuedBytes, nullptr);
+        if (m_pipeline->videoSinkQueue)
+          g_object_get(m_pipeline->videoSinkQueue, "current-level-bytes", &queuedSinkBytes, nullptr);
+      }
+
+      const uint64_t totalHardwareBytes = queuedSrcBytes + queuedBytes + queuedSinkBytes;
+
+      if (totalHardwareBytes > maxAllowedBytes)
+        return false;
+    }
+  }
 
   if (data && size)
   {
