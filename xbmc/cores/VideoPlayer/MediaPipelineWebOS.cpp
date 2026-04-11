@@ -75,6 +75,7 @@ constexpr unsigned int AC3_MAX_SYNC_FRAME_SIZE = 3840;
 constexpr unsigned int EAC3_MAX_SYNC_FRAME_SIZE = 6144;
 constexpr int RESAMPLED_STREAM_ID = -1000;
 constexpr int CONVERTED_STREAM_ID = -2000;
+constexpr int DIALNORM_DEFEATED_STREAM_ID = -3000;
 constexpr unsigned int MIN_AUDIO_RESAMPLE_BUFFER_SIZE = 4096;
 
 constexpr unsigned int PRE_BUFFER_BYTES = 0;
@@ -1759,10 +1760,10 @@ void CMediaPipelineWebOS::ProcessAudio()
     {
       if (msg->IsType(CDVDMsg::DEMUXER_PACKET))
       {
-        const DemuxPacket* packet =
+        DemuxPacket* packet =
             std::static_pointer_cast<CDVDMsgDemuxerPacket>(msg)->GetPacket();
 
-        if (packet->iStreamId != RESAMPLED_STREAM_ID)
+        if (packet->iStreamId != RESAMPLED_STREAM_ID && packet->iStreamId != DIALNORM_DEFEATED_STREAM_ID)
         {
           if (m_audioHint.codec == AV_CODEC_ID_AC3 || m_audioHint.codec == AV_CODEC_ID_EAC3)
           {
@@ -1776,7 +1777,10 @@ void CMediaPipelineWebOS::ProcessAudio()
               }
 
               if (shouldDefeat)
+              {
                 DefeatDialnorm(packet->pData, packet->iSize);
+                packet->iStreamId = DIALNORM_DEFEATED_STREAM_ID;
+              }
             }
           }
         }
