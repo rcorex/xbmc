@@ -1792,6 +1792,7 @@ void CMediaPipelineWebOS::SetDynamicRangeCompression(const long drc)
 void CMediaPipelineWebOS::Process()
 {
   m_videoGate.SetRunning(true);
+  auto starveStart = std::chrono::steady_clock::time_point::min();
   while (!m_bStop)
   {
     m_videoGate.Checkpoint();
@@ -1881,6 +1882,7 @@ void CMediaPipelineWebOS::ProcessAudio()
 {
   m_audioGate.SetRunning(true);
   m_audioStats.Start();
+  auto starveStart = std::chrono::steady_clock::time_point::min();
   while (!m_bStop)
   {
     m_audioGate.Checkpoint();
