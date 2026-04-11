@@ -251,7 +251,8 @@ public:
    * @brief Check if playback is stalled.
    * @return True if stalled.
    */
-  bool IsStalled() const;
+  bool IsVideoStalled() const;
+  bool IsAudioStalled() const;
 
   /**
    * @brief Send a message to the audio queue.
@@ -494,7 +495,8 @@ private:
 
   mediapipeline::PipelineGStreamerElements* m_pipeline{nullptr};
   unsigned int m_webOSVersion{4};
-  std::atomic<bool> m_stalled{false};
+  std::atomic<bool> m_videoStalled{false};
+  std::atomic<bool> m_audioStalled{false};
   std::atomic<bool> m_loaded{false};
   std::atomic<bool> m_flushed{false};
   std::atomic<bool> m_subtitle{false};

@@ -507,9 +507,14 @@ int CMediaPipelineWebOS::GetAudioLevel() const
   return std::min(99, static_cast<int>(level));
 }
 
-bool CMediaPipelineWebOS::IsStalled() const
+bool CMediaPipelineWebOS::IsVideoStalled() const
 {
-  return m_stalled;
+  return m_videoStalled;
+}
+
+bool CMediaPipelineWebOS::IsAudioStalled() const
+{
+  return m_audioStalled;
 }
 
 void CMediaPipelineWebOS::SendAudioMessage(const std::shared_ptr<CDVDMsg>& msg, const int priority)
@@ -1411,10 +1416,25 @@ void CMediaPipelineWebOS::Process()
     m_messageQueueVideo.Get(msg, 10ms, priority);
     UpdateVideoInfo();
 
+    if (!msg && m_messageQueueVideo.GetPacketCount(CDVDMsg::DEMUXER_PACKET) == 0)
+    {
+      if (!m_videoStalled)
+      {
+        CLog::Log(LOGDEBUG, "CMediaPipelineWebOS::Process - video stream stalled");
+        m_videoStalled = true;
+      }
+    }
+
     if (msg)
     {
       if (msg->IsType(CDVDMsg::DEMUXER_PACKET))
       {
+        if (m_videoStalled)
+        {
+          CLog::Log(LOGDEBUG, "CMediaPipelineWebOS::Process - video stream stalled left");
+          m_videoStalled = false;
+        }
+
         if (!FeedVideoData(msg))
         {
           m_messageQueueVideo.PutBack(msg);
@@ -1465,10 +1485,26 @@ void CMediaPipelineWebOS::ProcessAudio()
     int priority = 0;
     m_messageQueueAudio.Get(msg, 10ms, priority);
     UpdateAudioInfo();
+
+    if (!msg && m_messageQueueAudio.GetPacketCount(CDVDMsg::DEMUXER_PACKET) == 0)
+    {
+      if (!m_audioStalled)
+      {
+        CLog::Log(LOGDEBUG, "CMediaPipelineWebOS::ProcessAudio - audio stream stalled");
+        m_audioStalled = true;
+      }
+    }
+
     if (msg)
     {
       if (msg->IsType(CDVDMsg::DEMUXER_PACKET))
       {
+        if (m_audioStalled)
+        {
+          CLog::Log(LOGDEBUG, "CMediaPipelineWebOS::ProcessAudio - audio stream stalled left");
+          m_audioStalled = false;
+        }
+
         const DemuxPacket* packet =
             std::static_pointer_cast<CDVDMsgDemuxerPacket>(msg)->GetPacket();
         if (m_audioCodec && packet->iStreamId != RESAMPLED_STREAM_ID)

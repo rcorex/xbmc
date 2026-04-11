@@ -87,7 +87,7 @@ double CVideoPlayerAudioWebOS::GetCurrentPts()
 
 bool CVideoPlayerAudioWebOS::IsStalled() const
 {
-  return m_mediaPipeline.IsStalled();
+  return m_mediaPipeline.IsAudioStalled();
 }
 
 bool CVideoPlayerAudioWebOS::IsPassthrough() const
