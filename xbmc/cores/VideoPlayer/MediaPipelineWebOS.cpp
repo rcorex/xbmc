@@ -1120,7 +1120,7 @@ void CMediaPipelineWebOS::SetHDR(const CDVDStreamInfo& hint) const
 
 bool CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
 {
-  if (m_flushed && m_videoHint.codec)
+  if (m_flushed)
   {
     return false;
   }
