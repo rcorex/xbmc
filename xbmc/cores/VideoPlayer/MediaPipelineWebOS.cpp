@@ -1805,9 +1805,28 @@ void CMediaPipelineWebOS::Process()
     {
       if (!m_videoStalled)
       {
-        CLog::Log(LOGDEBUG, "CMediaPipelineWebOS::Process - video stream stalled");
-        m_videoStalled = true;
+        // NEW: If audio has data waiting, the network is fine.
+        if (m_hasAudio && m_messageQueueAudio.GetPacketCount(CDVDMsg::DEMUXER_PACKET) > 0)
+        {
+          starveStart = std::chrono::steady_clock::time_point::min();
+        }
+        else
+        {
+          if (starveStart == std::chrono::steady_clock::time_point::min())
+          {
+            starveStart = std::chrono::steady_clock::now();
+          }
+          else if (std::chrono::steady_clock::now() - starveStart > 1000ms)
+          {
+            CLog::Log(LOGDEBUG, "CMediaPipelineWebOS::Process - video stream stalled");
+            m_videoStalled = true;
+          }
+        }
       }
+    }
+    else
+    {
+      starveStart = std::chrono::steady_clock::time_point::min();
     }
 
     if (msg)
@@ -1875,9 +1894,29 @@ void CMediaPipelineWebOS::ProcessAudio()
     {
       if (!m_audioStalled)
       {
-        CLog::Log(LOGDEBUG, "CMediaPipelineWebOS::ProcessAudio - audio stream stalled");
-        m_audioStalled = true;
+        // NEW: If video has data waiting, the demuxer is just blocked by the video queue.
+        // The network is fine, do NOT trigger an audio stall.
+        if (m_messageQueueVideo.GetPacketCount(CDVDMsg::DEMUXER_PACKET) > 0)
+        {
+          starveStart = std::chrono::steady_clock::time_point::min();
+        }
+        else
+        {
+          if (starveStart == std::chrono::steady_clock::time_point::min())
+          {
+            starveStart = std::chrono::steady_clock::now();
+          }
+          else if (std::chrono::steady_clock::now() - starveStart > 1000ms)
+          {
+            CLog::Log(LOGDEBUG, "CMediaPipelineWebOS::ProcessAudio - audio stream stalled");
+            m_audioStalled = true;
+          }
+        }
       }
+    }
+    else
+    {
+      starveStart = std::chrono::steady_clock::time_point::min();
     }
 
     if (msg)
