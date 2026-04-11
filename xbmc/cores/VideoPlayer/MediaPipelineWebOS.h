@@ -252,7 +252,8 @@ public:
    * @brief Check if playback is stalled.
    * @return True if stalled.
    */
-  bool IsStalled() const;
+  bool IsVideoStalled() const;
+  bool IsAudioStalled() const;
 
   /**
    * @brief Send a message to the audio queue.
@@ -497,7 +498,8 @@ private:
 
   mediapipeline::PipelineGStreamerElements* m_pipeline{nullptr};
   unsigned int m_webOSVersion{4};
-  std::atomic<bool> m_stalled{false};
+  std::atomic<bool> m_videoStalled{false};
+  std::atomic<bool> m_audioStalled{false};
   std::atomic<bool> m_loaded{false};
   std::atomic<bool> m_flushed{false};
   std::atomic<bool> m_subtitle{false};
@@ -530,6 +532,8 @@ private:
   CDVDOverlayContainer& m_overlayContainer;
   bool m_hasAudio{true};
 
+  std::atomic<bool> m_convertDovi{false};
+
   std::atomic<bool> m_videoClosed{true};
   std::atomic<bool> m_audioClosed{true};
   std::atomic<bool> m_allowPassthrough{false};
@@ -546,6 +550,9 @@ private:
   std::atomic<std::chrono::nanoseconds> m_fedAudioPts{NO_PTS};
   std::atomic<std::chrono::nanoseconds> m_fedVideoPts{NO_PTS};
   std::atomic<bool> m_started{false};
+
+  int m_audioFeedErrorCount{0};
+  int m_videoFeedErrorCount{0};
 
   std::mutex m_audioInfoMutex;
   std::string m_audioInfo;
