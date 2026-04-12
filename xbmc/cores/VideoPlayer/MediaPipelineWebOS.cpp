@@ -454,6 +454,9 @@ void CMediaPipelineWebOS::Flush(bool sync)
     m_bitstream->ResetStartDecode();
   m_fedAudioPts = NO_PTS;
   m_fedVideoPts = NO_PTS;
+  m_videoPacketsFed = 0;
+  m_readyToPlay = false;
+  m_pendingPlay = false;
   m_started = false;
   m_flushed = true;
 }
@@ -839,6 +842,9 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
 
   m_fedAudioPts = NO_PTS;
   m_fedVideoPts = NO_PTS;
+  m_videoPacketsFed = 0;
+  m_readyToPlay = false;
+  m_pendingPlay = false;
   m_started = false;
 
   m_videoClosed = false;
@@ -859,6 +865,9 @@ void CMediaPipelineWebOS::Unload(const bool sync)
 
   m_fedAudioPts = NO_PTS;
   m_fedVideoPts = NO_PTS;
+  m_videoPacketsFed = 0;
+  m_readyToPlay = false;
+  m_pendingPlay = false;
   m_started = false;
 
   if (sync)
@@ -1115,6 +1124,11 @@ void CMediaPipelineWebOS::SetHDR(const CDVDStreamInfo& hint) const
 
 bool CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
 {
+  if (m_flushed)
+  {
+    return false;
+  }
+
   DemuxPacket* packet = std::static_pointer_cast<CDVDMsgDemuxerPacket>(msg)->GetPacket();
 
   const auto pts = std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -1124,7 +1138,8 @@ bool CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
     return true;
 
   const std::chrono::nanoseconds fedAudioPts = m_fedAudioPts.load();
-  if (m_started && fedAudioPts != NO_PTS && fedAudioPts - m_pts.load() > MAX_FEED_AHEAD_TIME)
+  if (m_started && m_readyToPlay.load() && fedAudioPts != NO_PTS &&
+      fedAudioPts - m_pts.load() > MAX_FEED_AHEAD_TIME)
     return false;
 
   CVariant payload;
@@ -1162,6 +1177,11 @@ bool CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
 
 bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
 {
+  if (m_flushed && m_hasAudio && !HasAudioData())
+  {
+    return false;
+  }
+
   DemuxPacket* packet = std::static_pointer_cast<CDVDMsgDemuxerPacket>(msg)->GetPacket();
 
   auto pts = std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -1227,6 +1247,9 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
     m_pts = pts;
     m_fedVideoPts = NO_PTS;
     m_fedAudioPts = NO_PTS;
+    m_videoPacketsFed = 0;
+    m_readyToPlay = false;
+    m_pendingPlay = false;
     m_started = false;
 
     SStartMsg startMsg{.timestamp = GetCurrentPts(),
@@ -1242,7 +1265,8 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
   }
 
   const std::chrono::nanoseconds fedVideoPts = m_fedVideoPts.load();
-  if (m_started && fedVideoPts != NO_PTS && fedVideoPts - m_pts.load() > MAX_FEED_AHEAD_TIME)
+  if (m_started && m_readyToPlay.load() && fedVideoPts != NO_PTS &&
+      fedVideoPts - m_pts.load() > MAX_FEED_AHEAD_TIME)
     return false;
 
   if (data && size)
@@ -1263,6 +1287,22 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
     if (result.find("Ok") != std::string::npos)
     {
       m_fedVideoPts = feedPts;
+
+      if (!m_readyToPlay.load())
+      {
+        if (++m_videoPacketsFed >= 12)
+        {
+          m_readyToPlay = true;
+          CLog::Log(LOGDEBUG, "Pipeline ready to play: 12 video packets fed.");
+          if (m_pendingPlay.exchange(false))
+          {
+            CLog::Log(LOGDEBUG, "Executing pending play command...");
+            if (!m_mediaAPIs->Play())
+              CLog::LogF(LOGERROR, "Failed to execute pending play");
+          }
+        }
+      }
+
       m_videoStats.AddSampleBytes(packet->iSize);
       m_videoFeedErrorCount = 0;
       const unsigned int level = GetQueueLevel(StreamType::VIDEO);
@@ -1713,8 +1753,7 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
           {0, MIN_SRC_BUFFER_LEVEL_VIDEO, MAX_SRC_BUFFER_LEVEL_VIDEO, MAX_BUFFER_LEVEL});
 
       m_renderManager.ShowVideo(true);
-      if (!m_mediaAPIs->Play())
-        CLog::LogF(LOGERROR, "Failed to play");
+      m_pendingPlay = true;
       m_loaded = true;
       m_flushed = true;
       Create();
