@@ -497,6 +497,11 @@ private:
   std::atomic<bool> m_stalled{false};
   std::atomic<bool> m_loaded{false};
   std::atomic<bool> m_flushed{false};
+
+  // Seek recovery lock-on variables
+  std::atomic<bool> m_isSeeking{false};
+  std::atomic<int64_t> m_seekTargetPts{0};
+
   std::atomic<bool> m_subtitle{false};
   std::atomic<double> m_subtitleDelay{0.0};
   std::atomic<bool> m_needsTranscode{false};
