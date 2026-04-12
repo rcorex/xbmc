@@ -1748,7 +1748,6 @@ void CMediaPipelineWebOS::SetDynamicRangeCompression(const long drc)
 void CMediaPipelineWebOS::Process()
 {
   m_videoGate.SetRunning(true);
-  auto starveStart = std::chrono::steady_clock::time_point::min();
   while (!m_bStop)
   {
     m_videoGate.Checkpoint();
@@ -1762,28 +1761,15 @@ void CMediaPipelineWebOS::Process()
     {
       if (!m_videoStalled)
       {
-        // NEW: If audio has data waiting, the network is fine.
-        if (m_hasAudio && m_messageQueueAudio.GetPacketCount(CDVDMsg::DEMUXER_PACKET) > 0)
+        // CROSS-QUEUE CHECK: Only trigger stall if the audio queue is ALSO empty
+        // (or if the stream has no audio at all)
+        if (!m_hasAudio || m_messageQueueAudio.GetPacketCount(CDVDMsg::DEMUXER_PACKET) == 0)
         {
-          starveStart = std::chrono::steady_clock::time_point::min();
+          CLog::Log(LOGDEBUG, "CMediaPipelineWebOS::Process - video stream stalled");
+          m_videoStalled = true;
         }
-        else
-        {
-          if (starveStart == std::chrono::steady_clock::time_point::min())
-          {
-            starveStart = std::chrono::steady_clock::now();
-          }
-          else if (std::chrono::steady_clock::now() - starveStart > 1000ms)
-          {
-            CLog::Log(LOGDEBUG, "CMediaPipelineWebOS::Process - video stream stalled");
-            m_videoStalled = true;
-          }
-        }
+        // If audio HAS data, do nothing. The demuxer is just asleep.
       }
-    }
-    else
-    {
-      starveStart = std::chrono::steady_clock::time_point::min();
     }
 
     if (msg)
@@ -1838,7 +1824,6 @@ void CMediaPipelineWebOS::ProcessAudio()
 {
   m_audioGate.SetRunning(true);
   m_audioStats.Start();
-  auto starveStart = std::chrono::steady_clock::time_point::min();
   while (!m_bStop)
   {
     m_audioGate.Checkpoint();
@@ -1852,29 +1837,14 @@ void CMediaPipelineWebOS::ProcessAudio()
     {
       if (!m_audioStalled)
       {
-        // NEW: If video has data waiting, the demuxer is just blocked by the video queue.
-        // The network is fine, do NOT trigger an audio stall.
-        if (m_messageQueueVideo.GetPacketCount(CDVDMsg::DEMUXER_PACKET) > 0)
+        // CROSS-QUEUE CHECK: Only trigger stall if the video queue is ALSO empty
+        if (m_messageQueueVideo.GetPacketCount(CDVDMsg::DEMUXER_PACKET) == 0)
         {
-          starveStart = std::chrono::steady_clock::time_point::min();
+          CLog::Log(LOGDEBUG, "CMediaPipelineWebOS::ProcessAudio - audio stream stalled");
+          m_audioStalled = true;
         }
-        else
-        {
-          if (starveStart == std::chrono::steady_clock::time_point::min())
-          {
-            starveStart = std::chrono::steady_clock::now();
-          }
-          else if (std::chrono::steady_clock::now() - starveStart > 1000ms)
-          {
-            CLog::Log(LOGDEBUG, "CMediaPipelineWebOS::ProcessAudio - audio stream stalled");
-            m_audioStalled = true;
-          }
-        }
+        // If video HAS data, do nothing. The demuxer is just asleep.
       }
-    }
-    else
-    {
-      starveStart = std::chrono::steady_clock::time_point::min();
     }
 
     if (msg)
