@@ -480,42 +480,6 @@ int CMediaPipelineWebOS::GetVideoBitrate() const
   return static_cast<int>(m_videoStats.GetBitrate());
 }
 
-void CMediaPipelineWebOS::UpdateAudioInfo()
-{
-  const unsigned int level = GetQueueLevel(StreamType::AUDIO);
-  const double kb = m_messageQueueAudio.GetDataSize() / 1024.0;
-  const double ts = m_messageQueueAudio.GetTimeSize();
-  const double kbps = m_audioStats.GetBitrate() / 1024.0;
-
-  std::scoped_lock lock(m_audioInfoMutex);
-
-  std::string transcodedInfo;
-  if (m_audioEncoder)
-  {
-    transcodedInfo = fmt::format(
-        ", transcoded {}", (m_audioEncoder->GetCodecID() == AV_CODEC_ID_EAC3) ? "eac3" : "ac3");
-  }
-
-  m_audioInfo =
-      fmt::format("aq:{:02}% {:.3f}s {:.3f}Kb, Kb/s:{:.2f}{}", level, ts, kb, kbps, transcodedInfo);
-}
-
-void CMediaPipelineWebOS::UpdateVideoInfo()
-{
-  const int level = m_processInfo.GetLevelVQ();
-  const double ts = m_messageQueueVideo.GetTimeSize();
-  const double mb = m_messageQueueVideo.GetDataSize() / 1024.0 / 1024.0;
-  const double mbps = static_cast<double>(GetVideoBitrate()) / (1024.0 * 1024.0);
-  double fps = 0.0;
-
-  if (m_videoHint.fpsrate && m_videoHint.fpsscale)
-    fps = static_cast<double>(m_videoHint.fpsrate) / static_cast<double>(m_videoHint.fpsscale);
-
-  std::scoped_lock lock(m_videoInfoMutex);
-  m_videoInfo = fmt::format("vq:{:02}% {:.3f}s, {:.3f}Mb, Mb/s:{:.2f}, fr:{:.3f}, drop:{}", level,
-                            ts, mb, mbps, fps, m_droppedFrames.load());
-}
-
 void CMediaPipelineWebOS::UpdateGUISounds(const bool playing)
 {
   IAE* activeAE = CServiceBroker::GetActiveAE();
@@ -531,16 +495,37 @@ void CMediaPipelineWebOS::UpdateGUISounds(const bool playing)
     activeAE->SetVolume(1.0);
 }
 
-std::string CMediaPipelineWebOS::GetAudioInfo()
+std::string CMediaPipelineWebOS::GetAudioInfo() const
 {
-  std::scoped_lock lock(m_audioInfoMutex);
-  return m_audioInfo;
+  const unsigned int level = GetQueueLevel(StreamType::AUDIO);
+  const double kb = m_messageQueueAudio.GetDataSize() / 1024.0;
+  const double ts = m_messageQueueAudio.GetTimeSize();
+  const double kbps = m_audioStats.GetBitrate() / 1024.0;
+
+  std::string transcodedInfo;
+  if (m_audioEncoder)
+  {
+    transcodedInfo = fmt::format(
+        ", transcoded {}", (m_audioEncoder->GetCodecID() == AV_CODEC_ID_EAC3) ? "eac3" : "ac3");
+  }
+
+  return fmt::format("aq:{:02}% {:.3f}s {:.3f}Kb, Kb/s:{:.2f}{}", level, ts, kb, kbps,
+                     transcodedInfo);
 }
 
-std::string CMediaPipelineWebOS::GetVideoInfo()
+std::string CMediaPipelineWebOS::GetVideoInfo() const
 {
-  std::scoped_lock lock(m_videoInfoMutex);
-  return m_videoInfo;
+  const int level = m_processInfo.GetLevelVQ();
+  const double ts = m_messageQueueVideo.GetTimeSize();
+  const double mb = m_messageQueueVideo.GetDataSize() / 1024.0 / 1024.0;
+  const double mbps = static_cast<double>(GetVideoBitrate()) / (1024.0 * 1024.0);
+  double fps = 0.0;
+
+  if (m_videoHint.fpsrate && m_videoHint.fpsscale)
+    fps = static_cast<double>(m_videoHint.fpsrate) / static_cast<double>(m_videoHint.fpsscale);
+
+  return fmt::format("vq:{:02}% {:.3f}s, {:.3f}Mb, Mb/s:{:.2f}, fr:{:.3f}, drop:{}", level, ts, mb,
+                     mbps, fps, m_droppedFrames.load());
 }
 
 bool CMediaPipelineWebOS::Supports(const AVCodecID codec, const int profile)
@@ -734,6 +719,9 @@ void CMediaPipelineWebOS::Flush(bool sync)
     m_bitstream->ResetStartDecode();
   m_fedAudioPts = NO_PTS;
   m_fedVideoPts = NO_PTS;
+  m_videoPacketsFed = 0;
+  m_readyToPlay = false;
+  m_pendingPlay = false;
   m_started = false;
   m_flushed = true;
 }
@@ -1131,6 +1119,9 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
 
   m_fedAudioPts = NO_PTS;
   m_fedVideoPts = NO_PTS;
+  m_videoPacketsFed = 0;
+  m_readyToPlay = false;
+  m_pendingPlay = false;
   m_started = false;
 
   m_videoClosed = false;
@@ -1151,6 +1142,9 @@ void CMediaPipelineWebOS::Unload(const bool sync)
 
   m_fedAudioPts = NO_PTS;
   m_fedVideoPts = NO_PTS;
+  m_videoPacketsFed = 0;
+  m_readyToPlay = false;
+  m_pendingPlay = false;
   m_started = false;
 
   if (sync)
@@ -1450,7 +1444,8 @@ bool CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
     return true;
 
   const std::chrono::nanoseconds fedAudioPts = m_fedAudioPts.load();
-  if (m_started && fedAudioPts != NO_PTS && fedAudioPts - m_pts.load() > MAX_FEED_AHEAD_TIME)
+  if (m_started && m_readyToPlay.load() && fedAudioPts != NO_PTS &&
+      fedAudioPts - m_pts.load() > MAX_FEED_AHEAD_TIME)
     return false;
 
   CVariant payload;
@@ -1556,8 +1551,16 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
     pipeline->sendSegmentEvent();
 
     m_pts = pts;
+
+    // Set the lock-on target for delayed FRAMEREADY events
+    m_seekTargetPts = pts.count();
+    m_isSeeking = true;
+
     m_fedVideoPts = NO_PTS;
     m_fedAudioPts = NO_PTS;
+    m_videoPacketsFed = 0;
+    m_readyToPlay = false;
+    m_pendingPlay = false;
     m_started = false;
 
     SStartMsg startMsg{.timestamp = GetCurrentPts(),
@@ -1573,7 +1576,8 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
   }
 
   const std::chrono::nanoseconds fedVideoPts = m_fedVideoPts.load();
-  if (m_started && fedVideoPts != NO_PTS && fedVideoPts - m_pts.load() > MAX_FEED_AHEAD_TIME)
+  if (m_started && m_readyToPlay.load() && fedVideoPts != NO_PTS &&
+      fedVideoPts - m_pts.load() > MAX_FEED_AHEAD_TIME)
     return false;
 
   if (data && size)
@@ -1594,6 +1598,22 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
     if (result.find("Ok") != std::string::npos)
     {
       m_fedVideoPts = feedPts;
+
+      if (!m_readyToPlay.load())
+      {
+        if (++m_videoPacketsFed >= 12)
+        {
+          m_readyToPlay = true;
+          CLog::Log(LOGDEBUG, "Pipeline ready to play: 12 video packets fed.");
+          if (m_pendingPlay.exchange(false))
+          {
+            CLog::Log(LOGDEBUG, "Executing pending play command...");
+            if (!m_mediaAPIs->Play())
+              CLog::LogF(LOGERROR, "Failed to execute pending play");
+          }
+        }
+      }
+
       m_videoStats.AddSampleBytes(packet->iSize);
       m_videoFeedErrorCount = 0;
       const unsigned int level = GetQueueLevel(StreamType::VIDEO);
@@ -1741,7 +1761,6 @@ void CMediaPipelineWebOS::Process()
     std::shared_ptr<CDVDMsg> msg = nullptr;
     int priority = 0;
     m_messageQueueVideo.Get(msg, 10ms, priority);
-    UpdateVideoInfo();
 
     if (!msg && m_messageQueueVideo.GetPacketCount(CDVDMsg::DEMUXER_PACKET) == 0)
     {
@@ -1811,16 +1830,6 @@ void CMediaPipelineWebOS::ProcessAudio()
     std::shared_ptr<CDVDMsg> msg = nullptr;
     int priority = 0;
     m_messageQueueAudio.Get(msg, 10ms, priority);
-    UpdateAudioInfo();
-
-    if (!msg && m_messageQueueAudio.GetPacketCount(CDVDMsg::DEMUXER_PACKET) == 0)
-    {
-      if (!m_audioStalled)
-      {
-        CLog::Log(LOGDEBUG, "CMediaPipelineWebOS::ProcessAudio - audio stream stalled");
-        m_audioStalled = true;
-      }
-    }
 
     if (msg)
     {
@@ -2087,6 +2096,22 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
   {
     case PF_EVENT_TYPE_FRAMEREADY:
     {
+      if (m_isSeeking.load())
+      {
+        // Calculate absolute distance between this frame and our seek target
+        const int64_t delta = std::abs(numValue - m_seekTargetPts.load());
+        constexpr int64_t MAX_ACCEPTABLE_GAP = 2000000000LL; // 2 seconds in nanoseconds
+
+        if (delta > MAX_ACCEPTABLE_GAP)
+        {
+          CLog::Log(LOGDEBUG, "Ignored stale FRAMEREADY event (backward/forward seek guard).");
+          break;
+        }
+
+        // Frame is within the acceptable window, pipeline is cleared
+        m_isSeeking = false;
+      }
+
       m_pts = std::chrono::nanoseconds(numValue);
       const double pts = GetCurrentPts();
       ProcessOverlays(pts);
@@ -2115,8 +2140,7 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
           {0, MIN_SRC_BUFFER_LEVEL_VIDEO, MAX_SRC_BUFFER_LEVEL_VIDEO, MAX_BUFFER_LEVEL});
 
       m_renderManager.ShowVideo(true);
-      if (!m_mediaAPIs->Play())
-        CLog::LogF(LOGERROR, "Failed to play");
+      m_pendingPlay = true;
       m_loaded = true;
       m_flushed = true;
       Create();
