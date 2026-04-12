@@ -1456,7 +1456,7 @@ bool CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
     return true;
 
   const std::chrono::nanoseconds fedAudioPts = m_fedAudioPts.load();
-  if (m_started && m_audioPacketsFed.load() > 3 && fedAudioPts != NO_PTS &&
+  if (m_started && m_audioPacketsFed.load() > 5 && fedAudioPts != NO_PTS &&
       fedAudioPts - m_pts.load() > MAX_FEED_AHEAD_TIME)
     return false;
 
@@ -1475,7 +1475,7 @@ bool CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
   if (result.find("Ok") != std::string::npos)
   {
     m_fedAudioPts = pts;
-    if (m_audioPacketsFed.load() < 4)
+    if (m_audioPacketsFed.load() < 6)
       m_audioPacketsFed++;
     m_audioStats.AddSampleBytes(packet->iSize);
     m_audioFeedErrorCount = 0;
@@ -1584,7 +1584,7 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
   }
 
   const std::chrono::nanoseconds fedVideoPts = m_fedVideoPts.load();
-  if (m_started && m_videoPacketsFed.load() > 3 && fedVideoPts != NO_PTS &&
+  if (m_started && m_videoPacketsFed.load() > 5 && fedVideoPts != NO_PTS &&
       fedVideoPts - m_pts.load() > MAX_FEED_AHEAD_TIME)
     return false;
 
@@ -1606,7 +1606,7 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
     if (result.find("Ok") != std::string::npos)
     {
       m_fedVideoPts = feedPts;
-      if (m_videoPacketsFed.load() < 4)
+      if (m_videoPacketsFed.load() < 6)
         m_videoPacketsFed++;
       m_videoStats.AddSampleBytes(packet->iSize);
       m_videoFeedErrorCount = 0;
