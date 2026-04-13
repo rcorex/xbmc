@@ -252,7 +252,8 @@ public:
    * @brief Check if playback is stalled.
    * @return True if stalled.
    */
-  bool IsStalled() const;
+  bool IsVideoStalled() const;
+  bool IsAudioStalled() const;
 
   /**
    * @brief Send a message to the audio queue.
@@ -324,13 +325,13 @@ public:
   /**
    * @return Audio stream debug info
    */
-  std::string GetAudioInfo();
+  std::string GetAudioInfo() const;
 
   /**
    *
    * @return Video stream debug info
    */
-  std::string GetVideoInfo();
+  std::string GetVideoInfo() const;
 
   /**
    * @brief Get the resolution of the video stream
@@ -412,16 +413,6 @@ private:
   void SetupBitstreamConverter(CDVDStreamInfo& hint);
 
   /**
-   * @brief Updates the player video debug info.
-   */
-  void UpdateVideoInfo();
-
-  /**
-   * @brief Updates the player video debug info.
-   */
-  void UpdateAudioInfo();
-
-  /**
    * @brief Updates ActiveAE volume setting based on current audio state.
    * @param playing True if media is currently playing, false otherwise.
    */
@@ -497,9 +488,15 @@ private:
 
   mediapipeline::PipelineGStreamerElements* m_pipeline{nullptr};
   unsigned int m_webOSVersion{4};
-  std::atomic<bool> m_stalled{false};
+  std::atomic<bool> m_videoStalled{false};
+  std::atomic<bool> m_audioStalled{false};
   std::atomic<bool> m_loaded{false};
   std::atomic<bool> m_flushed{false};
+
+  // Seek recovery lock-on variables
+  std::atomic<bool> m_isSeeking{false};
+  std::atomic<int64_t> m_seekTargetPts{0};
+
   std::atomic<bool> m_subtitle{false};
   std::atomic<double> m_subtitleDelay{0.0};
   std::atomic<bool> m_needsTranscode{false};
@@ -529,6 +526,7 @@ private:
   CDVDClock& m_clock;
   CDVDOverlayContainer& m_overlayContainer;
   bool m_hasAudio{true};
+  std::atomic<bool> m_convertDovi{false};
 
   std::atomic<bool> m_videoClosed{true};
   std::atomic<bool> m_audioClosed{true};
@@ -547,10 +545,15 @@ private:
   std::atomic<std::chrono::nanoseconds> m_fedVideoPts{NO_PTS};
   std::atomic<bool> m_started{false};
 
-  std::mutex m_audioInfoMutex;
-  std::string m_audioInfo;
-  std::mutex m_videoInfoMutex;
-  std::string m_videoInfo;
+  std::atomic<std::chrono::nanoseconds> m_fedAudioPts{NO_PTS};
+  std::atomic<std::chrono::nanoseconds> m_fedVideoPts{NO_PTS};
+  std::atomic<bool> m_started{false};
+  std::atomic<bool> m_pendingPlay{false};
+  std::atomic<int> m_videoPacketsFed{0};
+
+  int m_audioFeedErrorCount{0};
+  int m_videoFeedErrorCount{0};
+
   BitstreamStats m_audioStats{};
   BitstreamStats m_videoStats{};
 
