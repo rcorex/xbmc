@@ -76,7 +76,7 @@ void CVideoPlayerVideoWebOS::SetSubtitleDelay(const double delay)
 
 bool CVideoPlayerVideoWebOS::IsStalled() const
 {
-  return m_mediaPipeline.IsStalled();
+  return m_mediaPipeline.IsVideoStalled();
 }
 
 double CVideoPlayerVideoWebOS::GetCurrentPts()

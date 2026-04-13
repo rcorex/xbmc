@@ -24412,8 +24412,19 @@ msgctxt "#39228"
 msgid "Restores original volume for E-AC-3 Atmos streams, but may cause Atmos to be disabled."
 msgstr ""
 
-#empty strings from id 39229 to 39999
+# Use safe method for audio track change
+#: system/settings/settings.xml
+msgctxt "#39229"
+msgid "Use safe method for audio track change"
+msgstr ""
 
+# Description of setting with label #39229 "Use safe method for audio track change"
+#: system/settings/settings.xml
+msgctxt "#39230"
+msgid "Does a full media restart when changing audio tracks. This should be more stable but slower."
+msgstr ""
+
+#empty strings from id 39231 to 39999
 
 # 40000 to 40800 are reserved for Video Versions feature
 
