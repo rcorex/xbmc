@@ -1743,7 +1743,6 @@ void CMediaPipelineWebOS::Process()
     std::shared_ptr<CDVDMsg> msg = nullptr;
     int priority = 0;
     m_messageQueueVideo.Get(msg, 10ms, priority);
-    UpdateVideoInfo();
 
     if (!msg && m_messageQueueVideo.GetPacketCount(CDVDMsg::DEMUXER_PACKET) == 0)
     {
@@ -1819,7 +1818,6 @@ void CMediaPipelineWebOS::ProcessAudio()
     std::shared_ptr<CDVDMsg> msg = nullptr;
     int priority = 0;
     m_messageQueueAudio.Get(msg, 10ms, priority);
-    UpdateAudioInfo();
 
     if (!msg && m_messageQueueAudio.GetPacketCount(CDVDMsg::DEMUXER_PACKET) == 0)
     {
