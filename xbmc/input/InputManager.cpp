@@ -20,14 +20,15 @@
 #include "guilib/GUIWindowManager.h"
 #include "input/actions/Action.h"
 #include "input/actions/ActionIDs.h"
+#include "input/cec/ICecInputProvider.h"
 #include "input/keyboard/Key.h"
-#include "input/keyboard/KeyIDs.h"
 #include "input/keyboard/KeyboardEasterEgg.h"
 #include "input/keyboard/XBMC_vkeys.h"
 #include "input/keyboard/interfaces/IKeyboardDriverHandler.h"
 #include "input/keymaps/ButtonTranslator.h"
 #include "input/keymaps/KeymapEnvironment.h"
 #include "input/keymaps/joysticks/JoystickMapper.h"
+#include "input/keymaps/keyboard/KeyIDs.h"
 #include "input/keymaps/remote/CustomControllerTranslator.h"
 #include "input/keymaps/touch/TouchTranslator.h"
 #include "input/mouse/MouseTranslator.h"
@@ -109,14 +110,6 @@ void CInputManager::InitializeInputs()
 
 void CInputManager::Deinitialize()
 {
-}
-
-bool CInputManager::ProcessPeripherals(float frameTime)
-{
-  CKey key;
-  if (CServiceBroker::GetPeripherals().GetNextKeypress(frameTime, key))
-    return OnKey(key);
-  return false;
 }
 
 bool CInputManager::ProcessMouse(int windowId)
@@ -280,7 +273,7 @@ bool CInputManager::ProcessEventServer(int windowId, float frameTime)
         key = CKey(wKeyID, 0, 0, 0.0, 0.0, 0.0, -fAmount, frameTime);
       else
         key = CKey(wKeyID);
-      key.SetFromService(true);
+      key.SetFromEventServer(true);
       return OnKey(key);
     }
   }
@@ -302,8 +295,21 @@ bool CInputManager::ProcessEventServer(int windowId, float frameTime)
   return false;
 }
 
+void CInputManager::ProcessCec()
+{
+  std::unique_lock lock(m_cecHandlingMutex);
+
+  for (auto* handler : m_cecInputProviders)
+  {
+    std::optional<CKey> key = handler->GetCecKey();
+    if (key)
+      QueueCecKey(*key);
+  }
+}
+
 void CInputManager::ProcessQueuedActions()
 {
+  // Process actions
   std::vector<CAction> queuedActions;
   {
     std::unique_lock lock(m_actionMutex);
@@ -312,6 +318,16 @@ void CInputManager::ProcessQueuedActions()
 
   for (const CAction& action : queuedActions)
     g_application.OnAction(action);
+
+  // Process CEC keys
+  std::vector<CKey> queuedCecKeys;
+  {
+    std::unique_lock lock(m_cecKeyMutex);
+    queuedCecKeys.swap(m_queuedCecKeys);
+  }
+
+  for (const CKey& key : queuedCecKeys)
+    OnKey(key);
 }
 
 void CInputManager::QueueAction(const CAction& action)
@@ -330,11 +346,16 @@ void CInputManager::QueueAction(const CAction& action)
   m_queuedActions.push_back(action);
 }
 
+void CInputManager::QueueCecKey(const CKey& key)
+{
+  std::unique_lock lock(m_cecKeyMutex);
+  m_queuedCecKeys.emplace_back(key);
+}
+
 bool CInputManager::Process(int windowId, float frameTime)
 {
   // process input actions
   ProcessEventServer(windowId, frameTime);
-  ProcessPeripherals(frameTime);
   ProcessQueuedActions();
 
   // Inform the environment of the new active window ID
@@ -504,7 +525,7 @@ bool CInputManager::OnKey(const CKey& key)
     {
       // Event server keyboard doesn't give normal key up and key down, so don't
       // process for long press if that is the source
-      if (key.GetFromService() ||
+      if (key.GetFromEventServer() ||
           !m_buttonTranslator->HasLongpressMapping(
               CServiceBroker::GetGUI()->GetWindowManager().GetActiveWindowOrDialog(), key))
       {
@@ -627,7 +648,7 @@ bool CInputManager::HandleKey(const CKey& key)
       // else pass the keys through directly
       if (!action.GetID())
       {
-        if (key.GetFromService())
+        if (key.GetFromEventServer())
           action = CAction(key.GetButtonCode() != KEY_INVALID ? key.GetButtonCode() : 0,
                            key.GetUnicode());
         else
@@ -663,7 +684,7 @@ bool CInputManager::HandleKey(const CKey& key)
         return true;
       // failed to handle the keyboard action, drop down through to standard action
     }
-    if (key.GetFromService())
+    if (key.GetFromEventServer())
     {
       if (key.GetButtonCode() != KEY_INVALID)
         action = m_buttonTranslator->GetAction(iWin, key);
@@ -957,4 +978,19 @@ void CInputManager::UnregisterMouseDriverHandler(MOUSE::IMouseDriverHandler* han
 {
   m_mouseHandlers.erase(std::remove(m_mouseHandlers.begin(), m_mouseHandlers.end(), handler),
                         m_mouseHandlers.end());
+}
+
+void CInputManager::RegisterCecInputProvider(CEC::ICecInputProvider* handler)
+{
+  std::unique_lock lock(m_cecHandlingMutex);
+
+  if (std::ranges::find(m_cecInputProviders, handler) == m_cecInputProviders.end())
+    m_cecInputProviders.emplace_back(handler);
+}
+
+void CInputManager::UnregisterCecInputProvider(CEC::ICecInputProvider* handler)
+{
+  std::unique_lock lock(m_cecHandlingMutex);
+
+  std::erase(m_cecInputProviders, handler);
 }
