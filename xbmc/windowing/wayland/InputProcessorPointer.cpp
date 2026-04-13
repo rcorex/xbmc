@@ -79,7 +79,11 @@ void CInputProcessorPointer::OnPointerMotion(CSeat* seat, std::uint32_t time, do
 
 void CInputProcessorPointer::OnPointerButton(CSeat* seat, std::uint32_t serial, std::uint32_t time, std::uint32_t button, wayland::pointer_button_state state)
 {
+#if defined(TARGET_WEBOS)
+  if (true)
+#else
   if (m_pointerOnSurface)
+#endif
   {
     int xbmcButton = WaylandToXbmcButton(button);
     if (xbmcButton < 0)
@@ -95,7 +99,11 @@ void CInputProcessorPointer::OnPointerButton(CSeat* seat, std::uint32_t serial, 
 
 void CInputProcessorPointer::OnPointerAxis(CSeat* seat, std::uint32_t time, wayland::pointer_axis axis, double value)
 {
+#if defined(TARGET_WEBOS)
+  if (true)
+#else
   if (m_pointerOnSurface)
+#endif
   {
     // For axis events we only care about the vector direction
     // and not the scalar magnitude. Every axis event callback
