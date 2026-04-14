@@ -3003,6 +3003,22 @@ void CVideoPlayer::HandleMessages()
       SelectionStream& st = m_SelectionStreams.Get(StreamType::AUDIO, pMsg2->GetStreamId());
       if(st.source != STREAM_SOURCE_NONE)
       {
+#if defined(TARGET_WEBOS)
+        if (NeedsFullMediaRestartOnAudioChange())
+        {
+          if (st.id == m_CurrentAudio.id && st.demuxerId == m_CurrentAudio.demuxerId && st.source == m_CurrentAudio.source)
+          {
+            // We are already playing this stream. Ignore to prevent startup loop caused by GUI auto-restore.
+          }
+          else
+          {
+            // Triggers a full teardown and recreate of the player via Application
+            CServiceBroker::GetAppMessenger()->PostMsg(TMSG_MEDIA_RESTART);
+          }
+          continue; // abort further processing of this message
+        }
+#endif
+
         if(st.source == STREAM_SOURCE_NAV && m_pInputStream && m_pInputStream->IsStreamType(DVDSTREAM_TYPE_DVD))
         {
           std::shared_ptr<CDVDInputStreamNavigator> pStream = std::static_pointer_cast<CDVDInputStreamNavigator>(m_pInputStream);
