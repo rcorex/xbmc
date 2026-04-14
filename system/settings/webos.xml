@@ -27,6 +27,33 @@
           <default>true</default>
           <visible>true</visible>
         </setting>
+        <setting id="audiooutput.webosbypassdialnorm">
+          <visible>true</visible>
+        </setting>
+        <setting id="audiooutput.webosbypassdialnormatmos">
+          <visible>true</visible>
+        </setting>
+        <setting id="audiooutput.webosdtspassthrough">
+          <visible>true</visible>
+        </setting>
+        <setting id="audiooutput.webosdtshdpassthrough">
+          <visible>true</visible>
+        </setting>
+        <setting id="audiooutput.webosstarfisheac3">
+          <visible>true</visible>
+        </setting>
+        <setting id="audiooutput.webosstarfisheac3bitrate">
+          <visible>true</visible>
+        </setting>
+        <setting id="audiooutput.webosstarfishdownmixstereo">
+          <visible>true</visible>
+        </setting>
+        <setting id="audiooutput.webosstarfishdownmixstereoonly71">
+          <visible>true</visible>
+        </setting>
+        <setting id="audiooutput.webosstarfishdownmixstereodplii">
+          <visible>true</visible>
+        </setting>
         <setting id="audiooutput.passthroughdevice">
           <visible>false</visible>
         </setting>
