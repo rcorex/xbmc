@@ -3366,6 +3366,14 @@
         </setting>
       </group>
       <group id="3" label="14252">
+        <setting id="audiooutput.webosaltaudiotrackchange" type="boolean" label="39229" help="39230">
+          <level>1</level>
+          <default>true</default>
+          <requirement>
+            <condition>HAVE_WEBOS</condition>
+          </requirement>
+          <control type="toggle" />
+        </setting>
         <setting id="audiooutput.passthrough" type="boolean" label="348" help="36368">
           <level>1</level>
           <default>false</default>
