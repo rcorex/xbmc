@@ -72,6 +72,7 @@ namespace
 constexpr unsigned int AC3_MAX_SYNC_FRAME_SIZE = 3840;
 constexpr unsigned int EAC3_MAX_SYNC_FRAME_SIZE = 6144;
 constexpr int RESAMPLED_STREAM_ID = -1000;
+constexpr int PARSED_AUDIO_STREAM_ID = -3000;
 constexpr int CONVERTED_STREAM_ID = -2000;
 constexpr unsigned int MIN_AUDIO_RESAMPLE_BUFFER_SIZE = 4096;
 
@@ -338,6 +339,12 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
     Unload(true);
     FlushAudioMessages();
     FlushVideoMessages();
+  if (m_audioParser)
+  {
+    av_parser_close(m_audioParser);
+    m_audioParser = av_parser_init(m_audioHint.codec);
+  }
+
     if (m_bitstream)
       m_bitstream->ResetStartDecode();
     m_flushed = true;
@@ -388,6 +395,12 @@ bool CMediaPipelineWebOS::OpenVideoStream(CDVDStreamInfo hint)
     Unload(true);
     FlushAudioMessages();
     FlushVideoMessages();
+  if (m_audioParser)
+  {
+    av_parser_close(m_audioParser);
+    m_audioParser = av_parser_init(m_audioHint.codec);
+  }
+
     if (m_bitstream)
       m_bitstream->ResetStartDecode();
     m_flushed = true;
@@ -435,6 +448,12 @@ void CMediaPipelineWebOS::Flush(bool sync)
     CLog::LogF(LOGDEBUG, "Failed to flush media APIs");
   FlushAudioMessages();
   FlushVideoMessages();
+  if (m_audioParser)
+  {
+    av_parser_close(m_audioParser);
+    m_audioParser = av_parser_init(m_audioHint.codec);
+  }
+
   if (m_bitstream)
     m_bitstream->ResetStartDecode();
   m_fedAudioPts = NO_PTS;
@@ -662,6 +681,16 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
     m_audioEncoder = nullptr;
     m_audioResample = nullptr;
     m_encoderBuffers = nullptr;
+
+  if (m_audioParserCtx)
+  {
+    avcodec_free_context(&m_audioParserCtx);
+  }
+  if (m_audioParser)
+  {
+    av_parser_close(m_audioParser);
+    m_audioParser = nullptr;
+  }
     p["option"]["needAudio"] = false;
   }
   else
@@ -835,6 +864,16 @@ void CMediaPipelineWebOS::Unload(const bool sync)
   if (m_audioThread.joinable())
     m_audioThread.join();
 
+  if (m_audioParserCtx)
+  {
+    avcodec_free_context(&m_audioParserCtx);
+  }
+  if (m_audioParser)
+  {
+    av_parser_close(m_audioParser);
+    m_audioParser = nullptr;
+  }
+
   if (!m_mediaAPIs->Unload())
     CLog::LogF(LOGERROR, "Unload failed");
 
@@ -859,6 +898,16 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
   m_audioEncoder = nullptr;
   m_audioResample = nullptr;
   m_encoderBuffers = nullptr;
+
+  if (m_audioParserCtx)
+  {
+    avcodec_free_context(&m_audioParserCtx);
+  }
+  if (m_audioParser)
+  {
+    av_parser_close(m_audioParser);
+    m_audioParser = nullptr;
+  }
 
   auto setAC3PlusInfo = [&](const CDVDStreamInfo& hint, CVariant& optInfo)
   {
@@ -949,6 +998,13 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
 
     optInfo["aacInfo"]["frequency"] = audioHint.samplerate / 1000.0;
   }
+
+  m_audioParser = av_parser_init(audioHint.codec);
+  if (m_audioParser)
+  {
+    m_audioParserCtx = avcodec_alloc_context3(nullptr);
+  }
+
 
   return codecName;
 }
@@ -1594,6 +1650,44 @@ void CMediaPipelineWebOS::ProcessAudio()
             std::ranges::for_each(unconsumedPackets | std::views::reverse,
                                   [this](const auto& p) { m_messageQueueAudio.PutBack(p); });
           }
+        }
+        else if (m_audioParser && packet->iStreamId != PARSED_AUDIO_STREAM_ID)
+        {
+          uint8_t* data = packet->pData;
+          int size = packet->iSize;
+          std::vector<std::shared_ptr<CDVDMsgDemuxerPacket>> unconsumedPackets;
+          bool canConsume = true;
+          while (size > 0)
+          {
+            uint8_t* parsed_data = nullptr;
+            int parsed_size = 0;
+            int len = av_parser_parse2(m_audioParser, m_audioParserCtx, &parsed_data, &parsed_size,
+                                       data, size, packet->pts, packet->dts, 0);
+            if (len < 0)
+            {
+              CLog::LogF(LOGERROR, "Error while parsing audio");
+              break;
+            }
+            data += len;
+            size -= len;
+            if (parsed_size > 0)
+            {
+              auto p = std::make_shared<CDVDMsgDemuxerPacket>(CDVDDemuxUtils::AllocateDemuxPacket(parsed_size));
+              memcpy(p->m_packet->pData, parsed_data, parsed_size);
+              p->m_packet->iSize = parsed_size;
+              p->m_packet->pts = m_audioParser->pts;
+              p->m_packet->dts = m_audioParser->dts;
+              p->m_packet->iStreamId = PARSED_AUDIO_STREAM_ID;
+              if (!canConsume || !FeedAudioData(p))
+              {
+                canConsume = false;
+                unconsumedPackets.emplace_back(std::move(p));
+              }
+            }
+          }
+          // not consumed packets need to be pushed back in reverse to keep ordering
+          std::ranges::for_each(unconsumedPackets | std::views::reverse,
+                                [this](const auto& p) { m_messageQueueAudio.PutBack(p); });
         }
         else
         {

@@ -25,6 +25,7 @@
 #include <thread>
 
 #include <starfish-media-pipeline/StarfishMediaAPIs.h>
+#include <libavcodec/avcodec.h>
 
 namespace ActiveAE
 {
@@ -502,6 +503,8 @@ private:
   CDVDStreamInfo m_videoHint;
   std::unique_ptr<CBitstreamConverter> m_bitstream{nullptr};
   std::unique_ptr<CDVDAudioCodec> m_audioCodec{nullptr};
+  AVCodecParserContext* m_audioParser{nullptr};
+  AVCodecContext* m_audioParserCtx{nullptr};
   std::unique_ptr<ActiveAE::CActiveAEBufferPool> m_encoderBuffers{nullptr};
   std::unique_ptr<ActiveAE::CActiveAEBufferPoolResample> m_audioResample{nullptr};
   std::unique_ptr<CAEEncoderFFmpeg> m_audioEncoder{nullptr};
