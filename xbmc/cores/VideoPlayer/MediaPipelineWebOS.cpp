@@ -1670,6 +1670,10 @@ void CMediaPipelineWebOS::ProcessAudio()
             }
             data += len;
             size -= len;
+            if (parsed_size == 0)
+            {
+              CLog::LogF(LOGERROR, "Unaligned or incomplete audio packet detected, buffering...");
+            }
             if (parsed_size > 0)
             {
               auto p = std::make_shared<CDVDMsgDemuxerPacket>(CDVDDemuxUtils::AllocateDemuxPacket(parsed_size));
