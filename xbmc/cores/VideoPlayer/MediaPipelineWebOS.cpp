@@ -74,6 +74,7 @@ namespace
 constexpr unsigned int AC3_MAX_SYNC_FRAME_SIZE = 3840;
 constexpr unsigned int EAC3_MAX_SYNC_FRAME_SIZE = 6144;
 constexpr int RESAMPLED_STREAM_ID = -1000;
+constexpr int PARSED_AUDIO_STREAM_ID = -3000;
 constexpr int CONVERTED_STREAM_ID = -2000;
 constexpr unsigned int MIN_AUDIO_RESAMPLE_BUFFER_SIZE = 4096;
 
@@ -615,8 +616,17 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
     }
     // API introduced in webOS 6.0, so we need to handle older versions differently
     Unload(true);
+    FlushAudioMessages();
+    FlushVideoMessages();
+  if (m_audioParser)
+  {
+    av_parser_close(m_audioParser);
+    m_audioParser = av_parser_init(m_audioHint.codec);
+  }
 
-    m_mediaAPIs = std::make_unique<StarfishMediaAPIs>();
+    if (m_bitstream)
+      m_bitstream->ResetStartDecode();
+    m_flushed = true;
     m_audioClosed = false;
   }
 
@@ -662,8 +672,17 @@ bool CMediaPipelineWebOS::OpenVideoStream(CDVDStreamInfo hint)
 
     // Different codec => unload the current stream
     Unload(true);
+    FlushAudioMessages();
+    FlushVideoMessages();
+  if (m_audioParser)
+  {
+    av_parser_close(m_audioParser);
+    m_audioParser = av_parser_init(m_audioHint.codec);
+  }
 
-    m_mediaAPIs = std::make_unique<StarfishMediaAPIs>();
+    if (m_bitstream)
+      m_bitstream->ResetStartDecode();
+    m_flushed = true;
   }
 
   m_videoHint = hint;
@@ -708,6 +727,12 @@ void CMediaPipelineWebOS::Flush(bool sync)
     CLog::LogF(LOGDEBUG, "Failed to flush media APIs");
   FlushAudioMessages();
   FlushVideoMessages();
+  if (m_audioParser)
+  {
+    av_parser_close(m_audioParser);
+    m_audioParser = av_parser_init(m_audioHint.codec);
+  }
+
   if (m_bitstream)
     m_bitstream->ResetStartDecode();
   m_fedAudioPts = NO_PTS;
@@ -935,6 +960,16 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
     m_audioEncoder = nullptr;
     m_audioResample = nullptr;
     m_encoderBuffers = nullptr;
+
+  if (m_audioParserCtx)
+  {
+    avcodec_free_context(&m_audioParserCtx);
+  }
+  if (m_audioParser)
+  {
+    av_parser_close(m_audioParser);
+    m_audioParser = nullptr;
+  }
     p["option"]["needAudio"] = false;
   }
   else
@@ -1115,6 +1150,16 @@ void CMediaPipelineWebOS::Unload(const bool sync)
   if (m_audioThread.joinable())
     m_audioThread.join();
 
+  if (m_audioParserCtx)
+  {
+    avcodec_free_context(&m_audioParserCtx);
+  }
+  if (m_audioParser)
+  {
+    av_parser_close(m_audioParser);
+    m_audioParser = nullptr;
+  }
+
   if (!m_mediaAPIs->Unload())
     CLog::LogF(LOGERROR, "Unload failed");
 
@@ -1139,6 +1184,16 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
   m_audioEncoder = nullptr;
   m_audioResample = nullptr;
   m_encoderBuffers = nullptr;
+
+  if (m_audioParserCtx)
+  {
+    avcodec_free_context(&m_audioParserCtx);
+  }
+  if (m_audioParser)
+  {
+    av_parser_close(m_audioParser);
+    m_audioParser = nullptr;
+  }
 
   auto setAC3PlusInfo = [&](const CDVDStreamInfo& hint, CVariant& optInfo)
   {
@@ -1259,6 +1314,13 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
     optInfo["aacInfo"]["frequency"] = audioHint.samplerate / 1000.0;
   }
 
+  m_audioParser = av_parser_init(audioHint.codec);
+  if (m_audioParser)
+  {
+    m_audioParserCtx = avcodec_alloc_context3(nullptr);
+  }
+
+
   return codecName;
 }
 
@@ -1293,8 +1355,9 @@ void CMediaPipelineWebOS::SetupBitstreamConverter(CDVDStreamInfo& hint)
 
           // Only set for profile 7, container hint allows to skip parsing unnecessarily
           // set profile 8 and single layer when converting
-          if (!removeDovi && convertDovi && hint.dovi.dv_profile == 7)
+          if (!removeDovi && convertDovi && (hint.dovi.dv_profile == 7 || m_convertDovi))
           {
+            m_convertDovi = true;
             m_bitstream->SetConvertDovi(true);
             hint.dovi.dv_profile = 8;
             hint.dovi.el_present_flag = false;
@@ -1412,6 +1475,12 @@ bool CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
   if (pts < 0ns)
     return true;
 
+  // Wait for the video pipeline to clear the flush state and successfully feed its first packet.
+  if (m_flushed && m_fedVideoPts.load() == NO_PTS)
+  {
+    return false;
+  }
+  
   const std::chrono::nanoseconds fedAudioPts = m_fedAudioPts.load();
   if (m_started && fedAudioPts != NO_PTS && fedAudioPts - m_pts.load() > MAX_FEED_AHEAD_TIME)
     return false;
@@ -1432,6 +1501,7 @@ bool CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
   {
     m_fedAudioPts = pts;
     m_audioStats.AddSampleBytes(packet->iSize);
+    m_audioFeedErrorCount = 0;
     return true;
   }
 
@@ -1439,7 +1509,13 @@ bool CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
     return false;
 
   CLog::LogF(LOGWARNING, "Buffer submit returned error: {}", result);
-  return true;
+  if (++m_audioFeedErrorCount > 10)
+  {
+    CLog::LogF(LOGERROR, "Maximum buffer submit errors reached, dropping packet");
+    m_audioFeedErrorCount = 0;
+    return true;
+  }
+  return false;
 }
 
 bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
@@ -1507,6 +1583,11 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
     pipeline->sendSegmentEvent();
 
     m_pts = pts;
+
+    // Set the lock-on target for delayed FRAMEREADY events
+    m_seekTargetPts = pts.count();
+    m_isSeeking = true;
+
     m_fedVideoPts = NO_PTS;
     m_fedAudioPts = NO_PTS;
     m_started = false;
@@ -1546,6 +1627,7 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
     {
       m_fedVideoPts = feedPts;
       m_videoStats.AddSampleBytes(packet->iSize);
+      m_videoFeedErrorCount = 0;
       const unsigned int level = GetQueueLevel(StreamType::VIDEO);
       m_processInfo.SetLevelVQ(static_cast<int>(level));
       return true;
@@ -1555,6 +1637,13 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
       return false;
 
     CLog::LogF(LOGWARNING, "Buffer submit returned error: {}", result);
+    if (++m_videoFeedErrorCount > 10)
+    {
+      CLog::LogF(LOGERROR, "Maximum buffer submit errors reached, dropping packet");
+      m_videoFeedErrorCount = 0;
+      return true;
+    }
+    return false;
   }
   return true;
 }
@@ -1913,6 +2002,48 @@ void CMediaPipelineWebOS::ProcessAudio()
                                   [this](const auto& p) { m_messageQueueAudio.PutBack(p); });
           }
         }
+        else if (m_audioParser && packet->iStreamId != PARSED_AUDIO_STREAM_ID)
+        {
+          uint8_t* data = packet->pData;
+          int size = packet->iSize;
+          std::vector<std::shared_ptr<CDVDMsgDemuxerPacket>> unconsumedPackets;
+          bool canConsume = true;
+          while (size > 0)
+          {
+            uint8_t* parsed_data = nullptr;
+            int parsed_size = 0;
+            int len = av_parser_parse2(m_audioParser, m_audioParserCtx, &parsed_data, &parsed_size,
+                                       data, size, packet->pts, packet->dts, 0);
+            if (len < 0)
+            {
+              CLog::LogF(LOGERROR, "Error while parsing audio");
+              break;
+            }
+            data += len;
+            size -= len;
+            if (parsed_size == 0)
+            {
+              CLog::LogF(LOGERROR, "Unaligned or incomplete audio packet detected, buffering...");
+            }
+            if (parsed_size > 0)
+            {
+              auto p = std::make_shared<CDVDMsgDemuxerPacket>(CDVDDemuxUtils::AllocateDemuxPacket(parsed_size));
+              memcpy(p->m_packet->pData, parsed_data, parsed_size);
+              p->m_packet->iSize = parsed_size;
+              p->m_packet->pts = m_audioParser->pts;
+              p->m_packet->dts = m_audioParser->dts;
+              p->m_packet->iStreamId = PARSED_AUDIO_STREAM_ID;
+              if (!canConsume || !FeedAudioData(p))
+              {
+                canConsume = false;
+                unconsumedPackets.emplace_back(std::move(p));
+              }
+            }
+          }
+          // not consumed packets need to be pushed back in reverse to keep ordering
+          std::ranges::for_each(unconsumedPackets | std::views::reverse,
+                                [this](const auto& p) { m_messageQueueAudio.PutBack(p); });
+        }
         else
         {
           if (!FeedAudioData(msg))
@@ -1994,6 +2125,22 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
   {
     case PF_EVENT_TYPE_FRAMEREADY:
     {
+      if (m_isSeeking.load())
+      {
+        // Calculate absolute distance between this frame and our seek target
+        const int64_t delta = std::abs(numValue - m_seekTargetPts.load());
+        constexpr int64_t MAX_ACCEPTABLE_GAP = 2000000000LL; // 2 seconds in nanoseconds
+
+        if (delta > MAX_ACCEPTABLE_GAP)
+        {
+          CLog::Log(LOGDEBUG, "Ignored stale FRAMEREADY event (backward/forward seek guard).");
+          break;
+        }
+
+        // Frame is within the acceptable window, pipeline is cleared
+        m_isSeeking = false;
+      }
+
       m_pts = std::chrono::nanoseconds(numValue);
       const double pts = GetCurrentPts();
       ProcessOverlays(pts);
@@ -2022,12 +2169,6 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       m_pipeline = pipeline->GetGStreamerElements(
           {0, MIN_SRC_BUFFER_LEVEL_VIDEO, MAX_SRC_BUFFER_LEVEL_VIDEO, MAX_BUFFER_LEVEL});
 
-      if (acb)
-      {
-        AcbAPI_setSinkType(acb->Id(), SINK_TYPE_MAIN);
-        AcbAPI_setMediaId(acb->Id(), m_mediaAPIs->getMediaID());
-        AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_LOADED, &acb->TaskId());
-      }
       m_renderManager.ShowVideo(true);
       if (!m_mediaAPIs->Play())
         CLog::LogF(LOGERROR, "Failed to play");
@@ -2064,7 +2205,12 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       m_messageQueueParent.Put(
           std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, msg));
       if (acb)
+      {
+        AcbAPI_setSinkType(acb->Id(), SINK_TYPE_MAIN);
+        AcbAPI_setMediaId(acb->Id(), m_mediaAPIs->getMediaID());
+        AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_LOADED, &acb->TaskId());
         AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PLAYING, &acb->TaskId());
+      }
       UpdateGUISounds(true);
       break;
     }

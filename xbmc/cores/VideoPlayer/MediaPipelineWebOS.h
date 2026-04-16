@@ -26,6 +26,7 @@
 #include <thread>
 
 #include <starfish-media-pipeline/StarfishMediaAPIs.h>
+#include <libavcodec/avcodec.h>
 
 namespace ActiveAE
 {
@@ -490,6 +491,11 @@ private:
   std::atomic<bool> m_stalled{false};
   std::atomic<bool> m_loaded{false};
   std::atomic<bool> m_flushed{false};
+
+  // Seek recovery lock-on variables
+  std::atomic<bool> m_isSeeking{false};
+  std::atomic<int64_t> m_seekTargetPts{0};
+
   std::atomic<bool> m_subtitle{false};
   std::atomic<double> m_subtitleDelay{0.0};
   std::atomic<bool> m_needsTranscode{false};
@@ -500,6 +506,8 @@ private:
   CDVDStreamInfo m_videoHint;
   std::unique_ptr<CBitstreamConverter> m_bitstream{nullptr};
   std::unique_ptr<CDVDAudioCodec> m_audioCodec{nullptr};
+  AVCodecParserContext* m_audioParser{nullptr};
+  AVCodecContext* m_audioParserCtx{nullptr};
   std::unique_ptr<ActiveAE::CActiveAEBufferPool> m_encoderBuffers{nullptr};
   std::unique_ptr<ActiveAE::CActiveAEBufferPoolResample> m_audioResample{nullptr};
   std::unique_ptr<CAEEncoderFFmpeg> m_audioEncoder{nullptr};
@@ -519,6 +527,7 @@ private:
   CDVDClock& m_clock;
   CDVDOverlayContainer& m_overlayContainer;
   bool m_hasAudio{true};
+  std::atomic<bool> m_convertDovi{false};
 
   std::atomic<bool> m_videoClosed{true};
   std::atomic<bool> m_audioClosed{true};
@@ -536,6 +545,9 @@ private:
   std::atomic<std::chrono::nanoseconds> m_fedAudioPts{NO_PTS};
   std::atomic<std::chrono::nanoseconds> m_fedVideoPts{NO_PTS};
   std::atomic<bool> m_started{false};
+
+  int m_audioFeedErrorCount{0};
+  int m_videoFeedErrorCount{0};
 
   BitstreamStats m_audioStats{};
   BitstreamStats m_videoStats{};
