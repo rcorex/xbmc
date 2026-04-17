@@ -2492,7 +2492,6 @@ void CApplication::RestartTrackChange()
   std::string state = appPlayer->GetPlayerState();
 
   appPlayer->ClosePlayer();
-  g_partyModeManager.Disable();
 
   // Store the previous start offset so we can restore it after playback starts.
   // PlayFile handles the bRestart = true properly to use the item's start offset,
