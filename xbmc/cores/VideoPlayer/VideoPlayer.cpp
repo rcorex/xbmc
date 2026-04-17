@@ -3018,7 +3018,7 @@ void CVideoPlayer::HandleMessages()
           else
           {
             // Triggers a full teardown and recreate of the player via Application
-            CServiceBroker::GetAppMessenger()->PostMsg(TMSG_MEDIA_RESTART);
+            CServiceBroker::GetAppMessenger()->PostMsg(TMSG_MEDIA_RESTART_TRACK_CHANGE);
           }
           continue; // abort further processing of this message
         }

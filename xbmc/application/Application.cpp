@@ -2479,6 +2479,25 @@ void CApplication::Restart(bool bSamePosition)
     appPlayer->SetPlayerState(state);
 }
 
+void CApplication::RestartTrackChange()
+{
+  const auto appPlayer = GetComponent<CApplicationPlayer>();
+  if (!appPlayer->IsPlayingVideo() && !appPlayer->IsPlayingAudio())
+    return;
+
+  if (!appPlayer->HasPlayer())
+    return;
+
+  double time = GetTime();
+  std::string state = appPlayer->GetPlayerState();
+
+  StopPlaying();
+
+  m_itemCurrentFile->SetStartOffset(CUtil::ConvertSecsToMilliSecs(time));
+  if (PlayFile(*m_itemCurrentFile, "", true))
+    appPlayer->SetPlayerState(state);
+}
+
 const std::string& CApplication::CurrentFile()
 {
   return m_itemCurrentFile->GetPath();
