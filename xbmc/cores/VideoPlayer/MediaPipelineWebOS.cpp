@@ -338,6 +338,7 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
     Unload(true);
     FlushAudioMessages();
     FlushVideoMessages();
+    m_mediaAPIs = std::make_unique<StarfishMediaAPIs>();
     if (m_bitstream)
       m_bitstream->ResetStartDecode();
     m_flushed = true;
@@ -388,6 +389,7 @@ bool CMediaPipelineWebOS::OpenVideoStream(CDVDStreamInfo hint)
     Unload(true);
     FlushAudioMessages();
     FlushVideoMessages();
+    m_mediaAPIs = std::make_unique<StarfishMediaAPIs>();
     if (m_bitstream)
       m_bitstream->ResetStartDecode();
     m_flushed = true;
