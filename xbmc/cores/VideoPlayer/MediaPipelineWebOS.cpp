@@ -1746,7 +1746,7 @@ void CMediaPipelineWebOS::ProcessAudio()
         DemuxPacket* packet =
             std::static_pointer_cast<CDVDMsgDemuxerPacket>(msg)->GetPacket();
 
-        if (packet->iStreamId != RESAMPLED_STREAM_ID)
+        if (packet->iStreamId != RESAMPLED_STREAM_ID && packet->iStreamId != CONVERTED_STREAM_ID)
         {
           if (m_audioHint.codec == AV_CODEC_ID_AC3 || m_audioHint.codec == AV_CODEC_ID_EAC3)
           {
@@ -1760,7 +1760,10 @@ void CMediaPipelineWebOS::ProcessAudio()
               }
 
               if (shouldDefeat)
+              {
                 DefeatDialnorm(packet->pData, packet->iSize);
+                packet->iStreamId = CONVERTED_STREAM_ID;
+              }
             }
           }
         }
