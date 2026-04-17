@@ -2494,9 +2494,15 @@ void CApplication::RestartTrackChange()
   appPlayer->ClosePlayer();
   g_partyModeManager.Disable();
 
+  // Store the previous start offset so we can restore it after playback starts.
+  // PlayFile handles the bRestart = true properly to use the item's start offset,
+  // but m_itemCurrentFile->GetStartOffset() will be modified and we don't want to
+  // permanently change the item's saved offset across stops unless intended.
+  double oldOffset = m_itemCurrentFile->GetStartOffset();
   m_itemCurrentFile->SetStartOffset(CUtil::ConvertSecsToMilliSecs(time));
   if (PlayFile(*m_itemCurrentFile, "", true))
     appPlayer->SetPlayerState(state);
+  m_itemCurrentFile->SetStartOffset(oldOffset);
 }
 
 const std::string& CApplication::CurrentFile()
