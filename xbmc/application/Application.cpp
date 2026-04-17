@@ -2488,7 +2488,7 @@ void CApplication::RestartTrackChange()
   if (!appPlayer->HasPlayer())
     return;
 
-  double time = GetTime();
+  double time = std::max(0.0, GetTime() - 5.0);
   std::string state = appPlayer->GetPlayerState();
 
   StopPlaying();
