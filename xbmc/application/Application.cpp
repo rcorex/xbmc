@@ -2488,10 +2488,11 @@ void CApplication::RestartTrackChange()
   if (!appPlayer->HasPlayer())
     return;
 
-  double time = std::max(0.0, GetTime() - 5.0);
+  double time = std::max<double>(0.0, GetTime() - 5.0);
   std::string state = appPlayer->GetPlayerState();
 
-  StopPlaying();
+  appPlayer->ClosePlayer();
+  g_partyModeManager.Disable();
 
   m_itemCurrentFile->SetStartOffset(CUtil::ConvertSecsToMilliSecs(time));
   if (PlayFile(*m_itemCurrentFile, "", true))
