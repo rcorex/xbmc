@@ -24340,7 +24340,7 @@ msgstr ""
 # Description of setting with label #39229 "Use alternate method for audio track change"
 #: system/settings/settings.xml
 msgctxt "#39230"
-msgid "Does a full media restart when changing audio tracks. Enable this if you have issues changing audio tracks."
+msgid "Does a full player restart when changing audio tracks. Enable this if you have issues changing audio tracks."
 msgstr ""
 
 #empty strings from id 39231 to 39999
