@@ -433,11 +433,8 @@ void CMediaPipelineWebOS::Flush(bool sync)
   CWorkerGate::Lock videoLock(m_videoGate);
   CWorkerGate::Lock audioLock(m_audioGate);
 
-  if (m_fedAudioPts != NO_PTS || m_fedVideoPts != NO_PTS || m_started)
-  {
-    if (!m_mediaAPIs->flush())
-      CLog::LogF(LOGDEBUG, "Failed to flush media APIs");
-  }
+  if (!m_mediaAPIs->flush())
+    CLog::LogF(LOGDEBUG, "Failed to flush media APIs");
   FlushAudioMessages();
   FlushVideoMessages();
   if (m_bitstream)

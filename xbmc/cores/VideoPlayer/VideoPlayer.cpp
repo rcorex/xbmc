@@ -3086,17 +3086,26 @@ void CVideoPlayer::HandleMessages()
         }
         else
         {
-          CloseStream(m_CurrentAudio, false);
-          OpenStream(m_CurrentAudio, st.demuxerId, st.id, st.source);
-          AdaptForcedSubtitles();
+          int time = (int)GetUpdatedTime();
 
-          CDVDMsgPlayerSeek::CMode mode;
-          mode.time = (int)GetUpdatedTime();
-          mode.backward = true;
-          mode.accurate = true;
-          mode.trickplay = true;
-          mode.sync = true;
-          m_messenger.Put(std::make_shared<CDVDMsgPlayerSeek>(mode));
+          double start = DVD_NOPTS_VALUE;
+          if (m_pDemuxer && m_pDemuxer->SeekTime(time, true, &start))
+          {
+            if (m_pSubtitleDemuxer)
+              m_pSubtitleDemuxer->SeekTime(time, true);
+
+            if (start == DVD_NOPTS_VALUE)
+              start = DVD_MSEC_TO_TIME(time) - m_State.time_offset;
+
+            m_State.dts = start;
+            m_State.lastSeek = m_clock.GetAbsoluteClock();
+
+            FlushBuffers(start, true, true);
+          }
+
+          CloseStream(m_CurrentAudio, false);
+          OpenStream(m_CurrentAudio, st.demuxerId, st.id, st.source, false);
+          AdaptForcedSubtitles();
         }
       }
     }
