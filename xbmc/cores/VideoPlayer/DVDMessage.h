@@ -43,6 +43,9 @@ public:
     PLAYER_SET_STATE,               // restore the VideoPlayer to a certain state
     PLAYER_SET_PROGRAM,
     PLAYER_SET_UPDATE_STREAM_DETAILS, // player should update file item stream details with its current streams
+#if defined(TARGET_WEBOS)
+    PLAYER_RESTART_MEDIA_STREAMS,   // restart media streams manually via seek-close-reopen logic
+#endif
     PLAYER_SEEK,                    //
     PLAYER_SEEK_CHAPTER,            //
     PLAYER_SETSPEED,                // set the playback speed

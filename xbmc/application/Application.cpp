@@ -44,6 +44,9 @@
 #include "application/ApplicationPlay.h"
 #include "application/ApplicationPlayer.h"
 #include "application/ApplicationPowerHandling.h"
+#if defined(TARGET_WEBOS)
+#include "cores/VideoPlayer/VideoPlayer.h"
+#endif
 #include "application/ApplicationSkinHandling.h"
 #include "application/ApplicationStackHelper.h"
 #include "application/ApplicationVolumeHandling.h"
@@ -2464,6 +2467,17 @@ void CApplication::Restart(bool bSamePosition)
     PlayFile(*m_itemCurrentFile, "", true);
     return ;
   }
+
+#if defined(TARGET_WEBOS)
+  if (auto iplayer = appPlayer->GetInternal())
+  {
+    if (auto vp = dynamic_cast<CVideoPlayer*>(iplayer.get()))
+    {
+      vp->RestartMediaStreams();
+      return;
+    }
+  }
+#endif
 
   // else get current position
   double time = GetTime();

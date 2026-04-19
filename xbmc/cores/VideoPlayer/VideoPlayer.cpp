@@ -3001,6 +3001,55 @@ void CVideoPlayer::HandleMessages()
       if(m_pSubtitleDemuxer)
         m_pSubtitleDemuxer->Reset();
     }
+#if defined(TARGET_WEBOS)
+    else if (pMsg->IsType(CDVDMsg::PLAYER_RESTART_MEDIA_STREAMS))
+    {
+      auto prevVideo = m_CurrentVideo;
+      auto prevAudio = m_CurrentAudio;
+      auto prevSubtitle = m_CurrentSubtitle;
+
+      int time = (int)GetUpdatedTime();
+
+      bool subtitlesEnabled = GetSubtitleVisible();
+      float subtitleDelay = GetSubTitleDelay();
+
+      double start = DVD_NOPTS_VALUE;
+      if (m_pDemuxer && m_pDemuxer->SeekTime(time, true, &start))
+      {
+        if (m_pSubtitleDemuxer)
+          m_pSubtitleDemuxer->SeekTime(time, true);
+
+        if (start == DVD_NOPTS_VALUE)
+          start = DVD_MSEC_TO_TIME(time) - m_State.time_offset;
+
+        m_State.dts = start;
+        m_State.lastSeek = m_clock.GetAbsoluteClock();
+
+        FlushBuffers(start, true, true);
+      }
+
+      CloseStream(m_CurrentVideo, false);
+      CloseStream(m_CurrentAudio, false);
+      CloseStream(m_CurrentSubtitle, false);
+
+      DestroyPlayers();
+      CreatePlayers();
+
+      if (prevVideo.source != STREAM_SOURCE_NONE)
+        OpenStream(m_CurrentVideo, prevVideo.demuxerId, prevVideo.id, prevVideo.source, false);
+
+      if (prevAudio.source != STREAM_SOURCE_NONE)
+        OpenStream(m_CurrentAudio, prevAudio.demuxerId, prevAudio.id, prevAudio.source, false);
+
+      if (prevSubtitle.source != STREAM_SOURCE_NONE)
+        OpenStream(m_CurrentSubtitle, prevSubtitle.demuxerId, prevSubtitle.id, prevSubtitle.source, false);
+
+      SetSubtitleVisibleInternal(subtitlesEnabled);
+      SetSubTitleDelay(subtitleDelay);
+
+      AdaptForcedSubtitles();
+    }
+#endif
     else if (pMsg->IsType(CDVDMsg::PLAYER_SET_AUDIOSTREAM))
     {
       auto pMsg2 = std::static_pointer_cast<CDVDMsgPlayerSetAudioStream>(pMsg);
@@ -5799,6 +5848,13 @@ void CVideoPlayer::SetAudioStream(int iStream)
   SynchronizeDemuxer();
   NotifyAudioUpdate();
 }
+
+#if defined(TARGET_WEBOS)
+void CVideoPlayer::RestartMediaStreams()
+{
+  m_messenger.Put(std::make_shared<CDVDMsg>(CDVDMsg::PLAYER_RESTART_MEDIA_STREAMS));
+}
+#endif
 
 void CVideoPlayer::GetSubtitleStreamInfo(int index, SubtitleStreamInfo& info) const
 {

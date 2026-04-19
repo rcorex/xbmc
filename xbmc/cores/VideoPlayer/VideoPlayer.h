@@ -381,6 +381,7 @@ public:
 
 #if defined(TARGET_WEBOS)
   virtual bool NeedsFullMediaRestartOnAudioChange() const { return false; }
+  void RestartMediaStreams();
 #endif
 
   CVideoSettings GetVideoSettings() const override;
