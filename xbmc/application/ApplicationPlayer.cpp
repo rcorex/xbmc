@@ -673,6 +673,20 @@ void CApplicationPlayer::SetAudioStream(int iStream)
   }
 }
 
+#if defined(TARGET_WEBOS)
+void CApplicationPlayer::RestartMediaStreams()
+{
+  std::shared_ptr<IPlayer> player = GetInternal();
+  if (player)
+  {
+    if (auto vp = dynamic_cast<CVideoPlayer*>(player.get()))
+    {
+      vp->RestartMediaStreams();
+    }
+  }
+}
+#endif
+
 void CApplicationPlayer::GetSubtitleStreamInfo(int index, SubtitleStreamInfo& info) const
 {
   const std::shared_ptr<const IPlayer> player = GetInternal();

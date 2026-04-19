@@ -44,9 +44,6 @@
 #include "application/ApplicationPlay.h"
 #include "application/ApplicationPlayer.h"
 #include "application/ApplicationPowerHandling.h"
-#if defined(TARGET_WEBOS)
-#include "cores/VideoPlayer/VideoPlayer.h"
-#endif
 #include "application/ApplicationSkinHandling.h"
 #include "application/ApplicationStackHelper.h"
 #include "application/ApplicationVolumeHandling.h"
@@ -2469,13 +2466,10 @@ void CApplication::Restart(bool bSamePosition)
   }
 
 #if defined(TARGET_WEBOS)
-  if (auto iplayer = appPlayer->GetInternal())
+  if (appPlayer->IsPlayingVideo())
   {
-    if (auto vp = dynamic_cast<CVideoPlayer*>(iplayer.get()))
-    {
-      vp->RestartMediaStreams();
-      return;
-    }
+    appPlayer->RestartMediaStreams();
+    return;
   }
 #endif
 
