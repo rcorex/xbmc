@@ -3029,16 +3029,16 @@ void CVideoPlayer::HandleMessages()
 
             DestroyPlayers();
 
-            if (prevVideo.source != STREAM_SOURCE_NONE)
-              OpenStream(m_CurrentVideo, prevVideo.demuxerId, prevVideo.id, prevVideo.source);
+            // Create players before opening streams
+            CreatePlayers();
 
-            OpenStream(m_CurrentAudio, st.demuxerId, st.id, st.source);
+            if (prevVideo.source != STREAM_SOURCE_NONE)
+              OpenStream(m_CurrentVideo, prevVideo.demuxerId, prevVideo.id, prevVideo.source, false);
+
+            OpenStream(m_CurrentAudio, st.demuxerId, st.id, st.source, false);
 
             if (prevSubtitle.source != STREAM_SOURCE_NONE)
-              OpenStream(m_CurrentSubtitle, prevSubtitle.demuxerId, prevSubtitle.id, prevSubtitle.source);
-
-            // Create players AFTER streams are opened so video player is created properly
-            CreatePlayers();
+              OpenStream(m_CurrentSubtitle, prevSubtitle.demuxerId, prevSubtitle.id, prevSubtitle.source, false);
 
             AdaptForcedSubtitles();
 
