@@ -3019,10 +3019,10 @@ void CVideoPlayer::HandleMessages()
           {
             auto prevVideo = m_CurrentVideo;
             auto prevSubtitle = m_CurrentSubtitle;
-            
+
             // Capture the time BEFORE tearing down the player streams
             int time = (int)GetUpdatedTime();
-            
+
             bool subtitlesEnabled = GetSubtitleVisible();
             float subtitleDelay = GetSubTitleDelay();
 
@@ -3032,13 +3032,13 @@ void CVideoPlayer::HandleMessages()
             {
               if (m_pSubtitleDemuxer)
                 m_pSubtitleDemuxer->SeekTime(time, true);
-                
+
               if (start == DVD_NOPTS_VALUE)
                 start = DVD_MSEC_TO_TIME(time) - m_State.time_offset;
-              
+
               m_State.dts = start;
               m_State.lastSeek = m_clock.GetAbsoluteClock();
-              
+
               FlushBuffers(start, true, true);
             }
 
@@ -3058,7 +3058,7 @@ void CVideoPlayer::HandleMessages()
 
             if (prevSubtitle.source != STREAM_SOURCE_NONE)
               OpenStream(m_CurrentSubtitle, prevSubtitle.demuxerId, prevSubtitle.id, prevSubtitle.source, false);
-              
+
             SetSubtitleVisibleInternal(subtitlesEnabled);
             SetSubTitleDelay(subtitleDelay);
 
@@ -3088,19 +3088,19 @@ void CVideoPlayer::HandleMessages()
         {
 #if defined(TARGET_WEBOS)
           int time = (int)GetUpdatedTime();
-          
+
           double start = DVD_NOPTS_VALUE;
           if (m_pDemuxer && m_pDemuxer->SeekTime(time, true, &start))
           {
             if (m_pSubtitleDemuxer)
               m_pSubtitleDemuxer->SeekTime(time, true);
-              
+
             if (start == DVD_NOPTS_VALUE)
               start = DVD_MSEC_TO_TIME(time) - m_State.time_offset;
-            
+
             m_State.dts = start;
             m_State.lastSeek = m_clock.GetAbsoluteClock();
-            
+
             FlushBuffers(start, true, true);
           }
 
