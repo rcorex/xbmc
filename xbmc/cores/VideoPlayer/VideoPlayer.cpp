@@ -3004,50 +3004,10 @@ void CVideoPlayer::HandleMessages()
 #if defined(TARGET_WEBOS)
     else if (pMsg->IsType(CDVDMsg::PLAYER_RESTART_MEDIA_STREAMS))
     {
-      auto prevVideo = m_CurrentVideo;
-      auto prevAudio = m_CurrentAudio;
-      auto prevSubtitle = m_CurrentSubtitle;
-
-      int time = (int)GetUpdatedTime();
-
-      bool subtitlesEnabled = GetSubtitleVisible();
-      float subtitleDelay = GetSubTitleDelay();
-
-      double start = DVD_NOPTS_VALUE;
-      if (m_pDemuxer && m_pDemuxer->SeekTime(time, true, &start))
+      if (m_CurrentAudio.source != STREAM_SOURCE_NONE)
       {
-        if (m_pSubtitleDemuxer)
-          m_pSubtitleDemuxer->SeekTime(time, true);
-
-        if (start == DVD_NOPTS_VALUE)
-          start = DVD_MSEC_TO_TIME(time) - m_State.time_offset;
-
-        m_State.dts = start;
-        m_State.lastSeek = m_clock.GetAbsoluteClock();
-
-        FlushBuffers(start, true, true);
+        WebOSRestartMediaStreams(m_CurrentAudio.demuxerId, m_CurrentAudio.id, m_CurrentAudio.source);
       }
-
-      CloseStream(m_CurrentVideo, false);
-      CloseStream(m_CurrentAudio, false);
-      CloseStream(m_CurrentSubtitle, false);
-
-      DestroyPlayers();
-      CreatePlayers();
-
-      if (prevVideo.source != STREAM_SOURCE_NONE)
-        OpenStream(m_CurrentVideo, prevVideo.demuxerId, prevVideo.id, prevVideo.source, false);
-
-      if (prevAudio.source != STREAM_SOURCE_NONE)
-        OpenStream(m_CurrentAudio, prevAudio.demuxerId, prevAudio.id, prevAudio.source, false);
-
-      if (prevSubtitle.source != STREAM_SOURCE_NONE)
-        OpenStream(m_CurrentSubtitle, prevSubtitle.demuxerId, prevSubtitle.id, prevSubtitle.source, false);
-
-      SetSubtitleVisibleInternal(subtitlesEnabled);
-      SetSubTitleDelay(subtitleDelay);
-
-      AdaptForcedSubtitles();
     }
 #endif
     else if (pMsg->IsType(CDVDMsg::PLAYER_SET_AUDIOSTREAM))
@@ -3066,52 +3026,7 @@ void CVideoPlayer::HandleMessages()
           }
           else
           {
-            auto prevVideo = m_CurrentVideo;
-            auto prevSubtitle = m_CurrentSubtitle;
-
-            // Capture the time BEFORE tearing down the player streams
-            int time = (int)GetUpdatedTime();
-
-            bool subtitlesEnabled = GetSubtitleVisible();
-            float subtitleDelay = GetSubTitleDelay();
-
-            // Perform the demuxer seek *before* opening streams so we don't drop newly queued extradata
-            double start = DVD_NOPTS_VALUE;
-            if (m_pDemuxer && m_pDemuxer->SeekTime(time, true, &start))
-            {
-              if (m_pSubtitleDemuxer)
-                m_pSubtitleDemuxer->SeekTime(time, true);
-
-              if (start == DVD_NOPTS_VALUE)
-                start = DVD_MSEC_TO_TIME(time) - m_State.time_offset;
-
-              m_State.dts = start;
-              m_State.lastSeek = m_clock.GetAbsoluteClock();
-
-              FlushBuffers(start, true, true);
-            }
-
-            CloseStream(m_CurrentVideo, false);
-            CloseStream(m_CurrentAudio, false);
-            CloseStream(m_CurrentSubtitle, false);
-
-            DestroyPlayers();
-
-            // Create players before opening streams
-            CreatePlayers();
-
-            if (prevVideo.source != STREAM_SOURCE_NONE)
-              OpenStream(m_CurrentVideo, prevVideo.demuxerId, prevVideo.id, prevVideo.source, false);
-
-            OpenStream(m_CurrentAudio, st.demuxerId, st.id, st.source, false);
-
-            if (prevSubtitle.source != STREAM_SOURCE_NONE)
-              OpenStream(m_CurrentSubtitle, prevSubtitle.demuxerId, prevSubtitle.id, prevSubtitle.source, false);
-
-            SetSubtitleVisibleInternal(subtitlesEnabled);
-            SetSubTitleDelay(subtitleDelay);
-
-            AdaptForcedSubtitles();
+            WebOSRestartMediaStreams(st.demuxerId, st.id, st.source);
           }
           continue; // abort further processing of this message
         }
@@ -5853,6 +5768,55 @@ void CVideoPlayer::SetAudioStream(int iStream)
 void CVideoPlayer::RestartMediaStreams()
 {
   m_messenger.Put(std::make_shared<CDVDMsg>(CDVDMsg::PLAYER_RESTART_MEDIA_STREAMS));
+}
+
+void CVideoPlayer::WebOSRestartMediaStreams(int audioDemuxerId, int audioStreamId, int audioSource)
+{
+  auto prevVideo = m_CurrentVideo;
+  auto prevSubtitle = m_CurrentSubtitle;
+
+  int time = (int)GetUpdatedTime();
+
+  bool subtitlesEnabled = GetSubtitleVisible();
+  float subtitleDelay = GetSubTitleDelay();
+
+  double start = DVD_NOPTS_VALUE;
+  if (m_pDemuxer && m_pDemuxer->SeekTime(time, true, &start))
+  {
+    if (m_pSubtitleDemuxer)
+      m_pSubtitleDemuxer->SeekTime(time, true);
+
+    if (start == DVD_NOPTS_VALUE)
+      start = DVD_MSEC_TO_TIME(time) - m_State.time_offset;
+
+    m_State.dts = start;
+    m_State.lastSeek = m_clock.GetAbsoluteClock();
+
+    FlushBuffers(start, true, true);
+  }
+
+  if (m_CurrentVideo.source != STREAM_SOURCE_NONE)
+    CloseStream(m_CurrentVideo, false);
+  if (m_CurrentAudio.source != STREAM_SOURCE_NONE)
+    CloseStream(m_CurrentAudio, false);
+  if (m_CurrentSubtitle.source != STREAM_SOURCE_NONE)
+    CloseStream(m_CurrentSubtitle, false);
+
+  DestroyPlayers();
+  CreatePlayers();
+
+  if (prevVideo.source != STREAM_SOURCE_NONE)
+    OpenStream(m_CurrentVideo, prevVideo.demuxerId, prevVideo.id, prevVideo.source, false);
+
+  OpenStream(m_CurrentAudio, audioDemuxerId, audioStreamId, audioSource, false);
+
+  if (prevSubtitle.source != STREAM_SOURCE_NONE)
+    OpenStream(m_CurrentSubtitle, prevSubtitle.demuxerId, prevSubtitle.id, prevSubtitle.source, false);
+
+  SetSubtitleVisibleInternal(subtitlesEnabled);
+  SetSubTitleDelay(subtitleDelay);
+
+  AdaptForcedSubtitles();
 }
 #endif
 
