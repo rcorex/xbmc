@@ -3023,6 +3023,8 @@ void CVideoPlayer::HandleMessages()
             // Capture the time BEFORE tearing down the player streams
             int time = (int)GetUpdatedTime();
 
+            bool subtitlesEnabled = GetSubtitleVisible();
+
             CloseStream(m_CurrentVideo, false);
             CloseStream(m_CurrentAudio, false);
             CloseStream(m_CurrentSubtitle, false);
@@ -3039,6 +3041,8 @@ void CVideoPlayer::HandleMessages()
 
             if (prevSubtitle.source != STREAM_SOURCE_NONE)
               OpenStream(m_CurrentSubtitle, prevSubtitle.demuxerId, prevSubtitle.id, prevSubtitle.source, false);
+
+            SetSubtitleVisibleInternal(subtitlesEnabled);
 
             AdaptForcedSubtitles();
 
