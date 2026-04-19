@@ -336,12 +336,8 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
     }
     // API introduced in webOS 6.0, so we need to handle older versions differently
     Unload(true);
-    FlushAudioMessages();
-    FlushVideoMessages();
+
     m_mediaAPIs = std::make_unique<StarfishMediaAPIs>();
-    if (m_bitstream)
-      m_bitstream->ResetStartDecode();
-    m_flushed = true;
     m_audioClosed = false;
   }
 
@@ -387,12 +383,8 @@ bool CMediaPipelineWebOS::OpenVideoStream(CDVDStreamInfo hint)
 
     // Different codec => unload the current stream
     Unload(true);
-    FlushAudioMessages();
-    FlushVideoMessages();
+
     m_mediaAPIs = std::make_unique<StarfishMediaAPIs>();
-    if (m_bitstream)
-      m_bitstream->ResetStartDecode();
-    m_flushed = true;
   }
 
   m_videoHint = hint;
