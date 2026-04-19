@@ -3025,12 +3025,6 @@ void CVideoPlayer::HandleMessages()
 
             bool subtitlesEnabled = GetSubtitleVisible();
 
-            CloseStream(m_CurrentVideo, false);
-            CloseStream(m_CurrentAudio, false);
-            CloseStream(m_CurrentSubtitle, false);
-
-            DestroyPlayers();
-
             // Perform the demuxer seek *before* opening streams so we don't drop newly queued extradata
             double start = DVD_NOPTS_VALUE;
             if (m_pDemuxer && m_pDemuxer->SeekTime(time, true, &start))
@@ -3046,6 +3040,12 @@ void CVideoPlayer::HandleMessages()
 
               FlushBuffers(start, true, true);
             }
+
+            CloseStream(m_CurrentVideo, false);
+            CloseStream(m_CurrentAudio, false);
+            CloseStream(m_CurrentSubtitle, false);
+
+            DestroyPlayers();
 
             // Create players before opening streams
             CreatePlayers();
