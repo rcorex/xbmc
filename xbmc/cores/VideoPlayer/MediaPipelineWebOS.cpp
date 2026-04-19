@@ -1663,7 +1663,7 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
 
         if (delta > MAX_ACCEPTABLE_GAP)
         {
-          CLog::Log(LOGDEBUG, "Ignored stale FRAMEREADY event (backward/forward seek guard).");
+          CLog::Log(LOGINFO, "Ignored stale FRAMEREADY event (backward/forward seek guard).");
           break;
         }
 
