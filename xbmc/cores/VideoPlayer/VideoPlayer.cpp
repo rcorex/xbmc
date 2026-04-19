@@ -3031,6 +3031,22 @@ void CVideoPlayer::HandleMessages()
 
             DestroyPlayers();
 
+            // Perform the demuxer seek *before* opening streams so we don't drop newly queued extradata
+            double start = DVD_NOPTS_VALUE;
+            if (m_pDemuxer && m_pDemuxer->SeekTime(time, true, &start))
+            {
+              if (m_pSubtitleDemuxer)
+                m_pSubtitleDemuxer->SeekTime(time, true);
+
+              if (start == DVD_NOPTS_VALUE)
+                start = DVD_MSEC_TO_TIME(time) - m_State.time_offset;
+
+              m_State.dts = start;
+              m_State.lastSeek = m_clock.GetAbsoluteClock();
+
+              FlushBuffers(start, true, true);
+            }
+
             // Create players before opening streams
             CreatePlayers();
 
@@ -3045,14 +3061,6 @@ void CVideoPlayer::HandleMessages()
             SetSubtitleVisibleInternal(subtitlesEnabled);
 
             AdaptForcedSubtitles();
-
-            CDVDMsgPlayerSeek::CMode mode;
-            mode.time = time;
-            mode.backward = true;
-            mode.accurate = true;
-            mode.trickplay = true;
-            mode.sync = true;
-            m_messenger.Put(std::make_shared<CDVDMsgPlayerSeek>(mode));
           }
           continue; // abort further processing of this message
         }
