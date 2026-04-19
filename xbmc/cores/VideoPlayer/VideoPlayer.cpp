@@ -3024,6 +3024,7 @@ void CVideoPlayer::HandleMessages()
             int time = (int)GetUpdatedTime();
 
             bool subtitlesEnabled = GetSubtitleVisible();
+            float subtitleDelay = GetSubTitleDelay();
 
             // Perform the demuxer seek *before* opening streams so we don't drop newly queued extradata
             double start = DVD_NOPTS_VALUE;
@@ -3059,6 +3060,7 @@ void CVideoPlayer::HandleMessages()
               OpenStream(m_CurrentSubtitle, prevSubtitle.demuxerId, prevSubtitle.id, prevSubtitle.source, false);
 
             SetSubtitleVisibleInternal(subtitlesEnabled);
+            SetSubTitleDelay(subtitleDelay);
 
             AdaptForcedSubtitles();
           }
