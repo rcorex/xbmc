@@ -1414,10 +1414,10 @@ bool CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
     return true;
 
   // Wait for the video pipeline to clear the flush state and successfully feed its first packet.
-  if (m_flushed && m_fedVideoPts.load() == NO_PTS)
+  /*if (m_flushed && m_fedVideoPts.load() == NO_PTS)
   {
     return false;
-  }
+  }*/
   
   const std::chrono::nanoseconds fedAudioPts = m_fedAudioPts.load();
   if (m_started && fedAudioPts != NO_PTS && fedAudioPts - m_pts.load() > MAX_FEED_AHEAD_TIME)
@@ -2017,7 +2017,7 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
 
         if (delta > MAX_ACCEPTABLE_GAP)
         {
-          CLog::Log(LOGDEBUG, "Ignored stale FRAMEREADY event (backward/forward seek guard).");
+          CLog::Log(LOGINFO, "Ignored stale FRAMEREADY event (backward/forward seek guard).");
           break;
         }
 
