@@ -48,8 +48,8 @@ jobs:
 #          fi
 #          echo "/opt/apache-ant-1.10.15/bin" >> $GITHUB_PATH
 
-      - name: Install LG webOS CLI
-        run: sudo npm install -g @webos-tools/cli
+#      - name: Install LG webOS CLI
+#        run: sudo npm install -g @webos-tools/cli
 
       - name: Build Kodi dependencies
         run: |
