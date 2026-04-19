@@ -43,8 +43,8 @@ void CVideoPlayerWebOS::CreatePlayers()
                          CSettings::SETTING_VIDEOPLAYER_USESTARFISHDECODER))
   {
     const bool hasAudio = m_SelectionStreams.CountType(StreamType::AUDIO);
-    const bool subtitlesEnabled = m_VideoPlayerVideo->IsSubtitleEnabled();
-    const double subtitleDelay = m_VideoPlayerVideo->GetSubtitleDelay();
+    const bool subtitlesEnabled = m_VideoPlayerVideo ? m_VideoPlayerVideo->IsSubtitleEnabled() : false;
+    const double subtitleDelay = m_VideoPlayerVideo ? m_VideoPlayerVideo->GetSubtitleDelay() : 0.0;
 
     if (!m_mediaPipelineWebOS)
     {
@@ -77,6 +77,12 @@ void CVideoPlayerWebOS::CreatePlayers()
   m_VideoPlayerRadioRDS = std::make_unique<CDVDRadioRDSData>(*m_processInfo);
   m_VideoPlayerAudioID3 = std::make_unique<CVideoPlayerAudioID3>(*m_processInfo);
   m_players_created = true;
+}
+
+void CVideoPlayerWebOS::DestroyPlayers()
+{
+  m_mediaPipelineWebOS.reset();
+  CVideoPlayer::DestroyPlayers();
 }
 
 void CVideoPlayerWebOS::GetVideoResolution(unsigned int& width, unsigned int& height)

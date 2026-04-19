@@ -3017,8 +3017,38 @@ void CVideoPlayer::HandleMessages()
           }
           else
           {
-            // Triggers a full teardown and recreate of the player via Application
-            CServiceBroker::GetAppMessenger()->PostMsg(TMSG_MEDIA_RESTART_TRACK_CHANGE);
+            auto prevVideo = m_CurrentVideo;
+            auto prevSubtitle = m_CurrentSubtitle;
+
+            // Capture the time BEFORE tearing down the player streams
+            int time = (int)GetUpdatedTime();
+
+            CloseStream(m_CurrentVideo, false);
+            CloseStream(m_CurrentAudio, false);
+            CloseStream(m_CurrentSubtitle, false);
+
+            DestroyPlayers();
+
+            if (prevVideo.source != STREAM_SOURCE_NONE)
+              OpenStream(m_CurrentVideo, prevVideo.demuxerId, prevVideo.id, prevVideo.source);
+
+            OpenStream(m_CurrentAudio, st.demuxerId, st.id, st.source);
+
+            if (prevSubtitle.source != STREAM_SOURCE_NONE)
+              OpenStream(m_CurrentSubtitle, prevSubtitle.demuxerId, prevSubtitle.id, prevSubtitle.source);
+
+            // Create players AFTER streams are opened so video player is created properly
+            CreatePlayers();
+
+            AdaptForcedSubtitles();
+
+            CDVDMsgPlayerSeek::CMode mode;
+            mode.time = time;
+            mode.backward = true;
+            mode.accurate = true;
+            mode.trickplay = true;
+            mode.sync = true;
+            m_messenger.Put(std::make_shared<CDVDMsgPlayerSeek>(mode));
           }
           continue; // abort further processing of this message
         }

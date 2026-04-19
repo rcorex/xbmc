@@ -403,7 +403,7 @@ protected:
   void UpdateVideoRender(bool video) override;
 
   virtual void CreatePlayers();
-  void DestroyPlayers();
+  virtual void DestroyPlayers();
 
   void Prepare();
   bool OpenStream(CCurrentStream& current, int64_t demuxerId, int iStream, int source, bool reset = true);

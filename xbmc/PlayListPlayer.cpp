@@ -1049,10 +1049,6 @@ void PLAYLIST::CPlayListPlayer::OnApplicationMessage(KODI::MESSAGING::ThreadMess
     g_application.Restart(true);
     break;
 
-  case TMSG_MEDIA_RESTART_TRACK_CHANGE:
-    g_application.RestartTrackChange();
-    break;
-
   case TMSG_MEDIA_STOP:
   {
     // restore to previous window if needed
