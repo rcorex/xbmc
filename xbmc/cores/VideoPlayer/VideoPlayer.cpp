@@ -3002,11 +3002,11 @@ void CVideoPlayer::HandleMessages()
         m_pSubtitleDemuxer->Reset();
     }
 #if defined(TARGET_WEBOS)
-    else if (pMsg->IsType(CDVDMsg::PLAYER_RESTART_MEDIA_STREAMS))
+    else if (pMsg->IsType(CDVDMsg::PLAYER_RESTART_AUDIO_STREAM))
     {
       if (m_CurrentAudio.source != STREAM_SOURCE_NONE)
       {
-        WebOSRestartMediaStreams(m_CurrentAudio.demuxerId, m_CurrentAudio.id, m_CurrentAudio.source);
+        WebOSRestartAudioStream(m_CurrentAudio.demuxerId, m_CurrentAudio.id, m_CurrentAudio.source);
       }
     }
 #endif
@@ -3026,7 +3026,7 @@ void CVideoPlayer::HandleMessages()
           }
           else
           {
-            WebOSRestartMediaStreams(st.demuxerId, st.id, st.source);
+            WebOSRestartAudioStream(st.demuxerId, st.id, st.source);
           }
           continue; // abort further processing of this message
         }
@@ -5765,20 +5765,14 @@ void CVideoPlayer::SetAudioStream(int iStream)
 }
 
 #if defined(TARGET_WEBOS)
-void CVideoPlayer::RestartMediaStreams()
+void CVideoPlayer::RestartAudioStream()
 {
-  m_messenger.Put(std::make_shared<CDVDMsg>(CDVDMsg::PLAYER_RESTART_MEDIA_STREAMS));
+  m_messenger.Put(std::make_shared<CDVDMsg>(CDVDMsg::PLAYER_RESTART_AUDIO_STREAM));
 }
 
-void CVideoPlayer::WebOSRestartMediaStreams(int audioDemuxerId, int audioStreamId, int audioSource)
+void CVideoPlayer::WebOSRestartAudioStream(int audioDemuxerId, int audioStreamId, int audioSource)
 {
-  auto prevVideo = m_CurrentVideo;
-  auto prevSubtitle = m_CurrentSubtitle;
-
   int time = (int)GetUpdatedTime();
-
-  bool subtitlesEnabled = GetSubtitleVisible();
-  float subtitleDelay = GetSubTitleDelay();
 
   double start = DVD_NOPTS_VALUE;
   if (m_pDemuxer && m_pDemuxer->SeekTime(time, true, &start))
@@ -5795,26 +5789,10 @@ void CVideoPlayer::WebOSRestartMediaStreams(int audioDemuxerId, int audioStreamI
     FlushBuffers(start, true, true);
   }
 
-  if (m_CurrentVideo.source != STREAM_SOURCE_NONE)
-    CloseStream(m_CurrentVideo, false);
   if (m_CurrentAudio.source != STREAM_SOURCE_NONE)
     CloseStream(m_CurrentAudio, false);
-  if (m_CurrentSubtitle.source != STREAM_SOURCE_NONE)
-    CloseStream(m_CurrentSubtitle, false);
-
-  DestroyPlayers();
-  CreatePlayers();
-
-  if (prevVideo.source != STREAM_SOURCE_NONE)
-    OpenStream(m_CurrentVideo, prevVideo.demuxerId, prevVideo.id, prevVideo.source, false);
 
   OpenStream(m_CurrentAudio, audioDemuxerId, audioStreamId, audioSource, false);
-
-  if (prevSubtitle.source != STREAM_SOURCE_NONE)
-    OpenStream(m_CurrentSubtitle, prevSubtitle.demuxerId, prevSubtitle.id, prevSubtitle.source, false);
-
-  SetSubtitleVisibleInternal(subtitlesEnabled);
-  SetSubTitleDelay(subtitleDelay);
 
   AdaptForcedSubtitles();
 }

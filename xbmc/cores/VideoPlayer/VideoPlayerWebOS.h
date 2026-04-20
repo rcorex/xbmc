@@ -27,7 +27,6 @@ protected:
   bool CanTempo() override;
 
   void CreatePlayers() override;
-  void DestroyPlayers() override;
 
 private:
   std::unique_ptr<CMediaPipelineWebOS> m_mediaPipelineWebOS;

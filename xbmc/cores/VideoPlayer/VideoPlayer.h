@@ -381,8 +381,8 @@ public:
 
 #if defined(TARGET_WEBOS)
   virtual bool NeedsFullMediaRestartOnAudioChange() const { return false; }
-  void RestartMediaStreams();
-  void WebOSRestartMediaStreams(int audioDemuxerId, int audioStreamId, int audioSource);
+  void RestartAudioStream();
+  void WebOSRestartAudioStream(int audioDemuxerId, int audioStreamId, int audioSource);
 #endif
 
   CVideoSettings GetVideoSettings() const override;
@@ -405,7 +405,7 @@ protected:
   void UpdateVideoRender(bool video) override;
 
   virtual void CreatePlayers();
-  virtual void DestroyPlayers();
+  void DestroyPlayers();
 
   void Prepare();
   bool OpenStream(CCurrentStream& current, int64_t demuxerId, int iStream, int source, bool reset = true);

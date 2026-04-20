@@ -79,12 +79,6 @@ void CVideoPlayerWebOS::CreatePlayers()
   m_players_created = true;
 }
 
-void CVideoPlayerWebOS::DestroyPlayers()
-{
-  m_mediaPipelineWebOS.reset();
-  CVideoPlayer::DestroyPlayers();
-}
-
 void CVideoPlayerWebOS::GetVideoResolution(unsigned int& width, unsigned int& height)
 {
   if (m_mediaPipelineWebOS)

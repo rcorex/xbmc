@@ -151,7 +151,7 @@ public:
   void SetAudioStream(int iStream);
 
 #if defined(TARGET_WEBOS)
-  void RestartMediaStreams();
+  void RestartAudioStream();
 #endif
 
   void SetAVDelay(float fValue = 0.0f);
