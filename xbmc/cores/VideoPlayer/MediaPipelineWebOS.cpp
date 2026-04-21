@@ -1199,11 +1199,6 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
     pipeline->sendSegmentEvent();
 
     m_pts = pts;
-
-    // Set the lock-on target for delayed FRAMEREADY events
-    m_seekTargetPts = pts.count();
-    m_isSeeking = true;
-
     m_fedVideoPts = NO_PTS;
     m_fedAudioPts = NO_PTS;
     m_started = false;
@@ -1655,22 +1650,6 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
   {
     case PF_EVENT_TYPE_FRAMEREADY:
     {
-      if (m_isSeeking.load())
-      {
-        // Calculate absolute distance between this frame and our seek target
-        const int64_t delta = std::abs(numValue - m_seekTargetPts.load());
-        constexpr int64_t MAX_ACCEPTABLE_GAP = 2000000000LL; // 2 seconds in nanoseconds
-
-        if (delta > MAX_ACCEPTABLE_GAP)
-        {
-          CLog::Log(LOGINFO, "Ignored stale FRAMEREADY event (backward/forward seek guard).");
-          break;
-        }
-
-        // Frame is within the acceptable window, pipeline is cleared
-        m_isSeeking = false;
-      }
-
       m_pts = std::chrono::nanoseconds(numValue);
       const double pts = GetCurrentPts();
       ProcessOverlays(pts);
