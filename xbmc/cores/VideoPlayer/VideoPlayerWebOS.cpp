@@ -43,8 +43,8 @@ void CVideoPlayerWebOS::CreatePlayers()
                          CSettings::SETTING_VIDEOPLAYER_USESTARFISHDECODER))
   {
     const bool hasAudio = m_SelectionStreams.CountType(StreamType::AUDIO);
-    const bool subtitlesEnabled = m_VideoPlayerVideo->IsSubtitleEnabled();
-    const double subtitleDelay = m_VideoPlayerVideo->GetSubtitleDelay();
+    const bool subtitlesEnabled = m_VideoPlayerVideo ? m_VideoPlayerVideo->IsSubtitleEnabled() : false;
+    const double subtitleDelay = m_VideoPlayerVideo ? m_VideoPlayerVideo->GetSubtitleDelay() : 0.0;
 
     if (!m_mediaPipelineWebOS)
     {
@@ -87,6 +87,15 @@ void CVideoPlayerWebOS::GetVideoResolution(unsigned int& width, unsigned int& he
   }
   else
     CVideoPlayer::GetVideoResolution(width, height);
+}
+
+bool CVideoPlayerWebOS::NeedsFullMediaRestartOnAudioChange() const
+{
+  if (!m_mediaPipelineWebOS)
+    return false;
+
+  return CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
+      CSettings::SETTING_AUDIOOUTPUT_WEBOS_ALT_AUDIOTRACK_CHANGE);
 }
 
 void CVideoPlayerWebOS::UpdateContent()
