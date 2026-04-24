@@ -1639,6 +1639,9 @@ bool CMediaPipelineWebOS::GetMaxVideoResolution(const std::string& codec,
 
 void CMediaPipelineWebOS::UpdatePlayTime()
 {
+  if (!m_started)
+    return;
+  
   int64_t nanoPts;
   mediapipeline::CustomPipeline* pipeline = GetPipeline();
   if (!pipeline)
