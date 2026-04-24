@@ -43,8 +43,8 @@ void CVideoPlayerWebOS::CreatePlayers()
                          CSettings::SETTING_VIDEOPLAYER_USESTARFISHDECODER))
   {
     const bool hasAudio = m_SelectionStreams.CountType(StreamType::AUDIO);
-    const bool subtitlesEnabled = m_VideoPlayerVideo ? m_VideoPlayerVideo->IsSubtitleEnabled() : false;
-    const double subtitleDelay = m_VideoPlayerVideo ? m_VideoPlayerVideo->GetSubtitleDelay() : 0.0;
+    const bool subtitlesEnabled = m_VideoPlayerVideo->IsSubtitleEnabled();
+    const double subtitleDelay = m_VideoPlayerVideo->GetSubtitleDelay();
 
     if (!m_mediaPipelineWebOS)
     {
