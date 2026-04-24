@@ -2934,11 +2934,10 @@ void CVideoPlayer::HandleMessages()
              m_messenger.GetPacketCount(CDVDMsg::PLAYER_SEEK) == 0 &&
              m_messenger.GetPacketCount(CDVDMsg::PLAYER_SEEK_CHAPTER) == 0)
     {
-      m_processInfo->SeekFinished(0);
-      SetCaching(CACHESTATE_FLUSH);
-
       CDVDMsgPlayerSeekChapter& msg(*std::static_pointer_cast<CDVDMsgPlayerSeekChapter>(pMsg));
-      double start = DVD_NOPTS_VALUE;
+
+      double time = 0;
+      bool canSeekTime = false;
       int offset = 0;
 
       // This should always be the case.
@@ -2948,7 +2947,7 @@ void CVideoPlayer::HandleMessages()
         // So get and adjust chapter time
         const std::chrono::milliseconds position{m_pDemuxer->GetChapterPos(msg.GetChapter())};
         const auto hasEdit{m_Edl.InEdit(position)};
-        double time{static_cast<double>(position.count())};
+        time = static_cast<double>(position.count());
         if (hasEdit)
         {
           const auto& edit{hasEdit.value()};
@@ -2967,27 +2966,38 @@ void CVideoPlayer::HandleMessages()
               time = static_cast<double>(absoluteTime.count());
           }
         }
-
-        if (m_pDemuxer->SeekTime(time, true, &start))
-        {
-          FlushBuffers(start, true, true);
-          int64_t beforeSeek = GetTime();
-          offset = DVD_TIME_TO_MSEC(start) - static_cast<int>(beforeSeek);
-          m_callback.OnPlayBackSeekChapter(msg.GetChapter());
-        }
+        canSeekTime = true;
       }
       else if (m_pInputStream)
       {
+        m_processInfo->SeekFinished(0);
+        SetCaching(CACHESTATE_FLUSH);
+
         CDVDInputStream::IChapter* pChapter = m_pInputStream->GetIChapter();
         if (pChapter && pChapter->SeekChapter(msg.GetChapter()))
         {
+          double start = DVD_NOPTS_VALUE;
           FlushBuffers(start, true, true);
           int64_t beforeSeek = GetTime();
           offset = DVD_TIME_TO_MSEC(start) - static_cast<int>(beforeSeek);
           m_callback.OnPlayBackSeekChapter(msg.GetChapter());
         }
+        m_processInfo->SeekFinished(offset);
       }
-      m_processInfo->SeekFinished(offset);
+
+      if (canSeekTime)
+      {
+        CDVDMsgPlayerSeek::CMode mode;
+        mode.time = time;
+        mode.backward = msg.GetChapter() < GetChapter();
+        mode.accurate = false;
+        mode.trickplay = false;
+        mode.sync = true;
+        mode.restore = true;
+
+        m_messenger.Put(std::make_shared<CDVDMsgPlayerSeek>(mode));
+        m_callback.OnPlayBackSeekChapter(msg.GetChapter());
+      }
     }
     else if (pMsg->IsType(CDVDMsg::DEMUXER_RESET))
     {
