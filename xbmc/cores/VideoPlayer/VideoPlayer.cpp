@@ -2885,6 +2885,9 @@ void CVideoPlayer::HandleMessages()
         time -= m_State.time_offset/1000l;
 
       CLog::Log(LOGDEBUG, "demuxer seek to: {:f}", time);
+#if defined(TARGET_WEBOS)
+      FlushBuffers(DVD_NOPTS_VALUE, msg.GetAccurate(), msg.GetSync());
+#endif
       if (m_pDemuxer && m_pDemuxer->SeekTime(time, msg.GetBackward(), &start))
       {
         CLog::Log(LOGDEBUG, "demuxer seek to: {:f}, success", time);
@@ -2900,7 +2903,9 @@ void CVideoPlayer::HandleMessages()
         m_State.dts = start;
         m_State.lastSeek = m_clock.GetAbsoluteClock();
 
+#if !defined(TARGET_WEBOS)
         FlushBuffers(start, msg.GetAccurate(), msg.GetSync());
+#endif
       }
       else if (m_pDemuxer)
       {
@@ -3064,6 +3069,7 @@ void CVideoPlayer::HandleMessages()
           int time = (int)GetUpdatedTime();
 
           double start = DVD_NOPTS_VALUE;
+          FlushBuffers(DVD_NOPTS_VALUE, true, true);
           if (m_pDemuxer && m_pDemuxer->SeekTime(time, true, &start))
           {
             if (m_pSubtitleDemuxer)
@@ -3074,8 +3080,6 @@ void CVideoPlayer::HandleMessages()
 
             m_State.dts = start;
             m_State.lastSeek = m_clock.GetAbsoluteClock();
-
-            FlushBuffers(start, true, true);
           }
 
           CloseStream(m_CurrentAudio, false);
@@ -5785,6 +5789,7 @@ void CVideoPlayer::WebOSRestartAudioStream(int audioDemuxerId, int audioStreamId
   int time = (int)GetUpdatedTime();
 
   double start = DVD_NOPTS_VALUE;
+  FlushBuffers(DVD_NOPTS_VALUE, true, true);
   if (m_pDemuxer && m_pDemuxer->SeekTime(time, true, &start))
   {
     if (m_pSubtitleDemuxer)
@@ -5795,8 +5800,6 @@ void CVideoPlayer::WebOSRestartAudioStream(int audioDemuxerId, int audioStreamId
 
     m_State.dts = start;
     m_State.lastSeek = m_clock.GetAbsoluteClock();
-
-    FlushBuffers(start, true, true);
   }
 
   if (m_CurrentAudio.source != STREAM_SOURCE_NONE)
