@@ -1478,9 +1478,14 @@ void CVideoPlayer::Prepare()
     double startpts = DVD_NOPTS_VALUE;
     if (m_pDemuxer)
     {
+#if defined(TARGET_WEBOS)
+      FlushBuffers(DVD_NOPTS_VALUE, true, true);
+#endif
       if (m_pDemuxer->SeekTime(starttime.count(), true, &startpts))
       {
+#if !defined(TARGET_WEBOS)
         FlushBuffers(starttime.count() / 1000 * AV_TIME_BASE, true, true);
+#endif
         CLog::Log(LOGDEBUG, "{} - starting demuxer from: {}", __FUNCTION__, starttime.count());
       }
       else
@@ -2979,10 +2984,15 @@ void CVideoPlayer::HandleMessages()
         SetCaching(CACHESTATE_FLUSH);
 
         CDVDInputStream::IChapter* pChapter = m_pInputStream->GetIChapter();
+#if defined(TARGET_WEBOS)
+        FlushBuffers(DVD_NOPTS_VALUE, true, true);
+#endif
         if (pChapter && pChapter->SeekChapter(msg.GetChapter()))
         {
           double start = DVD_NOPTS_VALUE;
+#if !defined(TARGET_WEBOS)
           FlushBuffers(start, true, true);
+#endif
           int64_t beforeSeek = GetTime();
           offset = DVD_TIME_TO_MSEC(start) - static_cast<int>(beforeSeek);
           m_callback.OnPlayBackSeekChapter(msg.GetChapter());
