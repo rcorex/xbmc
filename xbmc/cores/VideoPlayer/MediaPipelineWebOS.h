@@ -395,6 +395,9 @@ private:
    */
   void Unload(bool sync);
 
+  std::atomic<bool> m_isSeeking{false};
+  std::atomic<uint64_t> m_seekTargetPts{0};
+
   /**
    * @brief Sets up audio stream parameters and transcoding if necessary.
    * @param audioHint Audio hints from demuxer
