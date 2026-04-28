@@ -2995,7 +2995,12 @@ void CVideoPlayer::HandleMessages()
 #endif
           int64_t beforeSeek = GetTime();
           offset = DVD_TIME_TO_MSEC(start) - static_cast<int>(beforeSeek);
-          m_callback.OnPlayBackSeekChapter(msg.GetChapter());
+
+          IPlayerCallback* cb = &m_callback;
+          int chapter = msg.GetChapter();
+          m_outboundEvents->Submit([=]() {
+            cb->OnPlayBackSeekChapter(chapter);
+          });
         }
         m_processInfo->SeekFinished(offset);
       }
@@ -3011,7 +3016,12 @@ void CVideoPlayer::HandleMessages()
         mode.restore = true;
 
         m_messenger.Put(std::make_shared<CDVDMsgPlayerSeek>(mode));
-        m_callback.OnPlayBackSeekChapter(msg.GetChapter());
+
+        IPlayerCallback* cb = &m_callback;
+        int chapter = msg.GetChapter();
+        m_outboundEvents->Submit([=]() {
+          cb->OnPlayBackSeekChapter(chapter);
+        });
       }
     }
     else if (pMsg->IsType(CDVDMsg::DEMUXER_RESET))
@@ -3556,7 +3566,11 @@ void CVideoPlayer::Seek(bool bPlus, bool bLargeStep, bool bChapterOverride)
   SynchronizeDemuxer();
   if (seekTarget < 0)
     seekTarget = 0;
-  m_callback.OnPlayBackSeek(seekTarget, seekTarget - time);
+
+  IPlayerCallback* cb = &m_callback;
+  m_outboundEvents->Submit([=]() {
+    cb->OnPlayBackSeek(seekTarget, seekTarget - time);
+  });
 }
 
 bool CVideoPlayer::SeekScene(Direction seekDirection)
@@ -3746,7 +3760,12 @@ void CVideoPlayer::SeekTime(int64_t iTime)
 
   m_messenger.Put(std::make_shared<CDVDMsgPlayerSeek>(mode));
   SynchronizeDemuxer();
-  m_callback.OnPlayBackSeek(iTime, seekOffset);
+
+  IPlayerCallback* cb = &m_callback;
+  m_outboundEvents->Submit([=]() {
+    cb->OnPlayBackSeek(iTime, seekOffset);
+  });
+
   m_processInfo->SeekFinished(seekOffset);
 }
 
@@ -3775,7 +3794,11 @@ bool CVideoPlayer::SeekTimeRelative(int64_t iTime)
   m_messenger.Put(std::make_shared<CDVDMsgPlayerSeek>(mode));
   m_processInfo->SetStateSeeking(true);
 
-  m_callback.OnPlayBackSeek(abstime, iTime);
+  IPlayerCallback* cb = &m_callback;
+  m_outboundEvents->Submit([=]() {
+    cb->OnPlayBackSeek(abstime, iTime);
+  });
+
   m_processInfo->SeekFinished(iTime);
   return true;
 }
