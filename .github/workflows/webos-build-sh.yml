@@ -7,10 +7,15 @@ on:
         description: 'Which branch should I build?'
         required: true
         default: ''
+      build_dependencies:
+        description: 'Recompile Kodi dependencies? (Y/N)'
+        required: true
+        default: 'N'
       build_binary_addons:
         description: 'Recompile binary addons? (Y/N)'
         required: true
         default: 'N'
+
         
 jobs:
   build:
@@ -56,6 +61,7 @@ jobs:
 #        run: sudo npm install -g @webos-tools/cli
 
       - name: Build Kodi dependencies
+        if: ${{ inputs.build_dependencies == 'Y' || inputs.build_dependencies == 'y' }}
         run: |
           export PATH="/usr/lib/ccache:$PATH"
           cd tools/depends
