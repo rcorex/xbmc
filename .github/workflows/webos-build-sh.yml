@@ -116,6 +116,9 @@ jobs:
             fi
           fi
 
+      - name: Fix WSL pipe bug in verify-symbols
+        run: sed -i 's|#!/bin/sh|#!/bin/bash|' tools/webOS/verify-symbols.sh
+
       - name: Package Kodi app
         working-directory: build
         run: make ipk
