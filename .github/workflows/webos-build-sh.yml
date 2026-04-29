@@ -8,11 +8,6 @@ on:
         required: true
         type: string
         default: ''
-      build_dependencies:
-        description: 'Recompile Kodi dependencies?'
-        required: true
-        type: boolean
-        default: false
       build_binary_addons:
         description: 'Recompile binary addons?'
         required: true
@@ -83,8 +78,8 @@ jobs:
           ./bootstrap
           ./configure --prefix=$HOME/kodi-deps --with-toolchain=$HOME/kodi-dev/arm-webos-linux-gnueabi_sdk-buildroot --host=arm-webos-linux-gnueabi --enable-debug=no
           
+      # ALWAYS compile dependencies to ensure linking paths are generated
       - name: Compile Kodi dependencies
-        if: ${{ inputs.build_dependencies }}
         working-directory: tools/depends
         run: make -j4
 
