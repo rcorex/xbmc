@@ -66,6 +66,11 @@ jobs:
           cd build
           make -j4
 
+      - name: Build binary addons
+        run: |
+          cd build
+          make -j4 -C ../tools/depends/target/binary-addons PREFIX=$PWD/tools/webOS/packaging
+
       - name: Package Kodi app
         run: |
           cd build
