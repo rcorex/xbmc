@@ -6,16 +6,18 @@ on:
       target_branch:
         description: 'Which branch should I build?'
         required: true
+        type: string
         default: ''
       build_dependencies:
-        description: 'Recompile Kodi dependencies? (Y/N)'
+        description: 'Recompile Kodi dependencies?'
         required: true
-        default: 'N'
+        type: boolean
+        default: false
       build_binary_addons:
-        description: 'Recompile binary addons? (Y/N)'
+        description: 'Recompile binary addons?'
         required: true
-        default: 'N'
-
+        type: boolean
+        default: false
         
 jobs:
   build:
@@ -31,6 +33,21 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.target_branch }}
+
+      # Sets up ccache globally for the entire job
+      - name: Setup local persistent ccache
+        run: |
+          echo "/usr/lib/ccache" >> $GITHUB_PATH
+          echo "CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
+          echo "CCACHE_MAXSIZE=10G" >> $GITHUB_ENV
+
+      # Prints the path to the compiler to prove ccache is handling it
+      - name: Verify ccache routing
+        run: |
+          echo "Compiler path for gcc:"
+          which gcc
+          echo "Compiler path for g++:"
+          which g++
 
       - name: Download and extract toolchain
         run: |
@@ -60,34 +77,48 @@ jobs:
 #      - name: Install LG webOS CLI
 #        run: sudo npm install -g @webos-tools/cli
 
-      - name: Build Kodi dependencies
-        if: ${{ inputs.build_dependencies == 'Y' || inputs.build_dependencies == 'y' }}
+      - name: Configure Kodi dependencies
+        working-directory: tools/depends
         run: |
-          export PATH="/usr/lib/ccache:$PATH"
-          cd tools/depends
           ./bootstrap
           ./configure --prefix=$HOME/kodi-deps --with-toolchain=$HOME/kodi-dev/arm-webos-linux-gnueabi_sdk-buildroot --host=arm-webos-linux-gnueabi --enable-debug=no
-          make -j4
+          
+      - name: Compile Kodi dependencies
+        if: ${{ inputs.build_dependencies }}
+        working-directory: tools/depends
+        run: make -j4
+
       - name: Generate Kodi build system
         run: make -C tools/depends/target/cmakebuildsys
 
       - name: Compile Kodi
-        run: |
-          export PATH="/usr/lib/ccache:$PATH"
-          cd build
-          make -j4
+        working-directory: build
+        run: make -j4
 
-      - name: Build binary addons
-        if: ${{ inputs.build_binary_addons == 'Y' || inputs.build_binary_addons == 'y' }}
+      - name: Build or Restore Binary Addons
+        working-directory: build
         run: |
-          export PATH="/usr/lib/ccache:$PATH"
-          cd build
-          make -j4 -C ../tools/depends/target/binary-addons PREFIX=$PWD/tools/webOS/packaging TARBALLS_LOCATION=$HOME/kodi-deps/tarballs
+          if [ "${{ inputs.build_binary_addons }}" == "true" ]; then
+            echo "Building binary addons..."
+            make -j4 -C ../tools/depends/target/binary-addons PREFIX=$PWD/tools/webOS/packaging TARBALLS_LOCATION=$HOME/kodi-deps/tarballs
+            
+            echo "Backing up addons to $HOME/kodi-addons-backup..."
+            mkdir -p $HOME/kodi-addons-backup
+            cp -a $PWD/tools/webOS/packaging/. $HOME/kodi-addons-backup/
+          else
+            echo "Restoring previously built addons from $HOME/kodi-addons-backup..."
+            mkdir -p $PWD/tools/webOS/packaging
+            if [ -d "$HOME/kodi-addons-backup" ] && [ "$(ls -A $HOME/kodi-addons-backup)" ]; then
+              cp -a $HOME/kodi-addons-backup/. $PWD/tools/webOS/packaging/
+              echo "Restore complete."
+            else
+              echo "WARNING: No backup found in $HOME/kodi-addons-backup. Addons will be missing!"
+            fi
+          fi
 
       - name: Package Kodi app
-        run: |
-          cd build
-          make ipk
+        working-directory: build
+        run: make ipk
 
       - name: Upload IPK Artifact
         uses: actions/upload-artifact@v4
