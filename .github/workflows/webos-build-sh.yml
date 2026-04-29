@@ -63,13 +63,15 @@ jobs:
 
       - name: Compile Kodi
         run: |
+          export PATH="/usr/lib/ccache:$PATH"
           cd build
           make -j4
 
       - name: Build binary addons
         run: |
+          export PATH="/usr/lib/ccache:$PATH"
           cd build
-          make -j4 -C ../tools/depends/target/binary-addons PREFIX=$PWD/tools/webOS/packaging
+          make -j4 -C ../tools/depends/target/binary-addons PREFIX=$PWD/tools/webOS/packaging TARBALLS_LOCATION=$HOME/kodi-deps/tarballs
 
       - name: Package Kodi app
         run: |
