@@ -116,10 +116,8 @@ jobs:
             fi
           fi
 
-      - name: Patch verify-symbols script
-        run: |
-          sed -i 's|#!/bin/sh|#!/bin/bash|' tools/webOS/verify-symbols.sh
-          sed -i 's/\breturn\b/exit/g' tools/webOS/verify-symbols.sh
+      - name: Patch webosbrew verify-symbols script (Fix WSL pipe)
+        run: sed -i 's/grep -q/grep > \/dev\/null/g' tools/webOS/verify-symbols.sh
 
       - name: Package Kodi app
         working-directory: build
