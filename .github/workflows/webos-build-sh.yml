@@ -7,6 +7,10 @@ on:
         description: 'Which branch should I build?'
         required: true
         default: ''
+      build_binary_addons:
+        description: 'Recompile binary addons? (Y/N)'
+        required: true
+        default: 'N'
         
 jobs:
   build:
@@ -68,6 +72,7 @@ jobs:
           make -j4
 
       - name: Build binary addons
+        if: ${{ inputs.build_binary_addons == 'Y' || inputs.build_binary_addons == 'y' }}
         run: |
           export PATH="/usr/lib/ccache:$PATH"
           cd build
