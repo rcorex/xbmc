@@ -2995,7 +2995,9 @@ void CVideoPlayer::HandleMessages()
 #endif
           int64_t beforeSeek = GetTime();
           offset = DVD_TIME_TO_MSEC(start) - static_cast<int>(beforeSeek);
-          m_callback.OnPlayBackSeekChapter(msg.GetChapter());
+          m_outboundEvents->Submit([this, chapter = msg.GetChapter()]() {
+            m_callback.OnPlayBackSeekChapter(chapter);
+          });
         }
         m_processInfo->SeekFinished(offset);
       }
@@ -3011,7 +3013,9 @@ void CVideoPlayer::HandleMessages()
         mode.restore = true;
 
         m_messenger.Put(std::make_shared<CDVDMsgPlayerSeek>(mode));
-        m_callback.OnPlayBackSeekChapter(msg.GetChapter());
+        m_outboundEvents->Submit([this, chapter = msg.GetChapter()]() {
+          m_callback.OnPlayBackSeekChapter(chapter);
+        });
       }
     }
     else if (pMsg->IsType(CDVDMsg::DEMUXER_RESET))
@@ -3254,7 +3258,9 @@ void CVideoPlayer::HandleMessages()
 
       if (speed != DVD_PLAYSPEED_PAUSE && m_playSpeed != DVD_PLAYSPEED_PAUSE && speed != m_playSpeed)
       {
-        m_callback.OnPlayBackSpeedChanged(speed / DVD_PLAYSPEED_NORMAL);
+        m_outboundEvents->Submit([this, ratio = speed / DVD_PLAYSPEED_NORMAL]() {
+          m_callback.OnPlayBackSpeedChanged(ratio);
+        });
         m_processInfo->SeekFinished(0);
       }
 
