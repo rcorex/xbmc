@@ -24,9 +24,9 @@ long AcbHandle::Id() const noexcept
   return m_handle;
 }
 
-long& AcbHandle::VideoTaskId() noexcept
+long& AcbHandle::TaskId() noexcept
 {
-  return m_videoTaskId;
+  return m_taskId;
 }
 
 long& AcbHandle::AudioTaskId() noexcept
@@ -41,7 +41,7 @@ void AcbHandle::Reset() noexcept
     AcbAPI_finalize(m_handle);
     AcbAPI_destroy(m_handle);
     m_handle = 0;
-    m_videoTaskId = 0;
+    m_taskId = 0;
     m_audioTaskId = 0;
   }
 }
