@@ -443,8 +443,6 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
 CMediaPipelineWebOS::~CMediaPipelineWebOS()
 {
   Unload(false);
-  if (const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer))
-    buffer->ResetAcbHandle();
 
   CServiceBroker::GetSettingsComponent()->GetSettings()->UnregisterCallback(this);
 }
@@ -1122,6 +1120,9 @@ void CMediaPipelineWebOS::Unload(const bool sync)
   m_fedVideoPts = NO_PTS;
   m_started = false;
 
+  if (const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer))
+    buffer->ResetAcbHandle();
+
   if (sync)
   {
     // wait until m_loaded is false
@@ -1293,8 +1294,9 @@ void CMediaPipelineWebOS::SetupBitstreamConverter(CDVDStreamInfo& hint)
 
           // Only set for profile 7, container hint allows to skip parsing unnecessarily
           // set profile 8 and single layer when converting
-          if (!removeDovi && convertDovi && hint.dovi.dv_profile == 7)
+          if (!removeDovi && convertDovi && (hint.dovi.dv_profile == 7 || m_convertDovi))
           {
+            m_convertDovi = true;
             m_bitstream->SetConvertDovi(true);
             hint.dovi.dv_profile = 8;
             hint.dovi.el_present_flag = false;
@@ -1412,6 +1414,12 @@ bool CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
   if (pts < 0ns)
     return true;
 
+  // Wait for the video pipeline to clear the flush state and successfully feed its first packet.
+  if (m_flushed && m_fedVideoPts.load() == NO_PTS)
+  {
+    return false;
+  }
+  
   const std::chrono::nanoseconds fedAudioPts = m_fedAudioPts.load();
   if (m_started && fedAudioPts != NO_PTS && fedAudioPts - m_pts.load() > MAX_FEED_AHEAD_TIME)
     return false;
@@ -1490,23 +1498,26 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
     std::string payload;
     CJSONVariantWriter::Write(time, payload, true);
 
-    auto player = static_cast<mediapipeline::CustomPlayer*>(m_mediaAPIs->player.get());
-    auto pipeline = static_cast<mediapipeline::CustomPipeline*>(player->getPipeline().get());
-    if (!m_mediaAPIs->setTimeToDecode(payload.c_str()))
+    if (mediapipeline::CustomPipeline* pipeline = GetPipeline())
     {
-      CLog::LogF(LOGERROR, "setTimeToDecode failed");
-      if (m_webOSVersion < 11)
+      if (!m_mediaAPIs->setTimeToDecode(payload.c_str()))
       {
-        MEDIA_CUSTOM_CONTENT_INFO_T contentInfo;
-        pipeline->loadSpi_getInfo(&contentInfo);
-        contentInfo.ptsToDecode = pts.count();
-        pipeline->setContentInfo(MEDIA_CUSTOM_SRC_TYPE_ES, &contentInfo);
+        CLog::LogF(LOGERROR, "setTimeToDecode failed");
+        if (m_webOSVersion < 11)
+        {
+          MEDIA_CUSTOM_CONTENT_INFO_T contentInfo;
+          pipeline->loadSpi_getInfo(&contentInfo);
+          contentInfo.ptsToDecode = pts.count();
+          pipeline->setContentInfo(MEDIA_CUSTOM_SRC_TYPE_ES, &contentInfo);
+        }
       }
+
+      pipeline->sendSegmentEvent();
     }
 
-    pipeline->sendSegmentEvent();
-
     m_pts = pts;
+    m_seekTargetPts.store(pts.count(), std::memory_order_relaxed);
+    m_isSeeking.store(true, std::memory_order_release);
     m_fedVideoPts = NO_PTS;
     m_fedAudioPts = NO_PTS;
     m_started = false;
@@ -1684,6 +1695,8 @@ void CMediaPipelineWebOS::Process()
     std::shared_ptr<CDVDMsg> msg = nullptr;
     int priority = 0;
     m_messageQueueVideo.Get(msg, 10ms, priority);
+
+    UpdatePlayTime();
 
     if (msg)
     {
@@ -1981,6 +1994,44 @@ bool CMediaPipelineWebOS::GetMaxVideoResolution(const std::string& codec,
   return fn(codec, &width, &height, &framerate);
 }
 
+void CMediaPipelineWebOS::UpdatePlayTime()
+{
+  if (!m_started)
+    return;
+  
+  int64_t nanoPts;
+  mediapipeline::CustomPipeline* pipeline = GetPipeline();
+  if (!pipeline)
+  {
+    CLog::LogF(LOGDEBUG, "pipeline is nullptr");
+    return;
+  }
+
+  pipeline->GetPlayInfo(&nanoPts);
+  m_pts = std::chrono::nanoseconds(nanoPts);
+
+  const double pts = GetCurrentPts();
+  ProcessOverlays(pts);
+  m_picture.dts = pts;
+  m_picture.pts = pts;
+  std::atomic<bool> stop(false);
+  m_renderManager.AddVideoPicture(m_picture, stop, VS_INTERLACEMETHOD_AUTO, false);
+  m_clock.Discontinuity(pts);
+}
+
+mediapipeline::CustomPipeline* CMediaPipelineWebOS::GetPipeline() const
+{
+  if (!m_mediaAPIs || !m_mediaAPIs->player)
+    return nullptr;
+
+  const auto* customPlayer = static_cast<mediapipeline::CustomPlayer*>(m_mediaAPIs->player.get());
+  const auto pipelinePtr = customPlayer->getPipeline();
+  if (!pipelinePtr)
+    return nullptr;
+
+  return static_cast<mediapipeline::CustomPipeline*>(pipelinePtr.get());
+}
+
 void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, const char* strValue)
 {
   const std::string logStr = strValue != nullptr ? strValue : "";
@@ -1997,21 +2048,28 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
   {
     case PF_EVENT_TYPE_FRAMEREADY:
     {
-      m_pts = std::chrono::nanoseconds(numValue);
-      const double pts = GetCurrentPts();
-      ProcessOverlays(pts);
+      if (m_isSeeking.load(std::memory_order_acquire))
+      {
+        const uint64_t target = m_seekTargetPts.load(std::memory_order_relaxed);
+        const int64_t delta = std::abs(static_cast<int64_t>(numValue) - static_cast<int64_t>(target));
+        const int64_t MAX_ACCEPTABLE_GAP = 2000000000LL; // 2 seconds in nanoseconds
+
+        if (delta > MAX_ACCEPTABLE_GAP)
+        {
+          CLog::LogF(LOGINFO, "Ignored stale FRAMEREADY event (backward/forward seek guard). Stale PTS: {}, Target PTS: {}", numValue, target);
+          break;
+        }
+
+        m_isSeeking.store(false, std::memory_order_release);
+      }
+
       if (!m_flushed)
         m_started = true;
-      m_picture.dts = pts;
-      m_picture.pts = pts;
-      std::atomic<bool> stop(false);
-      m_renderManager.AddVideoPicture(m_picture, stop, VS_INTERLACEMETHOD_AUTO, false);
-      m_clock.Discontinuity(pts);
       break;
     }
     case PF_EVENT_TYPE_STR_AUDIO_INFO:
       if (acb)
-        AcbAPI_setMediaAudioData(acb->Id(), logStr.c_str(), &acb->TaskId());
+        AcbAPI_setMediaAudioData(acb->Id(), logStr.c_str(), &acb->AudioTaskId());
       break;
     case PF_EVENT_TYPE_STR_VIDEO_INFO:
       if (acb)
@@ -2019,19 +2077,26 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       break;
     case PF_EVENT_TYPE_STR_STATE_UPDATE__LOADCOMPLETED:
     {
-      const auto player = static_cast<mediapipeline::CustomPlayer*>(m_mediaAPIs->player.get());
-      const auto pipeline =
-          static_cast<mediapipeline::CustomPipeline*>(player->getPipeline().get());
-      m_pipeline = pipeline->GetGStreamerElements(
-          {0, MIN_SRC_BUFFER_LEVEL_VIDEO, MAX_SRC_BUFFER_LEVEL_VIDEO, MAX_BUFFER_LEVEL});
+      if (mediapipeline::CustomPipeline* pipeline = GetPipeline())
+      {
+        m_pipeline = pipeline->GetGStreamerElements(
+            {0, MIN_SRC_BUFFER_LEVEL_VIDEO, MAX_SRC_BUFFER_LEVEL_VIDEO, MAX_BUFFER_LEVEL});
+      }
+      else
+      {
+        CLog::LogF(LOGERROR, "Failed to get pipeline elements");
+      }
 
+      m_renderManager.ShowVideo(true);
       if (acb)
       {
         AcbAPI_setSinkType(acb->Id(), SINK_TYPE_MAIN);
         AcbAPI_setMediaId(acb->Id(), m_mediaAPIs->getMediaID());
-        AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_LOADED, &acb->TaskId());
+        if (acb->TaskId())
+          AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_LOADED, &acb->TaskId());
+        if (acb->AudioTaskId())
+          AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_LOADED, &acb->AudioTaskId());
       }
-      m_renderManager.ShowVideo(true);
       if (!m_mediaAPIs->Play())
         CLog::LogF(LOGERROR, "Failed to play");
       m_loaded = true;
@@ -2042,7 +2107,12 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
     }
     case PF_EVENT_TYPE_STR_STATE_UPDATE__UNLOADCOMPLETED:
       if (acb)
-        AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_UNLOADED, &acb->TaskId());
+      {
+        if (acb->TaskId())
+          AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_UNLOADED, &acb->TaskId());
+        if (acb->AudioTaskId())
+          AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_UNLOADED, &acb->AudioTaskId());
+      }
       StopThread(true);
       if (m_audioThread.joinable())
         m_audioThread.join();
@@ -2052,7 +2122,12 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       break;
     case PF_EVENT_TYPE_STR_STATE_UPDATE__PAUSED:
       if (acb)
-        AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PAUSED, &acb->TaskId());
+      {
+        if (acb->TaskId())
+          AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PAUSED, &acb->TaskId());
+        if (acb->AudioTaskId())
+          AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PAUSED, &acb->AudioTaskId());
+      }
       UpdateGUISounds(false);
       break;
     case PF_EVENT_TYPE_STR_STATE_UPDATE__PLAYING:
@@ -2067,7 +2142,12 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       m_messageQueueParent.Put(
           std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, msg));
       if (acb)
-        AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PLAYING, &acb->TaskId());
+      {
+        if (acb->TaskId())
+          AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PLAYING, &acb->TaskId());
+        if (acb->AudioTaskId())
+          AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PLAYING, &acb->AudioTaskId());
+      }
       UpdateGUISounds(true);
       break;
     }

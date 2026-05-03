@@ -35,6 +35,7 @@ class CActiveAEBufferPoolResample;
 
 namespace mediapipeline
 {
+class CustomPipeline;
 struct PipelineGStreamerElements;
 } // namespace mediapipeline
 
@@ -397,6 +398,9 @@ private:
    */
   void Unload(bool sync);
 
+  std::atomic<bool> m_isSeeking{false};
+  std::atomic<uint64_t> m_seekTargetPts{0};
+
   /**
    * @brief Sets up audio stream parameters and transcoding if necessary.
    * @param audioHint Audio hints from demuxer
@@ -480,6 +484,21 @@ private:
                              int& height,
                              int& framerate) const;
 
+  /**
+   * @brief Updates the @ref m_pts member variable with the current presentation timestamp from the
+   * media pipeline, and processes any overlays that need to be displayed at that time. Also adds a
+   * video picture to the render manager and updates the DVD clock with the new PTS. This should be
+   * called regularly during playback to keep the video output and timing in sync with the media
+   * pipeline.
+   */
+  void UpdatePlayTime();
+
+  /**
+   * @brief Gets the custom pipeline pointer
+   * @return Pointer to the custom pipeline, or nullptr if not available.
+   */
+  mediapipeline::CustomPipeline* GetPipeline() const;
+
   static constexpr std::chrono::nanoseconds NO_PTS{-1};
 
   std::condition_variable m_eventCondition;
@@ -490,6 +509,7 @@ private:
   std::atomic<bool> m_stalled{false};
   std::atomic<bool> m_loaded{false};
   std::atomic<bool> m_flushed{false};
+
   std::atomic<bool> m_subtitle{false};
   std::atomic<double> m_subtitleDelay{0.0};
   std::atomic<bool> m_needsTranscode{false};
@@ -519,6 +539,7 @@ private:
   CDVDClock& m_clock;
   CDVDOverlayContainer& m_overlayContainer;
   bool m_hasAudio{true};
+  std::atomic<bool> m_convertDovi{false};
 
   std::atomic<bool> m_videoClosed{true};
   std::atomic<bool> m_audioClosed{true};

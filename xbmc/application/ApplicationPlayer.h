@@ -149,6 +149,11 @@ public:
   void SeekTime(int64_t iTime = 0);
   void SeekTimeRelative(int64_t iTime = 0);
   void SetAudioStream(int iStream);
+
+#if defined(TARGET_WEBOS)
+  void RestartAudioStream();
+#endif
+
   void SetAVDelay(float fValue = 0.0f);
   void SetDynamicRangeCompression(long drc);
   void SetMute(bool bOnOff);
