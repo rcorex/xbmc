@@ -833,7 +833,6 @@ void CMediaPipelineWebOS::Unload(const bool sync)
   m_fedAudioPts = NO_PTS;
   m_fedVideoPts = NO_PTS;
   m_started = false;
-  m_pendingPlay = false;
 
   if (const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer))
     buffer->ResetAcbHandle();
@@ -1138,13 +1137,6 @@ bool CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
 
 bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
 {
-  if (m_pendingPlay && (!m_hasAudio || m_fedAudioPts.load() != NO_PTS))
-  {
-    if (!m_mediaAPIs->Play())
-      CLog::LogF(LOGERROR, "Failed to play");
-    m_pendingPlay = false;
-  }
-
   DemuxPacket* packet = std::static_pointer_cast<CDVDMsgDemuxerPacket>(msg)->GetPacket();
 
   auto pts = std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -1751,7 +1743,8 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
         if (acb->AudioTaskId())
           AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_LOADED, &acb->AudioTaskId());
       }
-      m_pendingPlay = true;
+      if (!m_mediaAPIs->Play())
+        CLog::LogF(LOGERROR, "Failed to play");
       m_loaded = true;
       m_flushed = true;
       Create();
