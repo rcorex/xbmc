@@ -29,11 +29,6 @@ long& AcbHandle::TaskId() noexcept
   return m_taskId;
 }
 
-long& AcbHandle::AudioTaskId() noexcept
-{
-  return m_audioTaskId;
-}
-
 void AcbHandle::Reset() noexcept
 {
   if (m_handle)
@@ -42,7 +37,6 @@ void AcbHandle::Reset() noexcept
     AcbAPI_destroy(m_handle);
     m_handle = 0;
     m_taskId = 0;
-    m_audioTaskId = 0;
   }
 }
 

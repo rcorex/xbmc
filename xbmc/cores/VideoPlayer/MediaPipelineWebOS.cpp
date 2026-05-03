@@ -1715,11 +1715,14 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
     }
     case PF_EVENT_TYPE_STR_AUDIO_INFO:
       if (acb)
-        AcbAPI_setMediaAudioData(acb->Id(), logStr.c_str(), &acb->AudioTaskId());
+        AcbAPI_setMediaAudioData(acb->Id(), logStr.c_str(), &acb->TaskId());
       break;
     case PF_EVENT_TYPE_STR_VIDEO_INFO:
       if (acb)
-        AcbAPI_setMediaVideoData(acb->Id(), logStr.c_str(), &acb->TaskId());
+      {
+        long dummyTaskId = 0;
+        AcbAPI_setMediaVideoData(acb->Id(), logStr.c_str(), &dummyTaskId);
+      }
       break;
     case PF_EVENT_TYPE_STR_STATE_UPDATE__LOADCOMPLETED:
     {
@@ -1740,8 +1743,6 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
         AcbAPI_setMediaId(acb->Id(), m_mediaAPIs->getMediaID());
         if (acb->TaskId())
           AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_LOADED, &acb->TaskId());
-        if (acb->AudioTaskId())
-          AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_LOADED, &acb->AudioTaskId());
       }
       if (!m_mediaAPIs->Play())
         CLog::LogF(LOGERROR, "Failed to play");
@@ -1752,13 +1753,8 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       break;
     }
     case PF_EVENT_TYPE_STR_STATE_UPDATE__UNLOADCOMPLETED:
-      if (acb)
-      {
-        if (acb->TaskId())
-          AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_UNLOADED, &acb->TaskId());
-        if (acb->AudioTaskId())
-          AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_UNLOADED, &acb->AudioTaskId());
-      }
+      if (acb && acb->TaskId())
+        AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_UNLOADED, &acb->TaskId());
       StopThread(true);
       if (m_audioThread.joinable())
         m_audioThread.join();
@@ -1767,13 +1763,8 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       UpdateGUISounds(false);
       break;
     case PF_EVENT_TYPE_STR_STATE_UPDATE__PAUSED:
-      if (acb)
-      {
-        if (acb->TaskId())
-          AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PAUSED, &acb->TaskId());
-        if (acb->AudioTaskId())
-          AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PAUSED, &acb->AudioTaskId());
-      }
+      if (acb && acb->TaskId())
+        AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PAUSED, &acb->TaskId());
       UpdateGUISounds(false);
       break;
     case PF_EVENT_TYPE_STR_STATE_UPDATE__PLAYING:
@@ -1787,12 +1778,9 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       msg.player = VideoPlayer_AUDIO;
       m_messageQueueParent.Put(
           std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, msg));
-      if (acb)
+      if (acb && acb->TaskId())
       {
-        if (acb->TaskId())
-          AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PLAYING, &acb->TaskId());
-        if (acb->AudioTaskId())
-          AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PLAYING, &acb->AudioTaskId());
+        AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PLAYING, &acb->TaskId());
       }
       UpdateGUISounds(true);
       break;
