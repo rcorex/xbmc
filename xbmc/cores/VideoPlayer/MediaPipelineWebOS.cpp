@@ -1770,10 +1770,10 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
           std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, msg));
       if (acb)
       {
-        AcbAPI_setSinkType(acb->Id(), SINK_TYPE_MAIN);
-        AcbAPI_setMediaId(acb->Id(), m_mediaAPIs->getMediaID());
         if (acb->AudioTaskId())
         {
+          AcbAPI_setSinkType(acb->Id(), SINK_TYPE_MAIN);
+          AcbAPI_setMediaId(acb->Id(), m_mediaAPIs->getMediaID());
           AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_LOADED, &acb->AudioTaskId());
           AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PLAYING, &acb->AudioTaskId());
         }
