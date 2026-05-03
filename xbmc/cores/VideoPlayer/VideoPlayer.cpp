@@ -3081,25 +3081,7 @@ void CVideoPlayer::HandleMessages()
         else
         {
 #if defined(TARGET_WEBOS)
-          int time = (int)GetUpdatedTime();
-
-          double start = DVD_NOPTS_VALUE;
-          FlushBuffers(DVD_NOPTS_VALUE, true, true);
-          if (m_pDemuxer && m_pDemuxer->SeekTime(time, true, &start))
-          {
-            if (m_pSubtitleDemuxer)
-              m_pSubtitleDemuxer->SeekTime(time, true);
-
-            if (start == DVD_NOPTS_VALUE)
-              start = DVD_MSEC_TO_TIME(time) - m_State.time_offset;
-
-            m_State.dts = start;
-            m_State.lastSeek = m_clock.GetAbsoluteClock();
-          }
-
-          CloseStream(m_CurrentAudio, false);
-          OpenStream(m_CurrentAudio, st.demuxerId, st.id, st.source, false);
-          AdaptForcedSubtitles();
+          m_messenger.Put(std::make_shared<CDVDMsgPlayerRestartAudioStream>(st.demuxerId, st.id, st.source));
 #else
           CloseStream(m_CurrentAudio, false);
           OpenStream(m_CurrentAudio, st.demuxerId, st.id, st.source);
