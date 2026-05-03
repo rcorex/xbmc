@@ -3033,9 +3033,10 @@ void CVideoPlayer::HandleMessages()
 #if defined(TARGET_WEBOS)
     else if (pMsg->IsType(CDVDMsg::PLAYER_RESTART_AUDIO_STREAM))
     {
-      if (m_CurrentAudio.source != STREAM_SOURCE_NONE)
+      auto pMsgRestart = std::static_pointer_cast<CDVDMsgPlayerRestartAudioStream>(pMsg);
+      if (pMsgRestart->GetSource() != STREAM_SOURCE_NONE)
       {
-        WebOSRestartAudioStream(m_CurrentAudio.demuxerId, m_CurrentAudio.id, m_CurrentAudio.source);
+        WebOSRestartAudioStream(pMsgRestart->GetDemuxerId(), pMsgRestart->GetStreamId(), pMsgRestart->GetSource());
       }
     }
 #endif
@@ -3055,7 +3056,7 @@ void CVideoPlayer::HandleMessages()
           }
           else
           {
-            WebOSRestartAudioStream(st.demuxerId, st.id, st.source);
+            m_messenger.Put(std::make_shared<CDVDMsgPlayerRestartAudioStream>(st.demuxerId, st.id, st.source));
           }
           continue; // abort further processing of this message
         }
@@ -5797,7 +5798,7 @@ void CVideoPlayer::SetAudioStream(int iStream)
 #if defined(TARGET_WEBOS)
 void CVideoPlayer::RestartAudioStream()
 {
-  m_messenger.Put(std::make_shared<CDVDMsg>(CDVDMsg::PLAYER_RESTART_AUDIO_STREAM));
+  m_messenger.Put(std::make_shared<CDVDMsgPlayerRestartAudioStream>(m_CurrentAudio.demuxerId, m_CurrentAudio.id, m_CurrentAudio.source));
 }
 
 void CVideoPlayer::WebOSRestartAudioStream(int audioDemuxerId, int audioStreamId, int audioSource)
