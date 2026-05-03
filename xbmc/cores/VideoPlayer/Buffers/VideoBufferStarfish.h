@@ -21,12 +21,14 @@ public:
 
   [[nodiscard]] long Id() const noexcept;
   [[nodiscard]] long& TaskId() noexcept;
+  [[nodiscard]] long& AudioTaskId() noexcept;
 
   void Reset() noexcept;
 
 private:
   long m_handle{0};
   long m_taskId{0};
+  long m_audioTaskId{0};
 };
 
 class CStarfishVideoBuffer final : public CVideoBuffer
