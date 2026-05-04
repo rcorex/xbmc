@@ -211,6 +211,9 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
 CMediaPipelineWebOS::~CMediaPipelineWebOS()
 {
   Unload(false);
+  
+  if (const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer))
+    buffer->ResetAcbHandle();
 }
 
 int CMediaPipelineWebOS::GetVideoBitrate() const
@@ -833,9 +836,6 @@ void CMediaPipelineWebOS::Unload(const bool sync)
   m_fedAudioPts = NO_PTS;
   m_fedVideoPts = NO_PTS;
   m_started = false;
-
-  if (const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer))
-    buffer->ResetAcbHandle();
 
   if (sync)
   {
