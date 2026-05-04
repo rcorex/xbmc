@@ -97,7 +97,10 @@ jobs:
             echo "Building binary addons..."
             make -j4 -C ../tools/depends/target/binary-addons PREFIX=$PWD/tools/webOS/packaging TARBALLS_LOCATION=$HOME/kodi-deps/tarballs
             
-            echo "Backing up addons to $HOME/kodi-addons-backup..."
+            echo "Wiping old backup directory to ensure a clean state..."
+            rm -rf $HOME/kodi-addons-backup
+            
+            echo "Backing up fresh addons to $HOME/kodi-addons-backup..."
             mkdir -p $HOME/kodi-addons-backup
             cp -a $PWD/tools/webOS/packaging/. $HOME/kodi-addons-backup/
           else
