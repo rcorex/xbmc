@@ -279,8 +279,8 @@ bool CMediaPipelineWebOS::Supports(const AVCodecID codec, const int profile)
 void CMediaPipelineWebOS::AcbCallback(
     long acbId, long taskId, long eventType, long appState, long playState, const char* reply)
 {
-  CLog::LogF(LOGDEBUG, "acbId={}, taskId={}, eventType={}, appState={}, playState={}, reply={}",
-             acbId, taskId, eventType, appState, playState, reply);
+  CLog::LogF(LOGINFO, "AcbCallback: reached, acbId={}, taskId={}, eventType={}, appState={}, playState={}, reply={}, m_loaded: {}, m_started: {}, m_flushed: {}",
+             acbId, taskId, eventType, appState, playState, reply, m_loaded, m_started, m_flushed);
 }
 
 void CMediaPipelineWebOS::FlushVideoMessages()
@@ -1713,15 +1713,18 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       break;
     }
     case PF_EVENT_TYPE_STR_AUDIO_INFO:
+      CLog::LogF(LOGINFO, "PF_EVENT_TYPE_STR_AUDIO_INFO: reached, m_loaded: {}, m_started: {}, m_flushed: {}", m_loaded, m_started, m_flushed);
       if (acb)
         AcbAPI_setMediaAudioData(acb->Id(), logStr.c_str(), &acb->TaskId());
       break;
     case PF_EVENT_TYPE_STR_VIDEO_INFO:
+      CLog::LogF(LOGINFO, "PF_EVENT_TYPE_STR_VIDEO_INFO: reached, m_loaded: {}, m_started: {}, m_flushed: {}", m_loaded, m_started, m_flushed);
       if (acb)
         AcbAPI_setMediaVideoData(acb->Id(), logStr.c_str(), &acb->TaskId());
       break;
     case PF_EVENT_TYPE_STR_STATE_UPDATE__LOADCOMPLETED:
     {
+      CLog::LogF(LOGINFO, "PF_EVENT_TYPE_STR_STATE_UPDATE__LOADCOMPLETED: reached, m_loaded: {}, m_started: {}, m_flushed: {}", m_loaded, m_started, m_flushed);
       if (mediapipeline::CustomPipeline* pipeline = GetPipeline())
       {
         m_pipeline = pipeline->GetGStreamerElements(
@@ -1742,6 +1745,7 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       break;
     }
     case PF_EVENT_TYPE_STR_STATE_UPDATE__UNLOADCOMPLETED:
+      CLog::LogF(LOGINFO, "PF_EVENT_TYPE_STR_STATE_UPDATE__UNLOADCOMPLETED: reached, m_loaded: {}, m_started: {}, m_flushed: {}", m_loaded, m_started, m_flushed);
       if (acb)
         AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_UNLOADED, &acb->TaskId());
       StopThread(true);
@@ -1752,12 +1756,14 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       UpdateGUISounds(false);
       break;
     case PF_EVENT_TYPE_STR_STATE_UPDATE__PAUSED:
+      CLog::LogF(LOGINFO, "PF_EVENT_TYPE_STR_STATE_UPDATE__PAUSED: reached, m_loaded: {}, m_started: {}, m_flushed: {}", m_loaded, m_started, m_flushed);
       if (acb)
         AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PAUSED, &acb->TaskId());
       UpdateGUISounds(false);
       break;
     case PF_EVENT_TYPE_STR_STATE_UPDATE__PLAYING:
     {
+      CLog::LogF(LOGINFO, "PF_EVENT_TYPE_STR_STATE_UPDATE__PLAYING: reached, m_loaded: {}, m_started: {}, m_flushed: {}", m_loaded, m_started, m_flushed);
       SStartMsg msg{.timestamp = GetCurrentPts(),
                     .player = VideoPlayer_VIDEO,
                     .cachetime = DVD_MSEC_TO_TIME(50),
