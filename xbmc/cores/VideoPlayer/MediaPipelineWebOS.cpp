@@ -1734,7 +1734,11 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       {
         CLog::LogF(LOGERROR, "Failed to get pipeline elements");
       }
-
+      if (acb)
+      {
+        AcbAPI_setSinkType(acb->Id(), SINK_TYPE_MAIN);
+        AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_LOADED, &acb->TaskId());
+      }
       m_renderManager.ShowVideo(true);
       if (!m_mediaAPIs->Play())
         CLog::LogF(LOGERROR, "Failed to play");
@@ -1775,9 +1779,7 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
           std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, msg));
       if (acb)
       {
-        AcbAPI_setSinkType(acb->Id(), SINK_TYPE_MAIN);
         AcbAPI_setMediaId(acb->Id(), m_mediaAPIs->getMediaID());
-        AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_LOADED, &acb->TaskId());
         AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PLAYING, &acb->TaskId());
       }
       UpdateGUISounds(true);
