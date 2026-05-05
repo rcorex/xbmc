@@ -1720,6 +1720,7 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
     case PF_EVENT_TYPE_STR_VIDEO_INFO:
       CLog::LogF(LOGINFO, "PF_EVENT_TYPE_STR_VIDEO_INFO: reached, m_loaded: {}, m_started: {}, m_flushed: {}", m_loaded, m_started, m_flushed);
       if (acb)
+      {
         AcbAPI_setMediaVideoData(acb->Id(), logStr.c_str(), &acb->TaskId());
         AcbAPI_setSinkType(acb->Id(), SINK_TYPE_MAIN);
         AcbAPI_setMediaId(acb->Id(), m_mediaAPIs->getMediaID());
