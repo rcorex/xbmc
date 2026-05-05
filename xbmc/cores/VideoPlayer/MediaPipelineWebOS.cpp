@@ -1203,8 +1203,16 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
       pipeline->sendSegmentEvent();
     }
 
-    if (!m_mediaAPIs->Play())
-      CLog::LogF(LOGERROR, "Failed to play");
+    const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
+    if (buffer)
+    {
+      const std::unique_ptr<AcbHandle>& acb = buffer->GetAcbHandle();
+      if (!acb)
+      {
+        if (!m_mediaAPIs->Play())
+          CLog::LogF(LOGERROR, "Failed to play");
+      }
+    }
 
     m_pts = pts;
     m_seekTargetPts.store(pts.count(), std::memory_order_relaxed);
@@ -1397,6 +1405,9 @@ void CMediaPipelineWebOS::Process()
         AcbAPI_setSinkType(acb->Id(), SINK_TYPE_MAIN);
         AcbAPI_setMediaId(acb->Id(), m_mediaAPIs->getMediaID());
         AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_LOADED, &acb->TaskId());
+
+        if (!m_mediaAPIs->Play())
+          CLog::LogF(LOGERROR, "Failed to play");
       }
       m_acbConfigured.store(true, std::memory_order_release);
     }
