@@ -544,6 +544,10 @@ private:
   std::atomic<std::chrono::nanoseconds> m_fedVideoPts{NO_PTS};
   std::atomic<bool> m_started{false};
 
+  std::atomic<bool> m_audioInfoReceived{false};
+  std::atomic<bool> m_videoInfoReceived{false};
+  std::atomic<bool> m_acbConfigured{false};
+
   BitstreamStats m_audioStats{};
   BitstreamStats m_videoStats{};
 
