@@ -24329,7 +24329,97 @@ msgctxt "#39210"
 msgid "If enabled, Dolby Vision files will have level 5 (active area) metadata overridden to zero offsets. Enable if your display has issues with incorrectly cropped image in Dolby Vision playback."
 msgstr ""
 
-#empty strings from id 39211 to 39999
+#. Title of WebOS DTS passthrough setting
+msgctxt "#39211"
+msgid "Enable DTS Passthrough"
+msgstr ""
+
+#. Help text for setting "Enable DTS Passthrough" of label #39211
+msgctxt "#39212"
+msgid "Enable DTS audio passthrough on WebOS. Turn this off if your TV or receiver does not support DTS."
+msgstr ""
+
+#. Title of WebOS DTS-HD passthrough setting
+msgctxt "#39215"
+msgid "Enable DTS-HD Passthrough"
+msgstr ""
+
+#. Help text for setting "Enable DTS-HD Passthrough" of label #39215
+msgctxt "#39216"
+msgid "Enable DTS-HD audio passthrough on WebOS. Turn this off if your TV or receiver does not support DTS-HD."
+msgstr ""
+
+#. Title of WebOS Starfish EAC3 Transcoding
+msgctxt "#39213"
+msgid "Enable EAC3 transcoding for Starfish"
+msgstr ""
+
+#. Help text for setting "Enable EAC3 transcoding for Starfish" of label #39213
+msgctxt "#39214"
+msgid "Force audio transcoding to use EAC3 instead of AC3. Enable if your TV does not automatically report eARC EAC3 support to WebOS but is capable."
+msgstr ""
+
+#. Title of WebOS Starfish EAC3 Transcoding Bitrate
+msgctxt "#39217"
+msgid "EAC3 encoding bitrate for Starfish"
+msgstr ""
+
+#. Help text for setting "EAC3 encoding bitrate for Starfish" of label #39217
+msgctxt "#39218"
+msgid "Changes the encoding bitrate for EAC3. Requires EAC3 transcoding to be enabled."
+msgstr ""
+
+#. Title of Downmix transcoding for Starfish to stereo
+msgctxt "#39219"
+msgid "Downmix transcoding for Starfish to stereo"
+msgstr ""
+
+#. Help text for setting "Downmix transcoding for Starfish to stereo" of label #39219
+msgctxt "#39220"
+msgid "Forces downmixing of multichannel audio to stereo when transcoding for Starfish."
+msgstr ""
+
+#. Title of Downmix only for 7.1 ch sources
+msgctxt "#39221"
+msgid "Downmix only for 7.1 ch sources"
+msgstr ""
+
+#. Help text for setting "Downmix only for 7.1 ch sources" of label #39221
+msgctxt "#39222"
+msgid "When enabled, stereo downmixing will only occur if the source has more than 6 channels (e.g., 7.1). Sources with 5.1 or fewer channels will not be downmixed."
+msgstr ""
+
+#. Title of Downmix to Dolby Pro Logic II
+msgctxt "#39223"
+msgid "Downmix to Dolby Pro Logic II"
+msgstr ""
+
+#. Help text for setting "Downmix to Dolby Pro Logic II" of label #39223
+msgctxt "#39224"
+msgid "When enabled, multichannel audio will be downmixed to stereo using Dolby Pro Logic II matrix encoding."
+msgstr ""
+
+#. Setting "Restore Volume / Bypass Dialog Normalization for AC3 & EAC3"
+msgctxt "#39225"
+msgid "Restore Volume / Bypass Dialog Normalization for AC3 & EAC3"
+msgstr ""
+
+#. Help text for setting "Restore Volume / Bypass Dialog Normalization for AC3 & EAC3" of label #39225
+msgctxt "#39226"
+msgid "Restores original volume for AC-3 and E-AC-3 streams, by overriding the dialog normalization metadata."
+msgstr ""
+
+#. Setting "Restore Volume / Bypass Dialog Normalization for EAC3 Atmos"
+msgctxt "#39227"
+msgid "Restore Volume / Bypass Dialog Normalization for EAC3 Atmos"
+msgstr ""
+
+#. Help text for setting "Restore Volume / Bypass Dialog Normalization for EAC3 Atmos" of label #39227
+msgctxt "#39228"
+msgid "Restores original volume for E-AC-3 Atmos streams, but may cause Atmos to be disabled."
+msgstr ""
+
+#empty strings from id 39229 to 39999
 
 # 40000 to 40800 are reserved for Video Versions feature
 
