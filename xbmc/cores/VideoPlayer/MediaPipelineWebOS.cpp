@@ -1484,7 +1484,7 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
       packet->iStreamId = CONVERTED_STREAM_ID;
     }
 
-    if (m_flushed && !m_bitstream->CanStartDecode() && !packet->recoveryPoint)
+    if (!m_bitstream->CanStartDecode())
     {
       CLog::LogF(LOGDEBUG, "Waiting for keyframe (bitstream)");
       return true;
