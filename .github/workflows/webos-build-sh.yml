@@ -8,6 +8,11 @@ on:
         required: true
         type: string
         default: ''
+      include_binary_addons:
+        description: 'Include binary addons?'
+        required: true
+        type: boolean
+        default: false
       build_binary_addons:
         description: 'Recompile binary addons?'
         required: true
@@ -93,7 +98,9 @@ jobs:
       - name: Build or Restore Binary Addons
         working-directory: build
         run: |
-          if [ "${{ inputs.build_binary_addons }}" == "true" ]; then
+          if [ "${{ inputs.include_binary_addons }}" == "false" ]; then
+            echo "Skipping binary addons. They will not be compiled or restored."
+          elif [ "${{ inputs.build_binary_addons }}" == "true" ]; then
             echo "Building binary addons..."
             make -j4 -C ../tools/depends/target/binary-addons PREFIX=$PWD/tools/webOS/packaging TARBALLS_LOCATION=$HOME/kodi-deps/tarballs
             
