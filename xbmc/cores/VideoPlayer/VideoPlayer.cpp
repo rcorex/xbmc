@@ -3533,6 +3533,12 @@ void CVideoPlayer::Seek(bool bPlus, bool bLargeStep, bool bChapterOverride)
     return;
   }
 
+
+#if defined(TARGET_WEBOS)
+  if (seekTarget < 0)
+    seekTarget = 0;
+#endif
+
   CDVDMsgPlayerSeek::CMode mode;
   mode.time = (int)seekTarget;
   mode.backward = !bPlus;
@@ -3542,10 +3548,20 @@ void CVideoPlayer::Seek(bool bPlus, bool bLargeStep, bool bChapterOverride)
   mode.sync = true;
 
   m_messenger.Put(std::make_shared<CDVDMsgPlayerSeek>(mode));
+#if defined(TARGET_WEBOS)
+  // webOS FIX: Do not block the GUI thread. Handle subtitle offset asynchronously
+  // because webOS skips the post-seek master clock flush.
+  m_processInfo->SetStateSeeking(true);
+  double offset = seekTarget - time;
+  m_callback.OnPlayBackSeek(seekTarget, offset);
+  if (m_processInfo)
+    m_processInfo->SeekFinished(offset);
+#else
   SynchronizeDemuxer();
   if (seekTarget < 0)
     seekTarget = 0;
   m_callback.OnPlayBackSeek(seekTarget, seekTarget - time);
+#endif
 }
 
 bool CVideoPlayer::SeekScene(Direction seekDirection)
@@ -3577,7 +3593,15 @@ bool CVideoPlayer::SeekScene(Direction seekDirection)
     mode.sync = true;
 
     m_messenger.Put(std::make_shared<CDVDMsgPlayerSeek>(mode));
+#if defined(TARGET_WEBOS)
+    m_processInfo->SetStateSeeking(true);
+    double offset = mode.time - GetTime();
+    m_callback.OnPlayBackSeek(mode.time, offset);
+    if (m_processInfo)
+      m_processInfo->SeekFinished(offset);
+#else
     SynchronizeDemuxer();
+#endif
     return true;
   }
   return false;
@@ -3734,9 +3758,16 @@ void CVideoPlayer::SeekTime(int64_t iTime)
   mode.sync = true;
 
   m_messenger.Put(std::make_shared<CDVDMsgPlayerSeek>(mode));
+#if defined(TARGET_WEBOS)
+  m_processInfo->SetStateSeeking(true);
+  m_callback.OnPlayBackSeek(iTime, seekOffset);
+  if (m_processInfo)
+    m_processInfo->SeekFinished(seekOffset);
+#else
   SynchronizeDemuxer();
   m_callback.OnPlayBackSeek(iTime, seekOffset);
   m_processInfo->SeekFinished(seekOffset);
+#endif
 }
 
 bool CVideoPlayer::SeekTimeRelative(int64_t iTime)
@@ -4959,7 +4990,12 @@ int CVideoPlayer::SeekChapter(int iChapter)
 
     // Seek to the chapter.
     m_messenger.Put(std::make_shared<CDVDMsgPlayerSeekChapter>(iChapter));
+#if defined(TARGET_WEBOS)
+    if (m_processInfo)
+      m_processInfo->SeekFinished(0);
+#else
     SynchronizeDemuxer();
+#endif
   }
 
   return 0;

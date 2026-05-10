@@ -168,6 +168,8 @@ unsigned int ParseAACSampleRate(const uint8_t* data, const size_t size)
 }
 } // namespace
 
+CMediaPipelineWebOS* CMediaPipelineWebOS::ms_instance = nullptr;
+
 CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
                                          CRenderManager& renderManager,
                                          CDVDClock& clock,
@@ -206,10 +208,12 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
   if (WebOSTVPlatformConfig::SupportsDTS())
     ms_codecMap.emplace(AV_CODEC_ID_DTS, "DTS");
   m_processInfo.GetVideoBufferManager().ReleasePools();
+  ms_instance = this;
 }
 
 CMediaPipelineWebOS::~CMediaPipelineWebOS()
 {
+  ms_instance = nullptr;
   Unload(false);
   if (const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer))
     buffer->ResetAcbHandle();
@@ -279,8 +283,30 @@ bool CMediaPipelineWebOS::Supports(const AVCodecID codec, const int profile)
 void CMediaPipelineWebOS::AcbCallback(
     long acbId, long taskId, long eventType, long appState, long playState, const char* reply)
 {
-  CLog::LogF(LOGDEBUG, "acbId={}, taskId={}, eventType={}, appState={}, playState={}, reply={}",
+  CLog::LogF(LOGINFO, "acbId={}, taskId={}, eventType={}, appState={}, playState={}, reply={}",
              acbId, taskId, eventType, appState, playState, reply);
+
+  if (ms_instance)
+  {
+    ms_instance->m_lastAcbTaskId.store(taskId, std::memory_order_release);
+    ms_instance->m_lastAcbPlayState.store(playState, std::memory_order_release);
+    ms_instance->m_acbEvent.Set();
+  }
+}
+
+void CMediaPipelineWebOS::WaitForAcbTask(long expectedTaskId)
+{
+  auto timeout = std::chrono::steady_clock::now() + 1000ms;
+  while (m_lastAcbTaskId.load(std::memory_order_acquire) < expectedTaskId)
+  {
+    auto now = std::chrono::steady_clock::now();
+    if (now >= timeout)
+    {
+      CLog::LogF(LOGWARNING, "Timeout waiting for AcbTaskId={}", expectedTaskId);
+      break;
+    }
+    m_acbEvent.Wait(timeout - now);
+  }
 }
 
 void CMediaPipelineWebOS::FlushVideoMessages()
@@ -557,9 +583,8 @@ void CMediaPipelineWebOS::SetSubtitleDelay(const double delay)
 
 bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHint)
 {
-  m_audioInfoReceived.store(false, std::memory_order_release);
-  m_videoInfoReceived.store(false, std::memory_order_release);
-  m_acbConfigured.store(false, std::memory_order_release);
+  m_lastAcbPlayState.store(0, std::memory_order_release);
+  CLog::LogF(LOGINFO, "Resetting ACB play state tracking variable (Load)");
 
   CWorkerGate::Lock videoLock(m_videoGate);
   CWorkerGate::Lock audioLock(m_audioGate);
@@ -643,6 +668,7 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
       const std::unique_ptr<AcbHandle>& acb = buffer->CreateAcbHandle();
       if (acb->Id())
       {
+        CLog::LogF(LOGINFO, "AcbAPI_initialize(acbId={})", acb->Id());
         if (!AcbAPI_initialize(acb->Id(), PLAYER_TYPE_MSE, getenv("APPID"), &AcbCallback))
         {
           buffer->ResetAcbHandle();
@@ -1202,18 +1228,6 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
 
       pipeline->sendSegmentEvent();
     }
-
-    const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
-    if (buffer)
-    {
-      const std::unique_ptr<AcbHandle>& acb = buffer->GetAcbHandle();
-      if (!acb)
-      {
-        if (!m_mediaAPIs->Play())
-          CLog::LogF(LOGERROR, "Failed to play");
-      }
-    }
-
     m_pts = pts;
     m_seekTargetPts.store(pts.count(), std::memory_order_relaxed);
     m_isSeeking.store(true, std::memory_order_release);
@@ -1393,25 +1407,6 @@ void CMediaPipelineWebOS::Process()
     std::shared_ptr<CDVDMsg> msg = nullptr;
     int priority = 0;
     m_messageQueueVideo.Get(msg, 10ms, priority);
-
-    if (!m_acbConfigured.load(std::memory_order_acquire) &&
-        m_videoInfoReceived.load(std::memory_order_acquire) &&
-        (m_audioInfoReceived.load(std::memory_order_acquire) || !m_hasAudio))
-    {
-      const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
-      const std::unique_ptr<AcbHandle>& acb = buffer->GetAcbHandle();
-      if (acb)
-      {
-        AcbAPI_setSinkType(acb->Id(), SINK_TYPE_MAIN);
-        AcbAPI_setMediaId(acb->Id(), m_mediaAPIs->getMediaID());
-        AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_LOADED, &acb->TaskId());
-
-        if (!m_mediaAPIs->Play())
-          CLog::LogF(LOGERROR, "Failed to play");
-      }
-      m_acbConfigured.store(true, std::memory_order_release);
-    }
-
     UpdatePlayTime();
 
     if (msg)
@@ -1746,15 +1741,19 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       break;
     }
     case PF_EVENT_TYPE_STR_AUDIO_INFO:
-      m_audioInfoReceived.store(true, std::memory_order_release);
-      if (acb)
-        AcbAPI_setMediaAudioData(acb->Id(), logStr.c_str(), &acb->TaskId());
-      break;
-    case PF_EVENT_TYPE_STR_VIDEO_INFO:
-      m_videoInfoReceived.store(true, std::memory_order_release);
       if (acb)
       {
+        CLog::LogF(LOGINFO, "AcbAPI_setMediaAudioData(acbId={}, taskId={})", acb->Id(), acb->TaskId());
+        AcbAPI_setMediaAudioData(acb->Id(), logStr.c_str(), &acb->TaskId());
+        WaitForAcbTask(acb->TaskId());
+      }
+      break;
+    case PF_EVENT_TYPE_STR_VIDEO_INFO:
+      if (acb)
+      {
+        CLog::LogF(LOGINFO, "AcbAPI_setMediaVideoData(acbId={}, taskId={})", acb->Id(), acb->TaskId());
         AcbAPI_setMediaVideoData(acb->Id(), logStr.c_str(), &acb->TaskId());
+        WaitForAcbTask(acb->TaskId());
       }
       break;
     case PF_EVENT_TYPE_STR_STATE_UPDATE__LOADCOMPLETED:
@@ -1769,8 +1768,29 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
         CLog::LogF(LOGERROR, "Failed to get pipeline elements");
       }
 
-      m_renderManager.ShowVideo(true);
+      CLog::LogF(LOGINFO, "AcbAPI_Info: Player state LOADCOMPLETED");
+      if (!acb) // Re-create ACB handle during a reload
+      {
+        const std::unique_ptr<AcbHandle>& acb = buffer->CreateAcbHandle();
+        if (acb->Id())
+        {
+          CLog::LogF(LOGINFO, "AcbAPI_initialize(acbId={})", acb->Id());
+          if (!AcbAPI_initialize(acb->Id(), PLAYER_TYPE_MSE, getenv("APPID"), &AcbCallback))
+          {
+            buffer->ResetAcbHandle();
+          }
+        }
+      }
 
+      if (acb)
+      {
+        CLog::LogF(LOGINFO, "AcbAPI_setSinkType(acbId={}, taskId={}, sinkType=SINK_TYPE_MAIN)", acb->Id(), acb->TaskId());
+        AcbAPI_setSinkType(acb->Id(), SINK_TYPE_MAIN);
+      }
+
+      m_renderManager.ShowVideo(true);
+      if (!m_mediaAPIs->Play())
+          CLog::LogF(LOGERROR, "Failed to play");
       m_loaded = true;
       m_flushed = true;
       Create();
@@ -1779,7 +1799,15 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
     }
     case PF_EVENT_TYPE_STR_STATE_UPDATE__UNLOADCOMPLETED:
       if (acb)
+      {
+        CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_UNLOADED)", acb->Id(), acb->TaskId());
         AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_UNLOADED, &acb->TaskId());
+        WaitForAcbTask(acb->TaskId());
+
+        CLog::LogF(LOGINFO, "Delete ACB handle (Unloaded)");
+        buffer->ResetAcbHandle(); //delete the handle
+      }
+
       StopThread(true);
       if (m_audioThread.joinable())
         m_audioThread.join();
@@ -1788,11 +1816,25 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       UpdateGUISounds(false);
       break;
     case PF_EVENT_TYPE_STR_STATE_UPDATE__PAUSED:
-      if (acb)
-        AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PAUSED, &acb->TaskId());
+    {
+      const long playState = m_lastAcbPlayState.load(std::memory_order_acquire);
+      if (playState != 3)
+      {
+        if (acb)
+        {
+          CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_PAUSED)", acb->Id(), acb->TaskId());
+          AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PAUSED, &acb->TaskId());
+          WaitForAcbTask(acb->TaskId());
+        }
+      }
+      else if (acb)
+      {
+        CLog::LogF(LOGINFO, "Ignored duplicate acb PAUSED state");
+      }
       UpdateGUISounds(false);
       break;
-    case PF_EVENT_TYPE_STR_STATE_UPDATE__PLAYING:
+    }
+    case PF_EVENT_TYPE_STR_STATE_UPDATE__PLAYING: // received after both str_audio_info and str_video_info
     {
       SStartMsg msg{.timestamp = GetCurrentPts(),
                     .player = VideoPlayer_VIDEO,
@@ -1803,9 +1845,26 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       msg.player = VideoPlayer_AUDIO;
       m_messageQueueParent.Put(
           std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, msg));
-      if (acb)
+      const long playState = m_lastAcbPlayState.load(std::memory_order_acquire);
+      if (playState != 2)
       {
-        AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PLAYING, &acb->TaskId());
+        if (acb)
+        {
+          CLog::LogF(LOGINFO, "AcbAPI_setMediaId(acbId={}, taskId={}, mediaId={})", acb->Id(), acb->TaskId(), m_mediaAPIs->getMediaID());
+          AcbAPI_setMediaId(acb->Id(), m_mediaAPIs->getMediaID());
+
+          CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_LOADED)", acb->Id(), acb->TaskId());
+          AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_LOADED, &acb->TaskId());
+          WaitForAcbTask(acb->TaskId());
+
+          CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_PLAYING)", acb->Id(), acb->TaskId());
+          AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PLAYING, &acb->TaskId());
+          WaitForAcbTask(acb->TaskId());
+        }
+      }
+      else if (acb)
+      {
+        CLog::LogF(LOGINFO, "Ignored duplicate acb PLAYING state");
       }
       UpdateGUISounds(true);
       break;

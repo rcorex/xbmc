@@ -15,6 +15,7 @@
 #include "cores/AudioEngine/Utils/AELimiter.h"
 #include "threads/Thread.h"
 #include "utils/BitstreamStats.h"
+#include "threads/Event.h"
 
 #include <atomic>
 #include <chrono>
@@ -447,6 +448,7 @@ private:
   static void AcbCallback(
       long acbId, long taskId, long eventType, long appState, long playState, const char* reply);
 
+  void WaitForAcbTask(long expectedTaskId);
   /**
    * @brief Get the number of bytes in the pipeline and kodi message queue
    * @param type Stream type (audio or video)
@@ -544,9 +546,11 @@ private:
   std::atomic<std::chrono::nanoseconds> m_fedVideoPts{NO_PTS};
   std::atomic<bool> m_started{false};
 
-  std::atomic<bool> m_audioInfoReceived{false};
-  std::atomic<bool> m_videoInfoReceived{false};
-  std::atomic<bool> m_acbConfigured{false};
+  std::atomic<long> m_lastAcbPlayState{-1};
+  std::atomic<long> m_lastAcbTaskId{-1};
+  CEvent m_acbEvent;
+
+  static CMediaPipelineWebOS* ms_instance;
 
   BitstreamStats m_audioStats{};
   BitstreamStats m_videoStats{};
