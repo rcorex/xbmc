@@ -379,6 +379,12 @@ public:
   int OnDiscNavResult(void* pData, int iMessage) override;
   void GetVideoResolution(unsigned int &width, unsigned int &height) override;
 
+#if defined(TARGET_WEBOS)
+  virtual bool NeedsFullMediaRestartOnAudioChange() const { return false; }
+  void RestartAudioStream();
+  void WebOSRestartAudioStream(int audioDemuxerId, int audioStreamId, int audioSource);
+#endif
+
   CVideoSettings GetVideoSettings() const override;
   void SetVideoSettings(CVideoSettings& settings) override;
 
