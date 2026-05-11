@@ -50,4 +50,5 @@ private:
   CRect m_exportedDestRect;
   bool m_configured{false};
   CStarfishVideoBuffer* m_videoBuffer{nullptr};
+  long m_lastAcbId = 0;
 };
