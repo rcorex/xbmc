@@ -2136,19 +2136,6 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       }
 
       CLog::LogF(LOGINFO, "AcbAPI_Info: Player state LOADCOMPLETED");
-      if (!acb) // Re-create ACB handle during a reload
-      {
-        const std::unique_ptr<AcbHandle>& acb = buffer->CreateAcbHandle();
-        if (acb->Id())
-        {
-          CLog::LogF(LOGINFO, "AcbAPI_initialize(acbId={})", acb->Id());
-          if (!AcbAPI_initialize(acb->Id(), PLAYER_TYPE_MSE, getenv("APPID"), &AcbCallback))
-          {
-            buffer->ResetAcbHandle();
-          }
-        }
-      }
-
       if (acb)
       {
         CLog::LogF(LOGINFO, "AcbAPI_setSinkType(acbId={}, taskId={}, sinkType=SINK_TYPE_MAIN)", acb->Id(), acb->TaskId());
