@@ -560,7 +560,10 @@ private:
   std::atomic<std::chrono::nanoseconds> m_fedVideoPts{NO_PTS};
   std::atomic<bool> m_started{false};
 
-  std::atomic<long> m_lastAcbPlayState{-1};
+  enum class OSPlayState { Unloaded, Playing, Paused };
+  std::atomic<OSPlayState> m_osPlayState{OSPlayState::Unloaded};
+  std::atomic<bool> m_internalStartEmitted{false};
+
   std::atomic<long> m_lastAcbTaskId{-1};
   CEvent m_acbEvent;
 
