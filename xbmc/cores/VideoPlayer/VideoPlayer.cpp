@@ -1478,9 +1478,14 @@ void CVideoPlayer::Prepare()
     double startpts = DVD_NOPTS_VALUE;
     if (m_pDemuxer)
     {
+#if defined(TARGET_WEBOS)
+      FlushBuffers(DVD_NOPTS_VALUE, true, true);
+#endif
       if (m_pDemuxer->SeekTime(starttime.count(), true, &startpts))
       {
+#if !defined(TARGET_WEBOS)
         FlushBuffers(starttime.count() / 1000 * AV_TIME_BASE, true, true);
+#endif
         CLog::Log(LOGDEBUG, "{} - starting demuxer from: {}", __FUNCTION__, starttime.count());
       }
       else
@@ -2885,6 +2890,9 @@ void CVideoPlayer::HandleMessages()
         time -= m_State.time_offset/1000l;
 
       CLog::Log(LOGDEBUG, "demuxer seek to: {:f}", time);
+#if defined(TARGET_WEBOS)
+      FlushBuffers(DVD_NOPTS_VALUE, msg.GetAccurate(), msg.GetSync());
+#endif
       if (m_pDemuxer && m_pDemuxer->SeekTime(time, msg.GetBackward(), &start))
       {
         CLog::Log(LOGDEBUG, "demuxer seek to: {:f}, success", time);
@@ -2900,7 +2908,9 @@ void CVideoPlayer::HandleMessages()
         m_State.dts = start;
         m_State.lastSeek = m_clock.GetAbsoluteClock();
 
+#if !defined(TARGET_WEBOS)
         FlushBuffers(start, msg.GetAccurate(), msg.GetSync());
+#endif
       }
       else if (m_pDemuxer)
       {
@@ -2934,11 +2944,10 @@ void CVideoPlayer::HandleMessages()
              m_messenger.GetPacketCount(CDVDMsg::PLAYER_SEEK) == 0 &&
              m_messenger.GetPacketCount(CDVDMsg::PLAYER_SEEK_CHAPTER) == 0)
     {
-      m_processInfo->SeekFinished(0);
-      SetCaching(CACHESTATE_FLUSH);
-
       CDVDMsgPlayerSeekChapter& msg(*std::static_pointer_cast<CDVDMsgPlayerSeekChapter>(pMsg));
-      double start = DVD_NOPTS_VALUE;
+
+      double time = 0;
+      bool canSeekTime = false;
       int offset = 0;
 
       // This should always be the case.
@@ -2948,7 +2957,7 @@ void CVideoPlayer::HandleMessages()
         // So get and adjust chapter time
         const std::chrono::milliseconds position{m_pDemuxer->GetChapterPos(msg.GetChapter())};
         const auto hasEdit{m_Edl.InEdit(position)};
-        double time{static_cast<double>(position.count())};
+        time = static_cast<double>(position.count());
         if (hasEdit)
         {
           const auto& edit{hasEdit.value()};
@@ -2967,27 +2976,47 @@ void CVideoPlayer::HandleMessages()
               time = static_cast<double>(absoluteTime.count());
           }
         }
-
-        if (m_pDemuxer->SeekTime(time, true, &start))
-        {
-          FlushBuffers(start, true, true);
-          int64_t beforeSeek = GetTime();
-          offset = DVD_TIME_TO_MSEC(start) - static_cast<int>(beforeSeek);
-          m_callback.OnPlayBackSeekChapter(msg.GetChapter());
-        }
+        canSeekTime = true;
       }
       else if (m_pInputStream)
       {
+        m_processInfo->SeekFinished(0);
+        SetCaching(CACHESTATE_FLUSH);
+
         CDVDInputStream::IChapter* pChapter = m_pInputStream->GetIChapter();
+#if defined(TARGET_WEBOS)
+        FlushBuffers(DVD_NOPTS_VALUE, true, true);
+#endif
         if (pChapter && pChapter->SeekChapter(msg.GetChapter()))
         {
+          double start = DVD_NOPTS_VALUE;
+#if !defined(TARGET_WEBOS)
           FlushBuffers(start, true, true);
+#endif
           int64_t beforeSeek = GetTime();
           offset = DVD_TIME_TO_MSEC(start) - static_cast<int>(beforeSeek);
-          m_callback.OnPlayBackSeekChapter(msg.GetChapter());
+          m_outboundEvents->Submit([this, chapter = msg.GetChapter()]() {
+            m_callback.OnPlayBackSeekChapter(chapter);
+          });
         }
+        m_processInfo->SeekFinished(offset);
       }
-      m_processInfo->SeekFinished(offset);
+
+      if (canSeekTime)
+      {
+        CDVDMsgPlayerSeek::CMode mode;
+        mode.time = time;
+        mode.backward = msg.GetChapter() < GetChapter();
+        mode.accurate = false;
+        mode.trickplay = false;
+        mode.sync = true;
+        mode.restore = true;
+
+        m_messenger.Put(std::make_shared<CDVDMsgPlayerSeek>(mode));
+        m_outboundEvents->Submit([this, chapter = msg.GetChapter()]() {
+          m_callback.OnPlayBackSeekChapter(chapter);
+        });
+      }
     }
     else if (pMsg->IsType(CDVDMsg::DEMUXER_RESET))
     {
@@ -3001,6 +3030,16 @@ void CVideoPlayer::HandleMessages()
       if(m_pSubtitleDemuxer)
         m_pSubtitleDemuxer->Reset();
     }
+#if defined(TARGET_WEBOS)
+    else if (pMsg->IsType(CDVDMsg::PLAYER_RESTART_AUDIO_STREAM))
+    {
+      auto pMsgRestart = std::static_pointer_cast<CDVDMsgPlayerRestartAudioStream>(pMsg);
+      if (pMsgRestart->GetSource() != STREAM_SOURCE_NONE)
+      {
+        WebOSRestartAudioStream(pMsgRestart->GetDemuxerId(), pMsgRestart->GetStreamId(), pMsgRestart->GetSource());
+      }
+    }
+#endif
     else if (pMsg->IsType(CDVDMsg::PLAYER_SET_AUDIOSTREAM))
     {
       auto pMsg2 = std::static_pointer_cast<CDVDMsgPlayerSetAudioStream>(pMsg);
@@ -3008,6 +3047,21 @@ void CVideoPlayer::HandleMessages()
       SelectionStream& st = m_SelectionStreams.Get(StreamType::AUDIO, pMsg2->GetStreamId());
       if(st.source != STREAM_SOURCE_NONE)
       {
+#if defined(TARGET_WEBOS)
+        if (NeedsFullMediaRestartOnAudioChange())
+        {
+          if (st.id == m_CurrentAudio.id && st.demuxerId == m_CurrentAudio.demuxerId && st.source == m_CurrentAudio.source)
+          {
+            // We are already playing this stream. Ignore to prevent startup loop caused by GUI auto-restore.
+          }
+          else
+          {
+            m_messenger.Put(std::make_shared<CDVDMsgPlayerRestartAudioStream>(st.demuxerId, st.id, st.source));
+          }
+          continue; // abort further processing of this message
+        }
+#endif
+
         if(st.source == STREAM_SOURCE_NAV && m_pInputStream && m_pInputStream->IsStreamType(DVDSTREAM_TYPE_DVD))
         {
           std::shared_ptr<CDVDInputStreamNavigator> pStream = std::static_pointer_cast<CDVDInputStreamNavigator>(m_pInputStream);
@@ -3026,6 +3080,9 @@ void CVideoPlayer::HandleMessages()
         }
         else
         {
+#if defined(TARGET_WEBOS)
+          m_messenger.Put(std::make_shared<CDVDMsgPlayerRestartAudioStream>(st.demuxerId, st.id, st.source));
+#else
           CloseStream(m_CurrentAudio, false);
           OpenStream(m_CurrentAudio, st.demuxerId, st.id, st.source);
           AdaptForcedSubtitles();
@@ -3037,6 +3094,7 @@ void CVideoPlayer::HandleMessages()
           mode.trickplay = true;
           mode.sync = true;
           m_messenger.Put(std::make_shared<CDVDMsgPlayerSeek>(mode));
+#endif
         }
       }
     }
@@ -3183,7 +3241,9 @@ void CVideoPlayer::HandleMessages()
 
       if (speed != DVD_PLAYSPEED_PAUSE && m_playSpeed != DVD_PLAYSPEED_PAUSE && speed != m_playSpeed)
       {
-        m_callback.OnPlayBackSpeedChanged(speed / DVD_PLAYSPEED_NORMAL);
+        m_outboundEvents->Submit([this, ratio = speed / DVD_PLAYSPEED_NORMAL]() {
+          m_callback.OnPlayBackSpeedChanged(ratio);
+        });
         m_processInfo->SeekFinished(0);
       }
 
@@ -3473,6 +3533,11 @@ void CVideoPlayer::Seek(bool bPlus, bool bLargeStep, bool bChapterOverride)
     return;
   }
 
+#if defined(TARGET_WEBOS)
+  if (seekTarget < 0)
+    seekTarget = 0;
+#endif
+
   CDVDMsgPlayerSeek::CMode mode;
   mode.time = (int)seekTarget;
   mode.backward = !bPlus;
@@ -3482,10 +3547,20 @@ void CVideoPlayer::Seek(bool bPlus, bool bLargeStep, bool bChapterOverride)
   mode.sync = true;
 
   m_messenger.Put(std::make_shared<CDVDMsgPlayerSeek>(mode));
+#if defined(TARGET_WEBOS)
+  // webOS FIX: Do not block the GUI thread. Handle subtitle offset asynchronously
+  // because webOS skips the post-seek master clock flush.
+  m_processInfo->SetStateSeeking(true);
+  double offset = seekTarget - time;
+  m_callback.OnPlayBackSeek(seekTarget, offset);
+  if (m_processInfo)
+    m_processInfo->SeekFinished(offset);
+#else
   SynchronizeDemuxer();
   if (seekTarget < 0)
     seekTarget = 0;
   m_callback.OnPlayBackSeek(seekTarget, seekTarget - time);
+#endif
 }
 
 bool CVideoPlayer::SeekScene(Direction seekDirection)
@@ -3517,7 +3592,15 @@ bool CVideoPlayer::SeekScene(Direction seekDirection)
     mode.sync = true;
 
     m_messenger.Put(std::make_shared<CDVDMsgPlayerSeek>(mode));
+#if defined(TARGET_WEBOS)
+    m_processInfo->SetStateSeeking(true);
+    double offset = mode.time - GetTime();
+    m_callback.OnPlayBackSeek(mode.time, offset);
+    if (m_processInfo)
+      m_processInfo->SeekFinished(offset);
+#else
     SynchronizeDemuxer();
+#endif
     return true;
   }
   return false;
@@ -3674,9 +3757,16 @@ void CVideoPlayer::SeekTime(int64_t iTime)
   mode.sync = true;
 
   m_messenger.Put(std::make_shared<CDVDMsgPlayerSeek>(mode));
+#if defined(TARGET_WEBOS)
+  m_processInfo->SetStateSeeking(true);
+  m_callback.OnPlayBackSeek(iTime, seekOffset);
+  if (m_processInfo)
+    m_processInfo->SeekFinished(seekOffset);
+#else
   SynchronizeDemuxer();
   m_callback.OnPlayBackSeek(iTime, seekOffset);
   m_processInfo->SeekFinished(seekOffset);
+#endif
 }
 
 bool CVideoPlayer::SeekTimeRelative(int64_t iTime)
@@ -4899,7 +4989,12 @@ int CVideoPlayer::SeekChapter(int iChapter)
 
     // Seek to the chapter.
     m_messenger.Put(std::make_shared<CDVDMsgPlayerSeekChapter>(iChapter));
+#if defined(TARGET_WEBOS)
+    if (m_processInfo)
+      m_processInfo->SeekFinished(0);
+#else
     SynchronizeDemuxer();
+#endif
   }
 
   return 0;
@@ -5716,6 +5811,39 @@ void CVideoPlayer::SetAudioStream(int iStream)
   SynchronizeDemuxer();
   NotifyAudioUpdate();
 }
+
+#if defined(TARGET_WEBOS)
+void CVideoPlayer::RestartAudioStream()
+{
+  m_messenger.Put(std::make_shared<CDVDMsgPlayerRestartAudioStream>(m_CurrentAudio.demuxerId, m_CurrentAudio.id, m_CurrentAudio.source));
+}
+
+void CVideoPlayer::WebOSRestartAudioStream(int audioDemuxerId, int audioStreamId, int audioSource)
+{
+  int time = (int)GetUpdatedTime();
+
+  double start = DVD_NOPTS_VALUE;
+  FlushBuffers(DVD_NOPTS_VALUE, true, true);
+  if (m_pDemuxer && m_pDemuxer->SeekTime(time, true, &start))
+  {
+    if (m_pSubtitleDemuxer)
+      m_pSubtitleDemuxer->SeekTime(time, true);
+
+    if (start == DVD_NOPTS_VALUE)
+      start = DVD_MSEC_TO_TIME(time) - m_State.time_offset;
+
+    m_State.dts = start;
+    m_State.lastSeek = m_clock.GetAbsoluteClock();
+  }
+
+  if (m_CurrentAudio.source != STREAM_SOURCE_NONE)
+    CloseStream(m_CurrentAudio, false);
+
+  OpenStream(m_CurrentAudio, audioDemuxerId, audioStreamId, audioSource, false);
+
+  AdaptForcedSubtitles();
+}
+#endif
 
 void CVideoPlayer::GetSubtitleStreamInfo(int index, SubtitleStreamInfo& info) const
 {
