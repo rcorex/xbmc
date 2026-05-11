@@ -449,7 +449,7 @@ CMediaPipelineWebOS::~CMediaPipelineWebOS()
   Unload(false);
   if (const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer))
     buffer->ResetAcbHandle();
-
+  UpdateGUISounds(false);
   CServiceBroker::GetSettingsComponent()->GetSettings()->UnregisterCallback(this);
 }
 
@@ -871,7 +871,8 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
   m_osPlayState.store(OSPlayState::Unloaded, std::memory_order_release);
   m_internalStartEmitted.store(false, std::memory_order_release);
   CLog::LogF(LOGINFO, "Resetting internal play state tracking variables (Load)");
-
+  UpdateGUISounds(true);
+  
   CWorkerGate::Lock videoLock(m_videoGate);
   CWorkerGate::Lock audioLock(m_audioGate);
 
@@ -2156,7 +2157,7 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       {
         CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_UNLOADED)", acb->Id(), acb->TaskId());
         AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_UNLOADED, &acb->TaskId());
-        WaitForAcbTask(acb->TaskId());
+        std::this_thread::sleep_for(std::chrono::milliseconds(30));
 
         CLog::LogF(LOGINFO, "Delete ACB handle (Unloaded)");
         buffer->ResetAcbHandle(); //delete the handle
@@ -2169,7 +2170,6 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       m_pipeline = nullptr;
       m_osPlayState.store(OSPlayState::Unloaded, std::memory_order_release);
       m_internalStartEmitted.store(false, std::memory_order_release);
-      UpdateGUISounds(false);
       break;
     case PF_EVENT_TYPE_STR_STATE_UPDATE__PAUSED:
     {
@@ -2188,7 +2188,6 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       {
         CLog::LogF(LOGINFO, "Ignored duplicate PAUSED state event");
       }
-      UpdateGUISounds(false);
       break;
     }
     case PF_EVENT_TYPE_STR_STATE_UPDATE__PLAYING: // received after both str_audio_info and str_video_info
@@ -2230,7 +2229,6 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       {
         CLog::LogF(LOGINFO, "Ignored duplicate PLAYING state event");
       }
-      UpdateGUISounds(true);
       break;
     }
     case PF_EVENT_TYPE_STR_BUFFERFULL:
