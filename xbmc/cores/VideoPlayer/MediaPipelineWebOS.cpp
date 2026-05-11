@@ -562,21 +562,6 @@ void CMediaPipelineWebOS::AcbCallback(
   }
 }
 
-void CMediaPipelineWebOS::WaitForAcbTask(long expectedTaskId)
-{
-  auto timeout = std::chrono::steady_clock::now() + 1000ms;
-  while (m_lastAcbTaskId.load(std::memory_order_acquire) < expectedTaskId)
-  {
-    auto now = std::chrono::steady_clock::now();
-    if (now >= timeout)
-    {
-      CLog::LogF(LOGWARNING, "Timeout waiting for AcbTaskId={}", expectedTaskId);
-      break;
-    }
-    m_acbEvent.Wait(timeout - now);
-  }
-}
-
 void CMediaPipelineWebOS::FlushVideoMessages()
 {
   m_processInfo.SetLevelVQ(0);
@@ -2113,7 +2098,6 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       {
         CLog::LogF(LOGINFO, "AcbAPI_setMediaAudioData(acbId={}, taskId={})", acb->Id(), acb->TaskId());
         AcbAPI_setMediaAudioData(acb->Id(), logStr.c_str(), &acb->TaskId());
-        //WaitForAcbTask(acb->TaskId());
       }
       break;
     case PF_EVENT_TYPE_STR_VIDEO_INFO:
@@ -2121,7 +2105,6 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       {
         CLog::LogF(LOGINFO, "AcbAPI_setMediaVideoData(acbId={}, taskId={})", acb->Id(), acb->TaskId());
         AcbAPI_setMediaVideoData(acb->Id(), logStr.c_str(), &acb->TaskId());
-        //WaitForAcbTask(acb->TaskId());
       }
       break;
     case PF_EVENT_TYPE_STR_STATE_UPDATE__LOADCOMPLETED:
@@ -2181,10 +2164,9 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
         {
           CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_PAUSED)", acb->Id(), acb->TaskId());
           AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PAUSED, &acb->TaskId());
-          //WaitForAcbTask(acb->TaskId());
         }
       }
-      else //if (acb)
+      else
       {
         CLog::LogF(LOGINFO, "Ignored duplicate PAUSED state event");
       }
@@ -2218,14 +2200,12 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
 
           CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_LOADED)", acb->Id(), acb->TaskId());
           AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_LOADED, &acb->TaskId());
-          //WaitForAcbTask(acb->TaskId());
 
           CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_PLAYING)", acb->Id(), acb->TaskId());
           AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PLAYING, &acb->TaskId());
-          //WaitForAcbTask(acb->TaskId());
         }
       }
-      else //if (acb)
+      else
       {
         CLog::LogF(LOGINFO, "Ignored duplicate PLAYING state event");
       }
