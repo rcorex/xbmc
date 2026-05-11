@@ -378,8 +378,6 @@ unsigned int ParseAACSampleRate(const uint8_t* data, const size_t size)
 }
 } // namespace
 
-CMediaPipelineWebOS* CMediaPipelineWebOS::ms_instance = nullptr;
-
 CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
                                          CRenderManager& renderManager,
                                          CDVDClock& clock,
@@ -440,12 +438,10 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
                                     CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71,
                                     CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM,
                                     CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS});
-  ms_instance = this;
 }
 
 CMediaPipelineWebOS::~CMediaPipelineWebOS()
 {
-  ms_instance = nullptr;
   Unload(false);
   if (const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer))
     buffer->ResetAcbHandle();
@@ -554,12 +550,6 @@ void CMediaPipelineWebOS::AcbCallback(
 {
   CLog::LogF(LOGINFO, "acbId={}, taskId={}, eventType={}, appState={}, playState={}, reply={}",
              acbId, taskId, eventType, appState, playState, reply);
-
-  if (ms_instance)
-  {
-    ms_instance->m_lastAcbTaskId.store(taskId, std::memory_order_release);
-    ms_instance->m_acbEvent.Set();
-  }
 }
 
 void CMediaPipelineWebOS::FlushVideoMessages()
