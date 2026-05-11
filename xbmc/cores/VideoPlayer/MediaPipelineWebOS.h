@@ -451,7 +451,6 @@ private:
   static void AcbCallback(
       long acbId, long taskId, long eventType, long appState, long playState, const char* reply);
 
-  void WaitForAcbTask(long expectedTaskId);
   /**
    * @brief Get the number of bytes in the pipeline and kodi message queue
    * @param type Stream type (audio or video)
@@ -563,11 +562,6 @@ private:
   enum class OSPlayState { Unloaded, Playing, Paused };
   std::atomic<OSPlayState> m_osPlayState{OSPlayState::Unloaded};
   std::atomic<bool> m_internalStartEmitted{false};
-
-  std::atomic<long> m_lastAcbTaskId{-1};
-  CEvent m_acbEvent;
-
-  static CMediaPipelineWebOS* ms_instance;
 
   BitstreamStats m_audioStats{};
   BitstreamStats m_videoStats{};
