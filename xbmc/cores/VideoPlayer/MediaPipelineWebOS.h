@@ -16,7 +16,6 @@
 #include "settings/lib/ISettingCallback.h"
 #include "threads/Thread.h"
 #include "utils/BitstreamStats.h"
-#include "threads/Event.h"
 
 #include <atomic>
 #include <chrono>
