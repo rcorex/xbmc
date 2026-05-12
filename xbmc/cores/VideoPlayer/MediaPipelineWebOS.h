@@ -546,6 +546,7 @@ private:
   std::atomic<bool> m_allowPassthrough{false};
   std::atomic<bool> m_passthroughSetting{false};
   std::atomic<int> m_processQuality{0};
+  std::atomic<int> m_guiSoundMode{0};
   std::atomic<double> m_mixSubLevel{0.0};
   std::atomic<bool> m_stereoUpmix{false};
   std::atomic<bool> m_maintainOriginalVolume{false};
