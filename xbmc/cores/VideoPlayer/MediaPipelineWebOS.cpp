@@ -1529,20 +1529,19 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
 
   if (m_flushed)
   {
-    // 1. Prepare all state variables FIRST
+    // Prepare all state variables FIRST
     m_pts = pts;
     m_seekTargetPts.store(pts.count(), std::memory_order_relaxed);
     m_isSeeking.store(true, std::memory_order_release);
     m_fedVideoPts = NO_PTS;
     m_fedAudioPts = NO_PTS;
     
-    // Note: Removed `m_started = false;` here. It is safely handled in Flush() 
-    // and actively creates a race condition if explicitly forced here.
-
-    // 2. Clear the flushed flag BEFORE triggering the API
+    // Explicitly reset started here as a defensive guarantee
+    m_started = false;
+    // Clear the flushed flag BEFORE triggering the API
     m_flushed = false;
 
-    // 3. NOW safely interact with the API. Any async callbacks fired 
+    // NOW safely interact with the API. Any async callbacks fired 
     // from this point forward will see the correct internal state.
     CVariant time;
     time["position"] = pts.count();
