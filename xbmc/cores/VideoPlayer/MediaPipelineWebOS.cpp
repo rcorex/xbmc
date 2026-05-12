@@ -1529,6 +1529,21 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
 
   if (m_flushed)
   {
+    // 1. Prepare all state variables FIRST
+    m_pts = pts;
+    m_seekTargetPts.store(pts.count(), std::memory_order_relaxed);
+    m_isSeeking.store(true, std::memory_order_release);
+    m_fedVideoPts = NO_PTS;
+    m_fedAudioPts = NO_PTS;
+    
+    // Note: Removed `m_started = false;` here. It is safely handled in Flush() 
+    // and actively creates a race condition if explicitly forced here.
+
+    // 2. Clear the flushed flag BEFORE triggering the API
+    m_flushed = false;
+
+    // 3. NOW safely interact with the API. Any async callbacks fired 
+    // from this point forward will see the correct internal state.
     CVariant time;
     time["position"] = pts.count();
     std::string payload;
@@ -1551,13 +1566,6 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
       pipeline->sendSegmentEvent();
     }
 
-    m_pts = pts;
-    m_seekTargetPts.store(pts.count(), std::memory_order_relaxed);
-    m_isSeeking.store(true, std::memory_order_release);
-    m_fedVideoPts = NO_PTS;
-    m_fedAudioPts = NO_PTS;
-    m_started = false;
-
     // EAGER TRIGGER: Send PLAYER_STARTED to Kodi if not already sent
     if (!m_internalStartEmitted.exchange(true, std::memory_order_acq_rel))
     {
@@ -1571,7 +1579,6 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
       m_messageQueueParent.Put(
           std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, startMsg));
     }
-    m_flushed = false;
   }
 
   const std::chrono::nanoseconds fedVideoPts = m_fedVideoPts.load();
