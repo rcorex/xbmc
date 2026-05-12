@@ -850,6 +850,7 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
 {
   m_osPlayState.store(OSPlayState::Unloaded, std::memory_order_release);
   m_internalStartEmitted.store(false, std::memory_order_release);
+  m_osMediaLoadedEmitted.store(false, std::memory_order_release);
   CLog::LogF(LOGINFO, "Resetting internal play state tracking variables (Load)");
   UpdateGUISounds(true);
 
@@ -1131,9 +1132,25 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
 
 void CMediaPipelineWebOS::Unload(const bool sync)
 {
+  m_osPlayState.store(OSPlayState::Unloaded, std::memory_order_release);
+
+  const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
+  if (buffer && buffer->GetAcbHandle())
+  {
+    CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_UNLOADED)", buffer->GetAcbHandle()->Id(), buffer->GetAcbHandle()->TaskId());
+    AcbAPI_setState(buffer->GetAcbHandle()->Id(), APPSTATE_FOREGROUND, PLAYSTATE_UNLOADED,
+                    &buffer->GetAcbHandle()->TaskId());
+  }
+
   CThread::StopThread(true);
   if (m_audioThread.joinable())
     m_audioThread.join();
+
+  // Clear any unexecuted tasks to prevent bleed-over into the next playback session
+  {
+    std::lock_guard<std::mutex> lock(m_taskMutex);
+    m_tasks.clear(); 
+  }
 
   if (!m_mediaAPIs->Unload())
     CLog::LogF(LOGERROR, "Unload failed");
@@ -1708,12 +1725,31 @@ void CMediaPipelineWebOS::SetDynamicRangeCompression(const long drc)
       10.0f, (static_cast<float>(drc) / 100.0f + m_volumeAmplificationBoost.load()) / 20.0f));
 }
 
+void CMediaPipelineWebOS::QueueTask(std::function<void()> task)
+{
+  std::lock_guard<std::mutex> lock(m_taskMutex);
+  m_tasks.push_back(std::move(task));
+}
+
+void CMediaPipelineWebOS::ProcessTasks()
+{
+  std::vector<std::function<void()>> tasks;
+  {
+    std::lock_guard<std::mutex> lock(m_taskMutex);
+    tasks.swap(m_tasks);
+  }
+  for (const auto& task : tasks)
+    task();
+}
+
 void CMediaPipelineWebOS::Process()
 {
   m_videoGate.SetRunning(true);
   while (!m_bStop)
   {
     m_videoGate.Checkpoint();
+
+    ProcessTasks();
 
     std::shared_ptr<CDVDMsg> msg = nullptr;
     int priority = 0;
@@ -2091,18 +2127,26 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       break;
     }
     case PF_EVENT_TYPE_STR_AUDIO_INFO:
-      if (acb)
-      {
-        CLog::LogF(LOGINFO, "AcbAPI_setMediaAudioData(acbId={}, taskId={})", acb->Id(), acb->TaskId());
-        AcbAPI_setMediaAudioData(acb->Id(), logStr.c_str(), &acb->TaskId());
-      }
+      QueueTask([this, info = std::string(logStr)]() {
+        const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
+        if (buffer && buffer->GetAcbHandle())
+        {
+          CLog::LogF(LOGINFO, "AcbAPI_setMediaAudioData(acbId={}, taskId={})", buffer->GetAcbHandle()->Id(), buffer->GetAcbHandle()->TaskId());
+          AcbAPI_setMediaAudioData(buffer->GetAcbHandle()->Id(), info.c_str(),
+                                   &buffer->GetAcbHandle()->TaskId());
+        }
+      });
       break;
     case PF_EVENT_TYPE_STR_VIDEO_INFO:
-      if (acb)
-      {
-        CLog::LogF(LOGINFO, "AcbAPI_setMediaVideoData(acbId={}, taskId={})", acb->Id(), acb->TaskId());
-        AcbAPI_setMediaVideoData(acb->Id(), logStr.c_str(), &acb->TaskId());
-      }
+      QueueTask([this, info = std::string(logStr)]() {
+        const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
+        if (buffer && buffer->GetAcbHandle())
+        {
+          CLog::LogF(LOGINFO, "AcbAPI_setMediaVideoData(acbId={}, taskId={})", buffer->GetAcbHandle()->Id(), buffer->GetAcbHandle()->TaskId());
+          AcbAPI_setMediaVideoData(buffer->GetAcbHandle()->Id(), info.c_str(),
+                                   &buffer->GetAcbHandle()->TaskId());
+        }
+      });
       break;
     case PF_EVENT_TYPE_STR_STATE_UPDATE__LOADCOMPLETED:
     {
@@ -2117,11 +2161,14 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       }
 
       CLog::LogF(LOGINFO, "AcbAPI_Info: Player state LOADCOMPLETED");
-      if (acb)
-      {
-        CLog::LogF(LOGINFO, "AcbAPI_setSinkType(acbId={}, taskId={}, sinkType=SINK_TYPE_MAIN)", acb->Id(), acb->TaskId());
-        AcbAPI_setSinkType(acb->Id(), SINK_TYPE_MAIN);
-      }
+      QueueTask([this]() {
+        const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
+        if (buffer && buffer->GetAcbHandle())
+        {
+          CLog::LogF(LOGINFO, "AcbAPI_setSinkType(acbId={}, taskId={}, sinkType=SINK_TYPE_MAIN)", buffer->GetAcbHandle()->Id(), buffer->GetAcbHandle()->TaskId());
+          AcbAPI_setSinkType(buffer->GetAcbHandle()->Id(), SINK_TYPE_MAIN);
+        }
+      });
 
       m_renderManager.ShowVideo(true);
       if (!m_mediaAPIs->Play())
@@ -2133,16 +2180,7 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       break;
     }
     case PF_EVENT_TYPE_STR_STATE_UPDATE__UNLOADCOMPLETED:
-      if (acb)
-      {
-        CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_UNLOADED)", acb->Id(), acb->TaskId());
-        AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_UNLOADED, &acb->TaskId());
-        std::this_thread::sleep_for(std::chrono::milliseconds(30));
-
-        CLog::LogF(LOGINFO, "Delete ACB handle (Unloaded)");
-        buffer->ResetAcbHandle(); //delete the handle
-      }
-
+    {
       StopThread(true);
       if (m_audioThread.joinable())
         m_audioThread.join();
@@ -2150,18 +2188,33 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       m_pipeline = nullptr;
       m_osPlayState.store(OSPlayState::Unloaded, std::memory_order_release);
       m_internalStartEmitted.store(false, std::memory_order_release);
+      m_osMediaLoadedEmitted.store(false, std::memory_order_release);
+
+      const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
+      if (buffer && buffer->GetAcbHandle())
+      {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50)); // wait for acbcallback for PLAYSTATE_UNLOADED 5-20ms
+        CLog::LogF(LOGINFO, "Delete ACB handle (UnloadCompleted)");
+        buffer->ResetAcbHandle();
+      }
       break;
+    }
     case PF_EVENT_TYPE_STR_STATE_UPDATE__PAUSED:
     {
       // OS EMISSION: Only send if the OS doesn't already know we are paused
       if (m_osPlayState.load(std::memory_order_acquire) != OSPlayState::Paused)
       {
         m_osPlayState.store(OSPlayState::Paused, std::memory_order_release);
-        if (acb)
-        {
-          CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_PAUSED)", acb->Id(), acb->TaskId());
-          AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PAUSED, &acb->TaskId());
-        }
+
+        QueueTask([this]() {
+          const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
+          if (buffer && buffer->GetAcbHandle())
+          {
+            CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_PAUSED)", buffer->GetAcbHandle()->Id(), buffer->GetAcbHandle()->TaskId());
+            AcbAPI_setState(buffer->GetAcbHandle()->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PAUSED,
+                            &buffer->GetAcbHandle()->TaskId());
+          }
+        });
       }
       else
       {
@@ -2190,17 +2243,30 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       {
         m_osPlayState.store(OSPlayState::Playing, std::memory_order_release);
 
-        if (acb)
-        {
-          CLog::LogF(LOGINFO, "AcbAPI_setMediaId(acbId={}, taskId={}, mediaId={})", acb->Id(), acb->TaskId(), m_mediaAPIs->getMediaID());
-          AcbAPI_setMediaId(acb->Id(), m_mediaAPIs->getMediaID());
+        // Atomically check and set the flag. emitLoaded will be true ONLY on the first pass.
+        bool emitLoaded = !m_osMediaLoadedEmitted.exchange(true, std::memory_order_acq_rel);
 
-          CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_LOADED)", acb->Id(), acb->TaskId());
-          AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_LOADED, &acb->TaskId());
+        QueueTask([this, emitLoaded]() {
+          const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
+          if (buffer && buffer->GetAcbHandle())
+          {
+            // Only send the initialization commands once per load cycle
+            if (emitLoaded)
+            {
+              CLog::LogF(LOGINFO, "AcbAPI_setMediaId(acbId={}, taskId={}, mediaId={})", buffer->GetAcbHandle()->Id(), buffer->GetAcbHandle()->TaskId(), m_mediaAPIs->getMediaID());
+              AcbAPI_setMediaId(buffer->GetAcbHandle()->Id(), m_mediaAPIs->getMediaID());
 
-          CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_PLAYING)", acb->Id(), acb->TaskId());
-          AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PLAYING, &acb->TaskId());
-        }
+              CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_LOADED)", buffer->GetAcbHandle()->Id(), buffer->GetAcbHandle()->TaskId());
+              AcbAPI_setState(buffer->GetAcbHandle()->Id(), APPSTATE_FOREGROUND, PLAYSTATE_LOADED,
+                              &buffer->GetAcbHandle()->TaskId());
+            }
+
+            // Always send the PLAYING state command
+            CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_PLAYING)", buffer->GetAcbHandle()->Id(), buffer->GetAcbHandle()->TaskId());
+            AcbAPI_setState(buffer->GetAcbHandle()->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PLAYING,
+                            &buffer->GetAcbHandle()->TaskId());
+          }
+        });
       }
       else
       {
