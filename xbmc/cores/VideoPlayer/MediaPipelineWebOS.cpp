@@ -2202,8 +2202,8 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
     case PF_EVENT_TYPE_STR_STATE_UPDATE__PAUSED:
     {
       // OS EMISSION: Only send if the OS doesn't already know we are paused
-      if (m_osPlayState.load(std::memory_order_acquire) != OSPlayState::Paused)
-      {
+      // if (m_osPlayState.load(std::memory_order_acquire) != OSPlayState::Paused)
+      // {
         m_osPlayState.store(OSPlayState::Paused, std::memory_order_release);
 
         QueueTask([this]() {
@@ -2215,11 +2215,11 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
                             &buffer->GetAcbHandle()->TaskId());
           }
         });
-      }
-      else
-      {
-        CLog::LogF(LOGINFO, "Ignored duplicate PAUSED state event");
-      }
+      // }
+      // else
+      // {
+      //   CLog::LogF(LOGINFO, "Ignored duplicate PAUSED state event");
+      // }
       break;
     }
     case PF_EVENT_TYPE_STR_STATE_UPDATE__PLAYING: // received after both str_audio_info and str_video_info
@@ -2239,8 +2239,8 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       }
 
       // OS EMISSION: Only send if the OS doesn't already know we are playing
-      if (m_osPlayState.load(std::memory_order_acquire) != OSPlayState::Playing)
-      {
+      // if (m_osPlayState.load(std::memory_order_acquire) != OSPlayState::Playing)
+      // {
         m_osPlayState.store(OSPlayState::Playing, std::memory_order_release);
 
         // Atomically check and set the flag. emitLoaded will be true ONLY on the first pass.
@@ -2267,11 +2267,11 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
                             &buffer->GetAcbHandle()->TaskId());
           }
         });
-      }
-      else
-      {
-        CLog::LogF(LOGINFO, "Ignored duplicate PLAYING state event");
-      }
+      // }
+      // else
+      // {
+      //   CLog::LogF(LOGINFO, "Ignored duplicate PLAYING state event");
+      // }
       break;
     }
     case PF_EVENT_TYPE_STR_BUFFERFULL:
