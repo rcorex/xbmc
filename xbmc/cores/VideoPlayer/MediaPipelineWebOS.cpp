@@ -1532,7 +1532,6 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
     // Prepare all state variables FIRST
     m_pts = pts;
     m_seekTargetPts.store(pts.count(), std::memory_order_relaxed);
-    m_isSeeking.store(true, std::memory_order_release);
     m_fedVideoPts = NO_PTS;
     m_fedAudioPts = NO_PTS;
     
@@ -2112,26 +2111,7 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
   switch (type)
   {
     case PF_EVENT_TYPE_FRAMEREADY:
-    {
-      /*if (m_isSeeking.load(std::memory_order_acquire))
-      {
-        const uint64_t target = m_seekTargetPts.load(std::memory_order_relaxed);
-        const int64_t delta = std::abs(static_cast<int64_t>(numValue) - static_cast<int64_t>(target));
-        const int64_t MAX_ACCEPTABLE_GAP = 2000000000LL; // 2 seconds in nanoseconds
-
-        if (delta > MAX_ACCEPTABLE_GAP)
-        {
-          CLog::LogF(LOGINFO, "Ignored stale FRAMEREADY event (backward/forward seek guard). Stale PTS: {}, Target PTS: {}", numValue, target);
-          break;
-        }
-
-        m_isSeeking.store(false, std::memory_order_release);
-      }
-
-      if (!m_flushed)
-        m_started = true;*/
       break;
-    }
     case PF_EVENT_TYPE_STR_AUDIO_INFO:
       QueueTask([this, info = std::string(logStr)]() {
         const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
