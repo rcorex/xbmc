@@ -117,7 +117,8 @@ void CRendererStarfish::ManageRenderArea()
   }
 
   bool rectsChanged = m_exportedDestRect != m_destRect || m_exportedSourceRect != m_sourceRect;
-  long currentAcbId = (m_videoBuffer && m_videoBuffer->GetAcbHandle()) ? m_videoBuffer->GetAcbHandle()->Id() : 0;
+  auto* acbHandle = (m_videoBuffer && m_videoBuffer->GetAcbHandle()) ? m_videoBuffer->GetAcbHandle().get() : nullptr;
+  long currentAcbId = acbHandle ? acbHandle->Id() : 0;
 
   if ((rectsChanged || (currentAcbId && currentAcbId != m_lastAcbId)) &&
       !m_sourceRect.IsEmpty() && !m_destRect.IsEmpty())
@@ -136,12 +137,12 @@ void CRendererStarfish::ManageRenderArea()
         m_exportedDestRect = m_destRect;
       }
     }
-    else if (currentAcbId)
+    else if (currentAcbId && acbHandle)
     {
       CLog::LogF(LOGINFO, "AcbAPI_setCustomDisplayWindow - AcbId: {}, TaskId: {}, "
                           "SourceRect: [x:{}, y:{}, w:{}, h:{}], "
                           "DestRect: [x:{}, y:{}, w:{}, h:{}]",
-                 currentAcbId, m_videoBuffer->GetAcbHandle()->TaskId(),
+                 currentAcbId, acbHandle->TaskId(),
                  static_cast<long>(m_sourceRect.x1), static_cast<long>(m_sourceRect.y1),
                  static_cast<long>(m_sourceRect.Width()), static_cast<long>(m_sourceRect.Height()),
                  static_cast<long>(m_destRect.x1), static_cast<long>(m_destRect.y1),
@@ -152,7 +153,7 @@ void CRendererStarfish::ManageRenderArea()
           static_cast<long>(m_sourceRect.y1), static_cast<long>(m_sourceRect.Width()),
           static_cast<long>(m_sourceRect.Height()), static_cast<long>(m_destRect.x1),
           static_cast<long>(m_destRect.y1), static_cast<long>(m_destRect.Width()),
-          static_cast<long>(m_destRect.Height()), false, &m_videoBuffer->GetAcbHandle()->TaskId());
+          static_cast<long>(m_destRect.Height()), false, &acbHandle->TaskId());
 
       m_lastAcbId = currentAcbId;
       m_exportedSourceRect = m_sourceRect;
