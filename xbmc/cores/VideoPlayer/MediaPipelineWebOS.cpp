@@ -2113,7 +2113,7 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
   {
     case PF_EVENT_TYPE_FRAMEREADY:
     {
-      if (m_isSeeking.load(std::memory_order_acquire))
+      /*if (m_isSeeking.load(std::memory_order_acquire))
       {
         const uint64_t target = m_seekTargetPts.load(std::memory_order_relaxed);
         const int64_t delta = std::abs(static_cast<int64_t>(numValue) - static_cast<int64_t>(target));
@@ -2129,7 +2129,7 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       }
 
       if (!m_flushed)
-        m_started = true;
+        m_started = true;*/
       break;
     }
     case PF_EVENT_TYPE_STR_AUDIO_INFO:
@@ -2230,6 +2230,12 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
     }
     case PF_EVENT_TYPE_STR_STATE_UPDATE__PLAYING: // received after both str_audio_info and str_video_info
     {
+      // DETERMINISTIC TRIGGER: The OS has explicitly confirmed playback is stable.
+      // Use this instead of FRAMEREADY event to start playback after a seek
+      if (!m_flushed) 
+      {
+         m_started = true;
+      }
       // REACTIVE TRIGGER: Send PLAYER_STARTED to Kodi if Eager Trigger didn't beat us to it
       if (!m_internalStartEmitted.exchange(true, std::memory_order_acq_rel))
       {
