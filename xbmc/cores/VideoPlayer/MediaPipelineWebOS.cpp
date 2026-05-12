@@ -1531,7 +1531,6 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
   {
     // Prepare all state variables FIRST
     m_pts = pts;
-    m_seekTargetPts.store(pts.count(), std::memory_order_relaxed);
     m_fedVideoPts = NO_PTS;
     m_fedAudioPts = NO_PTS;
     
