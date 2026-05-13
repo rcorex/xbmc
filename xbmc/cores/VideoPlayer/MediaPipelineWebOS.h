@@ -341,6 +341,8 @@ public:
    */
   void GetVideoResolution(unsigned int& width, unsigned int& height) const;
 
+  void OnSettingChanged(const std::shared_ptr<const CSetting>& setting) override;
+
 protected:
   /**
    * @brief Video processing thread loop.
@@ -396,9 +398,6 @@ private:
    * @param sync If true, wait for unload to complete.
    */
   void Unload(bool sync);
-
-  void OnSettingChanged(const std::shared_ptr<const CSetting>& setting) override;
-
 
   /**
    * @brief Sets up audio stream parameters and transcoding if necessary.
@@ -480,8 +479,8 @@ private:
    */
   bool GetMaxVideoResolution(const std::string& codec,
                              int& width,
-                              int& height,
-                              int& framerate) const;
+                             int& height,
+                             int& framerate) const;
 
   /**
    * @brief Queues a task to be safely executed on the main video Process() thread.
