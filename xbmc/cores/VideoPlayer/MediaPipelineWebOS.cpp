@@ -1710,6 +1710,16 @@ void CMediaPipelineWebOS::UpdatePlayTime()
   }
 
   pipeline->GetPlayInfo(&nanoPts);
+
+  // STALE PTS GUARD: If a stale FRAMEREADY event triggers this read before WebOS 
+  // has actually processed the seek, the hardware will return the pre-seek time.
+  // We ignore any hardware time that is wildly out of sync with our expected m_pts.
+  if (std::abs(nanoPts - m_pts.load().count()) > 2000000000LL) // 2000ms (2s) tolerance
+  {
+    CLog::LogF(LOGINFO, "Ignored stale hardware PTS. Expected: {}, Got: {}", m_pts.load().count(), nanoPts);
+    return;
+  }
+
   m_pts = std::chrono::nanoseconds(nanoPts);
 
   const double pts = GetCurrentPts();
@@ -1749,6 +1759,10 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
   switch (type)
   {
     case PF_EVENT_TYPE_FRAMEREADY:
+      if (!m_flushed)
+      {
+        m_started = true;
+      }
       break;
     case PF_EVENT_TYPE_STR_AUDIO_INFO:
       QueueTask([this, info = std::string(logStr)]() {
@@ -1836,12 +1850,6 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
     }
     case PF_EVENT_TYPE_STR_STATE_UPDATE__PLAYING: // received after both str_audio_info and str_video_info
     {
-      // DETERMINISTIC TRIGGER: The OS has explicitly confirmed playback is stable.
-      // Use this instead of FRAMEREADY event to start playback after a seek
-      if (!m_flushed) 
-      {
-         m_started = true;
-      }
       SStartMsg msg{.timestamp = GetCurrentPts(),
                     .player = VideoPlayer_VIDEO,
                     .cachetime = DVD_MSEC_TO_TIME(50),
