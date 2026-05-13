@@ -1522,13 +1522,11 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
     m_fedVideoPts = NO_PTS;
     m_fedAudioPts = NO_PTS;
     
-    // Explicitly reset started here as a defensive guarantee
+    // Clear the flags BEFORE triggering the API
     m_started = false;
-    // Clear the flushed flag BEFORE triggering the API
     m_flushed = false;
 
-    // NOW safely interact with the API. Any async callbacks fired 
-    // from this point forward will see the correct internal state.
+    // NOW safely interact with the API
     CVariant time;
     time["position"] = pts.count();
     std::string payload;
