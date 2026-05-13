@@ -24419,7 +24419,19 @@ msgctxt "#39228"
 msgid "Restores original volume for E-AC-3 Atmos streams, but may cause Atmos to be disabled."
 msgstr ""
 
-#empty strings from id 39229 to 39999
+# Use alternate method for audio track change
+#: system/settings/settings.xml
+msgctxt "#39229"
+msgid "Use alternate method for audio track change"
+msgstr ""
+
+# Description of setting with label #39229 "Use alternate method for audio track change"
+#: system/settings/settings.xml
+msgctxt "#39230"
+msgid "Does a full player restart when changing audio tracks. Enable this if you have issues changing audio tracks."
+msgstr ""
+
+#empty strings from id 39231 to 39999
 
 # 40000 to 40800 are reserved for Video Versions feature
 
