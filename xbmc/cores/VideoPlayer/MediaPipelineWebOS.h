@@ -20,6 +20,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -485,6 +486,16 @@ private:
                              int& framerate) const;
 
   /**
+   * @brief Queues a task to be safely executed on the main video Process() thread.
+   */
+  void QueueTask(std::function<void()> task);
+
+  /**
+   * @brief Executes all pending queued tasks.
+   */
+  void ProcessTasks();
+
+  /**
    * @brief Updates the @ref m_pts member variable with the current presentation timestamp from the
    * media pipeline, and processes any overlays that need to be displayed at that time. Also adds a
    * video picture to the render manager and updates the DVD clock with the new PTS. This should be
@@ -503,6 +514,9 @@ private:
 
   std::condition_variable m_eventCondition;
   std::mutex m_eventMutex;
+
+  std::mutex m_taskMutex;
+  std::vector<std::function<void()>> m_tasks;
 
   mediapipeline::PipelineGStreamerElements* m_pipeline{nullptr};
   unsigned int m_webOSVersion{4};
@@ -546,6 +560,7 @@ private:
   std::atomic<bool> m_allowPassthrough{false};
   std::atomic<bool> m_passthroughSetting{false};
   std::atomic<int> m_processQuality{0};
+  std::atomic<int> m_guiSoundMode{0};
   std::atomic<double> m_mixSubLevel{0.0};
   std::atomic<bool> m_stereoUpmix{false};
   std::atomic<bool> m_maintainOriginalVolume{false};
@@ -558,9 +573,10 @@ private:
   std::atomic<std::chrono::nanoseconds> m_fedVideoPts{NO_PTS};
   std::atomic<bool> m_started{false};
 
-  std::atomic<bool> m_audioInfoReceived{false};
-  std::atomic<bool> m_videoInfoReceived{false};
-  std::atomic<bool> m_acbConfigured{false};
+  enum class OSPlayState { Unloaded, Playing, Paused };
+  std::atomic<OSPlayState> m_osPlayState{OSPlayState::Unloaded};
+  std::atomic<bool> m_internalStartEmitted{false};
+  std::atomic<bool> m_osMediaLoadedEmitted{false};
 
   BitstreamStats m_audioStats{};
   BitstreamStats m_videoStats{};
