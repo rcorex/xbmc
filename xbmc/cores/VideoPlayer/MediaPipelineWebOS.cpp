@@ -222,21 +222,18 @@ CMediaPipelineWebOS::~CMediaPipelineWebOS()
   CServiceBroker::GetSettingsComponent()->GetSettings()->UnregisterCallback(this);
 }
 
-int CMediaPipelineWebOS::GetVideoBitrate() const
-{
-  return static_cast<int>(m_videoStats.GetBitrate());
-}
-
 void CMediaPipelineWebOS::OnSettingChanged(const std::shared_ptr<const CSetting>& setting)
 {
-  if (setting == nullptr)
-    return;
-
   const std::string& settingId = setting->GetId();
   const std::shared_ptr<CSettings> settings = CServiceBroker::GetSettingsComponent()->GetSettings();
 
   if (settingId == CSettings::SETTING_AUDIOOUTPUT_GUISOUNDMODE)
     m_guiSoundMode = settings->GetInt(CSettings::SETTING_AUDIOOUTPUT_GUISOUNDMODE);
+}
+
+int CMediaPipelineWebOS::GetVideoBitrate() const
+{
+  return static_cast<int>(m_videoStats.GetBitrate());
 }
 
 void CMediaPipelineWebOS::UpdateGUISounds(const bool playing)
