@@ -13,12 +13,14 @@
 #include "DVDStreamInfo.h"
 #include "IVideoPlayer.h"
 #include "cores/AudioEngine/Utils/AELimiter.h"
+#include "settings/lib/ISettingCallback.h"
 #include "threads/Thread.h"
 #include "utils/BitstreamStats.h"
 
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -132,7 +134,7 @@ private:
  * @class CMediaPipelineWebOS
  * @brief WebOS media pipeline for audio/video playback.
  */
-class CMediaPipelineWebOS final : public CThread
+class CMediaPipelineWebOS final : public CThread, public ISettingCallback
 {
 public:
   /**
@@ -395,8 +397,8 @@ private:
    */
   void Unload(bool sync);
 
-  std::atomic<bool> m_isSeeking{false};
-  std::atomic<uint64_t> m_seekTargetPts{0};
+  void OnSettingChanged(const std::shared_ptr<const CSetting>& setting) override;
+
 
   /**
    * @brief Sets up audio stream parameters and transcoding if necessary.
@@ -478,8 +480,18 @@ private:
    */
   bool GetMaxVideoResolution(const std::string& codec,
                              int& width,
-                             int& height,
-                             int& framerate) const;
+                              int& height,
+                              int& framerate) const;
+
+  /**
+   * @brief Queues a task to be safely executed on the main video Process() thread.
+   */
+  void QueueTask(std::function<void()> task);
+
+  /**
+   * @brief Executes all pending queued tasks.
+   */
+  void ProcessTasks();
 
   /**
    * @brief Updates the @ref m_pts member variable with the current presentation timestamp from the
@@ -500,6 +512,9 @@ private:
 
   std::condition_variable m_eventCondition;
   std::mutex m_eventMutex;
+
+  std::mutex m_taskMutex;
+  std::vector<std::function<void()>> m_tasks;
 
   mediapipeline::PipelineGStreamerElements* m_pipeline{nullptr};
   unsigned int m_webOSVersion{4};
@@ -543,10 +558,9 @@ private:
   std::atomic<std::chrono::nanoseconds> m_fedAudioPts{NO_PTS};
   std::atomic<std::chrono::nanoseconds> m_fedVideoPts{NO_PTS};
   std::atomic<bool> m_started{false};
+  std::atomic<int> m_guiSoundMode{0};
 
-  enum class OSPlayState { Unloaded, Playing, Paused };
-  std::atomic<OSPlayState> m_osPlayState{OSPlayState::Unloaded};
-  std::atomic<bool> m_internalStartEmitted{false};
+  std::atomic<bool> m_acbLoadedEmitted{false};
 
   BitstreamStats m_audioStats{};
   BitstreamStats m_videoStats{};
