@@ -20,6 +20,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -35,6 +36,7 @@ class CActiveAEBufferPoolResample;
 
 namespace mediapipeline
 {
+class CustomPipeline;
 struct PipelineGStreamerElements;
 } // namespace mediapipeline
 
@@ -480,16 +482,45 @@ private:
                              int& height,
                              int& framerate) const;
 
+  /**
+   * @brief Queues a task to be safely executed on the main video Process() thread.
+   */
+  void QueueTask(std::function<void()> task);
+
+  /**
+   * @brief Executes all pending queued tasks.
+   */
+  void ProcessTasks();
+
+  /**
+   * @brief Updates the @ref m_pts member variable with the current presentation timestamp from the
+   * media pipeline, and processes any overlays that need to be displayed at that time. Also adds a
+   * video picture to the render manager and updates the DVD clock with the new PTS. This should be
+   * called regularly during playback to keep the video output and timing in sync with the media
+   * pipeline.
+   */
+  void UpdatePlayTime();
+
+  /**
+   * @brief Gets the custom pipeline pointer
+   * @return Pointer to the custom pipeline, or nullptr if not available.
+   */
+  mediapipeline::CustomPipeline* GetPipeline() const;
+
   static constexpr std::chrono::nanoseconds NO_PTS{-1};
 
   std::condition_variable m_eventCondition;
   std::mutex m_eventMutex;
+
+  std::mutex m_taskMutex;
+  std::vector<std::function<void()>> m_tasks;
 
   mediapipeline::PipelineGStreamerElements* m_pipeline{nullptr};
   unsigned int m_webOSVersion{4};
   std::atomic<bool> m_stalled{false};
   std::atomic<bool> m_loaded{false};
   std::atomic<bool> m_flushed{false};
+
   std::atomic<bool> m_subtitle{false};
   std::atomic<double> m_subtitleDelay{0.0};
   std::atomic<bool> m_needsTranscode{false};
@@ -519,6 +550,7 @@ private:
   CDVDClock& m_clock;
   CDVDOverlayContainer& m_overlayContainer;
   bool m_hasAudio{true};
+  std::atomic<bool> m_convertDovi{false};
 
   std::atomic<bool> m_videoClosed{true};
   std::atomic<bool> m_audioClosed{true};
@@ -536,6 +568,9 @@ private:
   std::atomic<std::chrono::nanoseconds> m_fedAudioPts{NO_PTS};
   std::atomic<std::chrono::nanoseconds> m_fedVideoPts{NO_PTS};
   std::atomic<bool> m_started{false};
+  std::atomic<int> m_guiSoundMode{0};
+
+  std::atomic<bool> m_acbLoadedEmitted{false};
 
   BitstreamStats m_audioStats{};
   BitstreamStats m_videoStats{};
