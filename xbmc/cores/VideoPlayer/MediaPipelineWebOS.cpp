@@ -206,6 +206,11 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
   if (WebOSTVPlatformConfig::SupportsDTS())
     ms_codecMap.emplace(AV_CODEC_ID_DTS, "DTS");
   m_processInfo.GetVideoBufferManager().ReleasePools();
+
+  const std::shared_ptr<CSettings> settings = CServiceBroker::GetSettingsComponent()->GetSettings();
+  m_guiSoundMode = settings->GetInt(CSettings::SETTING_AUDIOOUTPUT_GUISOUNDMODE);
+
+  settings->RegisterCallback(this, {CSettings::SETTING_AUDIOOUTPUT_GUISOUNDMODE});
 }
 
 CMediaPipelineWebOS::~CMediaPipelineWebOS()
@@ -222,13 +227,26 @@ int CMediaPipelineWebOS::GetVideoBitrate() const
   return static_cast<int>(m_videoStats.GetBitrate());
 }
 
+void CMediaPipelineWebOS::OnSettingChanged(const std::shared_ptr<const CSetting>& setting)
+{
+  if (setting == nullptr)
+    return;
+
+  const std::string& settingId = setting->GetId();
+  const std::shared_ptr<CSettings> settings = CServiceBroker::GetSettingsComponent()->GetSettings();
+
+  if (settingId == CSettings::SETTING_AUDIOOUTPUT_GUISOUNDMODE)
+    m_guiSoundMode = settings->GetInt(CSettings::SETTING_AUDIOOUTPUT_GUISOUNDMODE);
+}
+
 void CMediaPipelineWebOS::UpdateGUISounds(const bool playing)
 {
   IAE* activeAE = CServiceBroker::GetActiveAE();
-  const int guiSoundMode = CServiceBroker::GetSettingsComponent()->GetSettings()->GetInt(
-      CSettings::SETTING_AUDIOOUTPUT_GUISOUNDMODE);
 
-  if (guiSoundMode != AE_SOUND_IDLE)
+  if (!activeAE)
+    return;
+
+  if (m_guiSoundMode.load() != AE_SOUND_IDLE)
     return;
 
   if (playing)
@@ -304,8 +322,6 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
   {
     m_fedAudioPts = NO_PTS;
     m_started = false;
-    m_osPlayState.store(OSPlayState::Unloaded, std::memory_order_release);
-    m_internalStartEmitted.store(false, std::memory_order_release);
 
     if (m_webOSVersion >= 6)
     {
@@ -363,8 +379,6 @@ bool CMediaPipelineWebOS::OpenVideoStream(CDVDStreamInfo hint)
     m_fedVideoPts = NO_PTS;
     m_started = false;
     m_videoClosed = false;
-    m_osPlayState.store(OSPlayState::Unloaded, std::memory_order_release);
-    m_internalStartEmitted.store(false, std::memory_order_release);
     if (m_videoHint.codec == hint.codec && m_videoHint.hdrType == hint.hdrType)
     {
       CWorkerGate::Lock videoLock(m_videoGate);
@@ -441,9 +455,6 @@ void CMediaPipelineWebOS::Flush(bool sync)
   m_fedVideoPts = NO_PTS;
   m_started = false;
   m_flushed = true;
-
-  // Only reset the internal Kodi start tracker on a seek/flush, not the OS state
-  m_internalStartEmitted.store(false, std::memory_order_release);
 }
 
 bool CMediaPipelineWebOS::AcceptsAudioData() const
@@ -566,8 +577,7 @@ void CMediaPipelineWebOS::SetSubtitleDelay(const double delay)
 
 bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHint)
 {
-  m_osPlayState.store(OSPlayState::Unloaded, std::memory_order_release);
-  m_internalStartEmitted.store(false, std::memory_order_release);
+  m_acbLoadedEmitted.store(false, std::memory_order_release);
   CLog::LogF(LOGINFO, "Resetting internal play state tracking variables (Load)");
   UpdateGUISounds(true);
 
@@ -830,8 +840,6 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
   m_fedAudioPts = NO_PTS;
   m_fedVideoPts = NO_PTS;
   m_started = false;
-  m_osPlayState.store(OSPlayState::Unloaded, std::memory_order_release);
-  m_internalStartEmitted.store(false, std::memory_order_release);
 
   m_videoClosed = false;
   if (m_hasAudio)
@@ -842,9 +850,23 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
 
 void CMediaPipelineWebOS::Unload(const bool sync)
 {
+  const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
+  if (buffer && buffer->GetAcbHandle())
+  {
+    CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_UNLOADED)", buffer->GetAcbHandle()->Id(), buffer->GetAcbHandle()->TaskId());
+    AcbAPI_setState(buffer->GetAcbHandle()->Id(), APPSTATE_FOREGROUND, PLAYSTATE_UNLOADED,
+                    &buffer->GetAcbHandle()->TaskId());
+  }
+
   CThread::StopThread(true);
   if (m_audioThread.joinable())
     m_audioThread.join();
+
+  // Clear any unexecuted tasks to prevent bleed-over into the next playback session
+  {
+    std::lock_guard<std::mutex> lock(m_taskMutex);
+    m_tasks.clear(); 
+  }
 
   if (!m_mediaAPIs->Unload())
     CLog::LogF(LOGERROR, "Unload failed");
@@ -1194,6 +1216,16 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
 
   if (m_flushed)
   {
+    // Prepare all state variables FIRST
+    m_pts = pts;
+    m_fedVideoPts = NO_PTS;
+    m_fedAudioPts = NO_PTS;
+    
+    // Clear the flags BEFORE triggering the API
+    m_started = false;
+    m_flushed = false;
+
+    // NOW safely interact with the API
     CVariant time;
     time["position"] = pts.count();
     std::string payload;
@@ -1216,27 +1248,15 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
       pipeline->sendSegmentEvent();
     }
 
-    m_pts = pts;
-    m_seekTargetPts.store(pts.count(), std::memory_order_relaxed);
-    m_isSeeking.store(true, std::memory_order_release);
-    m_fedVideoPts = NO_PTS;
-    m_fedAudioPts = NO_PTS;
-    m_started = false;
-
-    // EAGER TRIGGER: Send PLAYER_STARTED to Kodi if not already sent
-    if (!m_internalStartEmitted.exchange(true, std::memory_order_acq_rel))
-    {
-      SStartMsg startMsg{.timestamp = GetCurrentPts(),
-                         .player = VideoPlayer_VIDEO,
-                         .cachetime = DVD_MSEC_TO_TIME(50),
-                         .cachetotal = DVD_MSEC_TO_TIME(100)};
-      m_messageQueueParent.Put(
-          std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, startMsg));
-      startMsg.player = VideoPlayer_AUDIO;
-      m_messageQueueParent.Put(
-          std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, startMsg));
-    }
-    m_flushed = false;
+    SStartMsg startMsg{.timestamp = GetCurrentPts(),
+                       .player = VideoPlayer_VIDEO,
+                       .cachetime = DVD_MSEC_TO_TIME(50),
+                       .cachetotal = DVD_MSEC_TO_TIME(100)};
+    m_messageQueueParent.Put(
+        std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, startMsg));
+    startMsg.player = VideoPlayer_AUDIO;
+    m_messageQueueParent.Put(
+        std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, startMsg));
   }
 
   const std::chrono::nanoseconds fedVideoPts = m_fedVideoPts.load();
@@ -1389,12 +1409,31 @@ void CMediaPipelineWebOS::SetDynamicRangeCompression(const long drc)
   m_audioLimiter.SetAmplification(std::pow(10.0f, static_cast<float>(drc) / 2000.0f));
 }
 
+void CMediaPipelineWebOS::QueueTask(std::function<void()> task)
+{
+  std::lock_guard<std::mutex> lock(m_taskMutex);
+  m_tasks.push_back(std::move(task));
+}
+
+void CMediaPipelineWebOS::ProcessTasks()
+{
+  std::vector<std::function<void()>> tasks;
+  {
+    std::lock_guard<std::mutex> lock(m_taskMutex);
+    tasks.swap(m_tasks);
+  }
+  for (const auto& task : tasks)
+    task();
+}
+
 void CMediaPipelineWebOS::Process()
 {
   m_videoGate.SetRunning(true);
   while (!m_bStop)
   {
     m_videoGate.Checkpoint();
+
+    ProcessTasks();
 
     std::shared_ptr<CDVDMsg> msg = nullptr;
     int priority = 0;
@@ -1713,39 +1752,28 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
   switch (type)
   {
     case PF_EVENT_TYPE_FRAMEREADY:
-    {
-      if (m_isSeeking.load(std::memory_order_acquire))
-      {
-        const uint64_t target = m_seekTargetPts.load(std::memory_order_relaxed);
-        const int64_t delta = std::abs(static_cast<int64_t>(numValue) - static_cast<int64_t>(target));
-        const int64_t MAX_ACCEPTABLE_GAP = 2000000000LL; // 2 seconds in nanoseconds
-
-        if (delta > MAX_ACCEPTABLE_GAP)
-        {
-          CLog::LogF(LOGINFO, "Ignored stale FRAMEREADY event (backward/forward seek guard). Stale PTS: {}, Target PTS: {}", numValue, target);
-          break;
-        }
-
-        m_isSeeking.store(false, std::memory_order_release);
-      }
-
-      if (!m_flushed)
-        m_started = true;
       break;
-    }
     case PF_EVENT_TYPE_STR_AUDIO_INFO:
-      if (acb)
-      {
-        CLog::LogF(LOGINFO, "AcbAPI_setMediaAudioData(acbId={}, taskId={})", acb->Id(), acb->TaskId());
-        AcbAPI_setMediaAudioData(acb->Id(), logStr.c_str(), &acb->TaskId());
-      }
+      QueueTask([this, info = std::string(logStr)]() {
+        const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
+        if (buffer && buffer->GetAcbHandle())
+        {
+          CLog::LogF(LOGINFO, "AcbAPI_setMediaAudioData(acbId={}, taskId={})", buffer->GetAcbHandle()->Id(), buffer->GetAcbHandle()->TaskId());
+          AcbAPI_setMediaAudioData(buffer->GetAcbHandle()->Id(), info.c_str(),
+                                   &buffer->GetAcbHandle()->TaskId());
+        }
+      });
       break;
     case PF_EVENT_TYPE_STR_VIDEO_INFO:
-      if (acb)
-      {
-        CLog::LogF(LOGINFO, "AcbAPI_setMediaVideoData(acbId={}, taskId={})", acb->Id(), acb->TaskId());
-        AcbAPI_setMediaVideoData(acb->Id(), logStr.c_str(), &acb->TaskId());
-      }
+      QueueTask([this, info = std::string(logStr)]() {
+        const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
+        if (buffer && buffer->GetAcbHandle())
+        {
+          CLog::LogF(LOGINFO, "AcbAPI_setMediaVideoData(acbId={}, taskId={})", buffer->GetAcbHandle()->Id(), buffer->GetAcbHandle()->TaskId());
+          AcbAPI_setMediaVideoData(buffer->GetAcbHandle()->Id(), info.c_str(),
+                                   &buffer->GetAcbHandle()->TaskId());
+        }
+      });
       break;
     case PF_EVENT_TYPE_STR_STATE_UPDATE__LOADCOMPLETED:
     {
@@ -1760,11 +1788,14 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       }
 
       CLog::LogF(LOGINFO, "AcbAPI_Info: Player state LOADCOMPLETED");
-      if (acb)
-      {
-        CLog::LogF(LOGINFO, "AcbAPI_setSinkType(acbId={}, taskId={}, sinkType=SINK_TYPE_MAIN)", acb->Id(), acb->TaskId());
-        AcbAPI_setSinkType(acb->Id(), SINK_TYPE_MAIN);
-      }
+      QueueTask([this]() {
+        const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
+        if (buffer && buffer->GetAcbHandle())
+        {
+          CLog::LogF(LOGINFO, "AcbAPI_setSinkType(acbId={}, taskId={}, sinkType=SINK_TYPE_MAIN)", buffer->GetAcbHandle()->Id(), buffer->GetAcbHandle()->TaskId());
+          AcbAPI_setSinkType(buffer->GetAcbHandle()->Id(), SINK_TYPE_MAIN);
+        }
+      });
 
       m_renderManager.ShowVideo(true);
       if (!m_mediaAPIs->Play())
@@ -1776,79 +1807,78 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       break;
     }
     case PF_EVENT_TYPE_STR_STATE_UPDATE__UNLOADCOMPLETED:
-      if (acb)
-      {
-        CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_UNLOADED)", acb->Id(), acb->TaskId());
-        AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_UNLOADED, &acb->TaskId());
-        std::this_thread::sleep_for(std::chrono::milliseconds(30));
-
-        CLog::LogF(LOGINFO, "Delete ACB handle (Unloaded)");
-        buffer->ResetAcbHandle(); //delete the handle
-      }
-
+    {
       StopThread(true);
       if (m_audioThread.joinable())
         m_audioThread.join();
       m_loaded = false;
       m_pipeline = nullptr;
-      m_osPlayState.store(OSPlayState::Unloaded, std::memory_order_release);
-      m_internalStartEmitted.store(false, std::memory_order_release);
+      m_acbLoadedEmitted.store(false, std::memory_order_release);
+
+      const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
+      if (buffer && buffer->GetAcbHandle())
+      {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50)); // wait for acbcallback for PLAYSTATE_UNLOADED 5-20ms
+        CLog::LogF(LOGINFO, "Delete ACB handle (UnloadCompleted)");
+        buffer->ResetAcbHandle();
+      }
       break;
+    }
     case PF_EVENT_TYPE_STR_STATE_UPDATE__PAUSED:
     {
-      // OS EMISSION: Only send if the OS doesn't already know we are paused
-      if (m_osPlayState.load(std::memory_order_acquire) != OSPlayState::Paused)
-      {
-        m_osPlayState.store(OSPlayState::Paused, std::memory_order_release);
-        if (acb)
+      QueueTask([this]() {
+        const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
+        if (buffer && buffer->GetAcbHandle())
         {
-          CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_PAUSED)", acb->Id(), acb->TaskId());
-          AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PAUSED, &acb->TaskId());
+          CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_PAUSED)", buffer->GetAcbHandle()->Id(), buffer->GetAcbHandle()->TaskId());
+          AcbAPI_setState(buffer->GetAcbHandle()->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PAUSED,
+                          &buffer->GetAcbHandle()->TaskId());
         }
-      }
-      else
-      {
-        CLog::LogF(LOGINFO, "Ignored duplicate PAUSED state event");
-      }
+      });
       break;
     }
     case PF_EVENT_TYPE_STR_STATE_UPDATE__PLAYING: // received after both str_audio_info and str_video_info
     {
-      // REACTIVE TRIGGER: Send PLAYER_STARTED to Kodi if Eager Trigger didn't beat us to it
-      if (!m_internalStartEmitted.exchange(true, std::memory_order_acq_rel))
+      // DETERMINISTIC TRIGGER: The OS has explicitly confirmed playback is stable.
+      // Use this instead of FRAMEREADY event to start playback after a seek
+      if (!m_flushed) 
       {
-        SStartMsg msg{.timestamp = GetCurrentPts(),
-                      .player = VideoPlayer_VIDEO,
-                      .cachetime = DVD_MSEC_TO_TIME(50),
-                      .cachetotal = DVD_MSEC_TO_TIME(100)};
-        m_messageQueueParent.Put(
-            std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, msg));
-        msg.player = VideoPlayer_AUDIO;
-        m_messageQueueParent.Put(
-            std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, msg));
+         m_started = true;
       }
+      SStartMsg msg{.timestamp = GetCurrentPts(),
+                    .player = VideoPlayer_VIDEO,
+                    .cachetime = DVD_MSEC_TO_TIME(50),
+                    .cachetotal = DVD_MSEC_TO_TIME(100)};
+      m_messageQueueParent.Put(
+          std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, msg));
+      msg.player = VideoPlayer_AUDIO;
+      m_messageQueueParent.Put(
+          std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, msg));
 
-      // OS EMISSION: Only send if the OS doesn't already know we are playing
-      if (m_osPlayState.load(std::memory_order_acquire) != OSPlayState::Playing)
-      {
-        m_osPlayState.store(OSPlayState::Playing, std::memory_order_release);
+      // Atomically check and set the flag. emitLoaded will be true ONLY on the first pass.
+      bool emitLoaded = !m_acbLoadedEmitted.exchange(true, std::memory_order_acq_rel);
 
-        if (acb)
+      QueueTask([this, emitLoaded]() {
+        const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
+        if (buffer && buffer->GetAcbHandle())
         {
-          CLog::LogF(LOGINFO, "AcbAPI_setMediaId(acbId={}, taskId={}, mediaId={})", acb->Id(), acb->TaskId(), m_mediaAPIs->getMediaID());
-          AcbAPI_setMediaId(acb->Id(), m_mediaAPIs->getMediaID());
+          // Only send the initialization commands once per load cycle
+          if (emitLoaded)
+          {
+            CLog::LogF(LOGINFO, "AcbAPI_setMediaId(acbId={}, taskId={}, mediaId={})", buffer->GetAcbHandle()->Id(), buffer->GetAcbHandle()->TaskId(), m_mediaAPIs->getMediaID());
+            AcbAPI_setMediaId(buffer->GetAcbHandle()->Id(), m_mediaAPIs->getMediaID());
 
-          CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_LOADED)", acb->Id(), acb->TaskId());
-          AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_LOADED, &acb->TaskId());
+            CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_LOADED)", buffer->GetAcbHandle()->Id(), buffer->GetAcbHandle()->TaskId());
+            AcbAPI_setState(buffer->GetAcbHandle()->Id(), APPSTATE_FOREGROUND, PLAYSTATE_LOADED,
+                            &buffer->GetAcbHandle()->TaskId());
+          }
 
-          CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_PLAYING)", acb->Id(), acb->TaskId());
-          AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PLAYING, &acb->TaskId());
+          // Always send the PLAYING state command
+          CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_PLAYING)", buffer->GetAcbHandle()->Id(), buffer->GetAcbHandle()->TaskId());
+          AcbAPI_setState(buffer->GetAcbHandle()->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PLAYING,
+                          &buffer->GetAcbHandle()->TaskId());
         }
-      }
-      else
-      {
-        CLog::LogF(LOGINFO, "Ignored duplicate PLAYING state event");
-      }
+      });
       break;
     }
     case PF_EVENT_TYPE_STR_BUFFERFULL:
