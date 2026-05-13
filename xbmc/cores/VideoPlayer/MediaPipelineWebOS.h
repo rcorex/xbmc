@@ -570,10 +570,7 @@ private:
   std::atomic<std::chrono::nanoseconds> m_fedVideoPts{NO_PTS};
   std::atomic<bool> m_started{false};
 
-  enum class OSPlayState { Unloaded, Playing, Paused };
-  std::atomic<OSPlayState> m_osPlayState{OSPlayState::Unloaded};
-  std::atomic<bool> m_internalStartEmitted{false};
-  std::atomic<bool> m_osMediaLoadedEmitted{false};
+  std::atomic<bool> m_acbLoadedEmitted{false};
 
   BitstreamStats m_audioStats{};
   BitstreamStats m_videoStats{};
