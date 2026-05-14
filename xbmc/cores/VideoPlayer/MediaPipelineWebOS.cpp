@@ -2117,7 +2117,7 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       {
         const uint64_t target = m_seekTargetPts.load(std::memory_order_relaxed);
         const int64_t delta = std::abs(static_cast<int64_t>(numValue) - static_cast<int64_t>(target));
-        const int64_t MAX_ACCEPTABLE_GAP = 2000000000LL; // 2 seconds in nanoseconds
+        const int64_t MAX_ACCEPTABLE_GAP = 250000000LL; // 250ms seconds in nanoseconds
 
         if (delta > MAX_ACCEPTABLE_GAP)
         {
