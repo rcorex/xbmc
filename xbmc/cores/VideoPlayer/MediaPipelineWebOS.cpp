@@ -712,7 +712,10 @@ void CMediaPipelineWebOS::Flush(bool sync)
 {
   CWorkerGate::Lock videoLock(m_videoGate);
   CWorkerGate::Lock audioLock(m_audioGate);
-
+  
+  // Directly execute any pending ACB commands on this thread.
+  ProcessTasks();
+  
   if (!m_mediaAPIs->flush())
     CLog::LogF(LOGDEBUG, "Failed to flush media APIs");
   FlushAudioMessages();
@@ -1450,8 +1453,8 @@ bool CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
   if (pts < 0ns)
     return true;
 
-  // Wait for the video pipeline to clear the flush state and successfully feed its first packet.
-  if (m_flushed && m_fedVideoPts.load() == NO_PTS)
+  // Wait for the video pipeline to successfully feed its first packet, don't use m_flushed which is cleared before that
+  if (m_fedVideoPts.load() == NO_PTS)
   {
     return false;
   }
