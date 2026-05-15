@@ -2217,18 +2217,20 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
     case PF_EVENT_TYPE_STR_STATE_UPDATE__PLAYING: // received after both str_audio_info and str_video_info
     {
       // REACTIVE TRIGGER: Send PLAYER_STARTED to Kodi if Eager Trigger didn't beat us to it
-      if (!m_internalStartEmitted.exchange(true, std::memory_order_acq_rel))
-      {
-        SStartMsg msg{.timestamp = GetCurrentPts(),
-                      .player = VideoPlayer_VIDEO,
-                      .cachetime = DVD_MSEC_TO_TIME(50),
-                      .cachetotal = DVD_MSEC_TO_TIME(100)};
-        m_messageQueueParent.Put(
-            std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, msg));
-        msg.player = VideoPlayer_AUDIO;
-        m_messageQueueParent.Put(
-            std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, msg));
-      }
+      QueueTask([this]() {        
+        if (!m_internalStartEmitted.exchange(true, std::memory_order_acq_rel))
+        {
+          SStartMsg msg{.timestamp = GetCurrentPts(),
+                        .player = VideoPlayer_VIDEO,
+                        .cachetime = DVD_MSEC_TO_TIME(50),
+                        .cachetotal = DVD_MSEC_TO_TIME(100)};
+          m_messageQueueParent.Put(
+              std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, msg));
+          msg.player = VideoPlayer_AUDIO;
+          m_messageQueueParent.Put(
+              std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, msg));
+        }
+      });
 
       // Atomically check and set the flag. emitLoaded will be true ONLY on the first pass.
       bool emitLoaded = !m_osMediaLoadedEmitted.exchange(true, std::memory_order_acq_rel);
