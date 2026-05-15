@@ -710,7 +710,10 @@ void CMediaPipelineWebOS::Flush(bool sync)
 {
   CWorkerGate::Lock videoLock(m_videoGate);
   CWorkerGate::Lock audioLock(m_audioGate);
-
+  
+  // Directly execute any pending ACB commands on this thread.
+  ProcessTasks();
+  
   if (!m_mediaAPIs->flush())
     CLog::LogF(LOGDEBUG, "Failed to flush media APIs");
   FlushAudioMessages();
