@@ -5760,7 +5760,9 @@ void CVideoPlayer::SetVideoStream(int iStream)
 {
   m_messenger.Put(std::make_shared<CDVDMsgPlayerSetVideoStream>(iStream));
   m_processInfo->GetVideoSettingsLocked().SetVideoStream(iStream);
+#if !defined(TARGET_WEBOS)
   SynchronizeDemuxer();
+#endif
   NotifyVideoUpdate();
 }
 
@@ -5808,7 +5810,9 @@ void CVideoPlayer::SetAudioStream(int iStream)
 {
   m_messenger.Put(std::make_shared<CDVDMsgPlayerSetAudioStream>(iStream));
   m_processInfo->GetVideoSettingsLocked().SetAudioStream(iStream);
+#if !defined(TARGET_WEBOS)
   SynchronizeDemuxer();
+#endif
   NotifyAudioUpdate();
 }
 
