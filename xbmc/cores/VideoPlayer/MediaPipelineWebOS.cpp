@@ -888,6 +888,9 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
   m_osPlayState.store(OSPlayState::Unloaded, std::memory_order_release);
   m_internalStartEmitted.store(false, std::memory_order_release);
   m_osMediaLoadedEmitted.store(false, std::memory_order_release);
+  m_fedAudioPts = NO_PTS;
+  m_fedVideoPts = NO_PTS;
+  m_started = false;
   CLog::LogF(LOGINFO, "Resetting internal play state tracking variables (Load)");
   UpdateGUISounds(true);
 
@@ -1154,29 +1157,26 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
     }
   }
 
-  m_fedAudioPts = NO_PTS;
-  m_fedVideoPts = NO_PTS;
-  m_started = false;
-  m_osPlayState.store(OSPlayState::Unloaded, std::memory_order_release);
-  m_internalStartEmitted.store(false, std::memory_order_release);
-
   m_videoClosed = false;
   if (m_hasAudio)
     m_audioClosed = false;
-  m_renderManager.ShowVideo(true);
+  
   return true;
 }
 
 void CMediaPipelineWebOS::Unload(const bool sync)
 {
-  m_osPlayState.store(OSPlayState::Unloaded, std::memory_order_release);
-
   const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
   if (buffer && buffer->GetAcbHandle())
   {
     CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_UNLOADED)", buffer->GetAcbHandle()->Id(), buffer->GetAcbHandle()->TaskId());
     AcbAPI_setState(buffer->GetAcbHandle()->Id(), APPSTATE_FOREGROUND, PLAYSTATE_UNLOADED,
                     &buffer->GetAcbHandle()->TaskId());
+    // Deterministically wait for the OS to acknowledge the teardown
+    WaitForAcbTask(acbId, buffer->GetAcbHandle()->TaskId());
+    // Safely delete the handle now that the ACB is guaranteed to be done with it
+    CLog::LogF(LOGINFO, "Delete ACB handle (Unload)");
+    buffer->ResetAcbHandle();
   }
 
   CThread::StopThread(true);
@@ -1195,7 +1195,9 @@ void CMediaPipelineWebOS::Unload(const bool sync)
   m_fedAudioPts = NO_PTS;
   m_fedVideoPts = NO_PTS;
   m_started = false;
-
+  
+  m_osPlayState.store(OSPlayState::Unloaded, std::memory_order_release);
+  
   if (sync)
   {
     // wait until m_loaded is false
@@ -2229,17 +2231,9 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
         m_audioThread.join();
       m_loaded = false;
       m_pipeline = nullptr;
-      m_osPlayState.store(OSPlayState::Unloaded, std::memory_order_release);
       m_internalStartEmitted.store(false, std::memory_order_release);
       m_osMediaLoadedEmitted.store(false, std::memory_order_release);
 
-      const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
-      if (buffer && buffer->GetAcbHandle())
-      {
-        std::this_thread::sleep_for(std::chrono::milliseconds(50)); // wait for acbcallback for PLAYSTATE_UNLOADED 5-20ms
-        CLog::LogF(LOGINFO, "Delete ACB handle (UnloadCompleted)");
-        buffer->ResetAcbHandle();
-      }
       break;
     }
     case PF_EVENT_TYPE_STR_STATE_UPDATE__PAUSED:
