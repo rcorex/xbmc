@@ -580,10 +580,11 @@ private:
 
   std::mutex m_acbTaskMutex;
   std::condition_variable m_acbTaskCond;
+  long m_activeAcbId{-1};
   long m_lastCompletedTaskId{0};
 
-  void OnAcbTaskCompleted(long taskId);
-  bool WaitForAcbTask(long taskId, std::chrono::milliseconds timeout = std::chrono::milliseconds(1000));
+  void OnAcbTaskCompleted(long acbId, long taskId);
+  bool WaitForAcbTask(long acbId, long taskId, std::chrono::milliseconds timeout = std::chrono::milliseconds(1000));
 
   BitstreamStats m_audioStats{};
   BitstreamStats m_videoStats{};
