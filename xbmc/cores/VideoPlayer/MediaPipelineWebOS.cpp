@@ -2118,8 +2118,8 @@ void CMediaPipelineWebOS::UpdatePlayTime()
   ProcessOverlays(pts);
   m_picture.dts = pts;
   m_picture.pts = pts;
-  std::atomic<bool> stop(false);
-  m_renderManager.AddVideoPicture(m_picture, stop, VS_INTERLACEMETHOD_AUTO, false);
+  // Pass the thread's native stop flag to allow Display Resolution teardowns to abort the lock
+  m_renderManager.AddVideoPicture(m_picture, m_bStop, VS_INTERLACEMETHOD_AUTO, false);
   m_clock.Discontinuity(pts);
 }
 
