@@ -573,10 +573,17 @@ private:
   std::atomic<std::chrono::nanoseconds> m_fedVideoPts{NO_PTS};
   std::atomic<bool> m_started{false};
 
-  enum class OSPlayState { Unloaded, Playing, Paused };
+  enum class OSPlayState { Stopped = 0, Loading = 1, Playing = 2, Paused = 3, Unloaded = -1 };
   std::atomic<OSPlayState> m_osPlayState{OSPlayState::Unloaded};
   std::atomic<bool> m_internalStartEmitted{false};
   std::atomic<bool> m_osMediaLoadedEmitted{false};
+
+  std::mutex m_acbTaskMutex;
+  std::condition_variable m_acbTaskCond;
+  long m_lastCompletedTaskId{0};
+
+  void OnAcbTaskCompleted(long taskId);
+  bool WaitForAcbTask(long taskId, std::chrono::milliseconds timeout = std::chrono::milliseconds(500));
 
   BitstreamStats m_audioStats{};
   BitstreamStats m_videoStats{};
