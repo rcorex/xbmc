@@ -71,6 +71,8 @@ using namespace std::chrono_literals;
 
 namespace
 {
+CMediaPipelineWebOS* g_instance = nullptr;
+
 constexpr unsigned int AC3_MAX_SYNC_FRAME_SIZE = 3840;
 constexpr unsigned int EAC3_MAX_SYNC_FRAME_SIZE = 6144;
 constexpr int RESAMPLED_STREAM_ID = -1000;
@@ -395,6 +397,8 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
     m_overlayContainer(overlay),
     m_hasAudio(hasAudio)
 {
+  g_instance = this;
+
   m_messageQueueAudio.Init();
   m_messageQueueVideo.Init();
   const int tenthsSeconds = CServiceBroker::GetSettingsComponent()->GetSettings()->GetInt(
@@ -449,6 +453,9 @@ CMediaPipelineWebOS::~CMediaPipelineWebOS()
     buffer->ResetAcbHandle();
   UpdateGUISounds(false);
   CServiceBroker::GetSettingsComponent()->GetSettings()->UnregisterCallback(this);
+
+  if (g_instance == this)
+    g_instance = nullptr;
 }
 
 void CMediaPipelineWebOS::OnSettingChanged(const std::shared_ptr<const CSetting>& setting)
@@ -550,11 +557,31 @@ bool CMediaPipelineWebOS::Supports(const AVCodecID codec, const int profile)
   return ms_codecMap.contains(codec);
 }
 
+void CMediaPipelineWebOS::OnAcbTaskCompleted(long taskId)
+{
+  std::lock_guard<std::mutex> lock(m_acbTaskMutex);
+  m_lastCompletedTaskId = std::max(m_lastCompletedTaskId, taskId);
+  m_acbTaskCond.notify_all();
+}
+
+bool CMediaPipelineWebOS::WaitForAcbTask(long taskId, std::chrono::milliseconds timeout)
+{
+  std::unique_lock<std::mutex> lock(m_acbTaskMutex);
+  return m_acbTaskCond.wait_for(lock, timeout, [this, taskId]() {
+    return m_lastCompletedTaskId >= taskId;
+  });
+}
+
 void CMediaPipelineWebOS::AcbCallback(
     long acbId, long taskId, long eventType, long appState, long playState, const char* reply)
 {
   CLog::LogF(LOGINFO, "acbId={}, taskId={}, eventType={}, appState={}, playState={}, reply={}",
              acbId, taskId, eventType, appState, playState, reply);
+  if (g_instance)
+  {
+    g_instance->m_osPlayState.store(static_cast<OSPlayState>(playState), std::memory_order_release);
+    g_instance->OnAcbTaskCompleted(taskId);
+  }
 }
 
 void CMediaPipelineWebOS::FlushVideoMessages()
@@ -2213,8 +2240,6 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       // OS EMISSION: Only send if the OS doesn't already know we are paused
       if (m_osPlayState.load(std::memory_order_acquire) != OSPlayState::Paused)
       {
-        m_osPlayState.store(OSPlayState::Paused, std::memory_order_release);
-
         QueueTask([this]() {
           const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
           if (buffer && buffer->GetAcbHandle())
@@ -2222,6 +2247,7 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
             CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_PAUSED)", buffer->GetAcbHandle()->Id(), buffer->GetAcbHandle()->TaskId());
             AcbAPI_setState(buffer->GetAcbHandle()->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PAUSED,
                             &buffer->GetAcbHandle()->TaskId());
+            WaitForAcbTask(buffer->GetAcbHandle()->TaskId());
           }
         });
       }
@@ -2250,8 +2276,6 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       // OS EMISSION: Only send if the OS doesn't already know we are playing
       if (m_osPlayState.load(std::memory_order_acquire) != OSPlayState::Playing)
       {
-        m_osPlayState.store(OSPlayState::Playing, std::memory_order_release);
-
         // Atomically check and set the flag. emitLoaded will be true ONLY on the first pass.
         bool emitLoaded = !m_osMediaLoadedEmitted.exchange(true, std::memory_order_acq_rel);
 
@@ -2268,12 +2292,14 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
               CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_LOADED)", buffer->GetAcbHandle()->Id(), buffer->GetAcbHandle()->TaskId());
               AcbAPI_setState(buffer->GetAcbHandle()->Id(), APPSTATE_FOREGROUND, PLAYSTATE_LOADED,
                               &buffer->GetAcbHandle()->TaskId());
+              WaitForAcbTask(buffer->GetAcbHandle()->TaskId());
             }
 
             // Always send the PLAYING state command
             CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_PLAYING)", buffer->GetAcbHandle()->Id(), buffer->GetAcbHandle()->TaskId());
             AcbAPI_setState(buffer->GetAcbHandle()->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PLAYING,
                             &buffer->GetAcbHandle()->TaskId());
+            WaitForAcbTask(buffer->GetAcbHandle()->TaskId());
           }
         });
       }
