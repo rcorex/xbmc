@@ -1169,12 +1169,12 @@ void CMediaPipelineWebOS::Unload(const bool sync)
   const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
   if (buffer && buffer->GetAcbHandle())
   {
-    CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_UNLOADED)", buffer->GetAcbHandle()->Id(), buffer->GetAcbHandle()->TaskId());
-    AcbAPI_setState(buffer->GetAcbHandle()->Id(), APPSTATE_FOREGROUND, PLAYSTATE_UNLOADED,
+    long acbId = buffer->GetAcbHandle()->Id();
+    CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_UNLOADED)", acbId, buffer->GetAcbHandle()->TaskId());
+    AcbAPI_setState(acbId, APPSTATE_FOREGROUND, PLAYSTATE_UNLOADED,
                     &buffer->GetAcbHandle()->TaskId());
-    // Deterministically wait for the OS to acknowledge the teardown
     WaitForAcbTask(acbId, buffer->GetAcbHandle()->TaskId());
-    // Safely delete the handle now that the ACB is guaranteed to be done with it
+    
     CLog::LogF(LOGINFO, "Delete ACB handle (Unload)");
     buffer->ResetAcbHandle();
   }
