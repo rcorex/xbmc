@@ -557,18 +557,25 @@ bool CMediaPipelineWebOS::Supports(const AVCodecID codec, const int profile)
   return ms_codecMap.contains(codec);
 }
 
-void CMediaPipelineWebOS::OnAcbTaskCompleted(long taskId)
+void CMediaPipelineWebOS::OnAcbTaskCompleted(long acbId, long taskId)
 {
   std::lock_guard<std::mutex> lock(m_acbTaskMutex);
+  
+  if (acbId != m_activeAcbId)
+  {
+    m_activeAcbId = acbId;
+    m_lastCompletedTaskId = 0;
+  }
+  
   m_lastCompletedTaskId = std::max(m_lastCompletedTaskId, taskId);
   m_acbTaskCond.notify_all();
 }
 
-bool CMediaPipelineWebOS::WaitForAcbTask(long taskId, std::chrono::milliseconds timeout)
+bool CMediaPipelineWebOS::WaitForAcbTask(long acbId, long taskId, std::chrono::milliseconds timeout)
 {
   std::unique_lock<std::mutex> lock(m_acbTaskMutex);
-  return m_acbTaskCond.wait_for(lock, timeout, [this, taskId]() {
-    return m_lastCompletedTaskId >= taskId;
+  return m_acbTaskCond.wait_for(lock, timeout, [this, acbId, taskId]() {
+    return (m_activeAcbId == acbId) && (m_lastCompletedTaskId >= taskId);
   });
 }
 
@@ -580,7 +587,7 @@ void CMediaPipelineWebOS::AcbCallback(
   if (g_instance)
   {
     g_instance->m_osPlayState.store(static_cast<OSPlayState>(playState), std::memory_order_release);
-    g_instance->OnAcbTaskCompleted(taskId);
+    g_instance->OnAcbTaskCompleted(acbId, taskId);
   }
 }
 
@@ -2244,10 +2251,11 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
           const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
           if (buffer && buffer->GetAcbHandle())
           {
+            long acbId = buffer->GetAcbHandle()->Id();
             CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_PAUSED)", buffer->GetAcbHandle()->Id(), buffer->GetAcbHandle()->TaskId());
-            AcbAPI_setState(buffer->GetAcbHandle()->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PAUSED,
+            AcbAPI_setState(acbId, APPSTATE_FOREGROUND, PLAYSTATE_PAUSED,
                             &buffer->GetAcbHandle()->TaskId());
-            WaitForAcbTask(buffer->GetAcbHandle()->TaskId());
+            WaitForAcbTask(acbId, buffer->GetAcbHandle()->TaskId());
           }
         });
       }
@@ -2283,23 +2291,25 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
           const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
           if (buffer && buffer->GetAcbHandle())
           {
+            long acbId = buffer->GetAcbHandle()->Id();
+
             // Only send the initialization commands once per load cycle
             if (emitLoaded)
             {
               CLog::LogF(LOGINFO, "AcbAPI_setMediaId(acbId={}, taskId={}, mediaId={})", buffer->GetAcbHandle()->Id(), buffer->GetAcbHandle()->TaskId(), m_mediaAPIs->getMediaID());
-              AcbAPI_setMediaId(buffer->GetAcbHandle()->Id(), m_mediaAPIs->getMediaID());
+              AcbAPI_setMediaId(acbId, m_mediaAPIs->getMediaID());
 
               CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_LOADED)", buffer->GetAcbHandle()->Id(), buffer->GetAcbHandle()->TaskId());
-              AcbAPI_setState(buffer->GetAcbHandle()->Id(), APPSTATE_FOREGROUND, PLAYSTATE_LOADED,
+              AcbAPI_setState(acbId, APPSTATE_FOREGROUND, PLAYSTATE_LOADED,
                               &buffer->GetAcbHandle()->TaskId());
-              WaitForAcbTask(buffer->GetAcbHandle()->TaskId());
+              WaitForAcbTask(acbId, buffer->GetAcbHandle()->TaskId());
             }
 
             // Always send the PLAYING state command
             CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_PLAYING)", buffer->GetAcbHandle()->Id(), buffer->GetAcbHandle()->TaskId());
-            AcbAPI_setState(buffer->GetAcbHandle()->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PLAYING,
+            AcbAPI_setState(acbId, APPSTATE_FOREGROUND, PLAYSTATE_PLAYING,
                             &buffer->GetAcbHandle()->TaskId());
-            WaitForAcbTask(buffer->GetAcbHandle()->TaskId());
+            WaitForAcbTask(acbId, buffer->GetAcbHandle()->TaskId());
           }
         });
       }
