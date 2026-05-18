@@ -583,7 +583,7 @@ private:
   long m_lastCompletedTaskId{0};
 
   void OnAcbTaskCompleted(long taskId);
-  bool WaitForAcbTask(long taskId, std::chrono::milliseconds timeout = std::chrono::milliseconds(500));
+  bool WaitForAcbTask(long taskId, std::chrono::milliseconds timeout = std::chrono::milliseconds(1000));
 
   BitstreamStats m_audioStats{};
   BitstreamStats m_videoStats{};
