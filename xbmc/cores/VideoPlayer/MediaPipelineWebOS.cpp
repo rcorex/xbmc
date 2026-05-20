@@ -854,6 +854,9 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
   m_osPlayState.store(OSPlayState::Unloaded, std::memory_order_release);
   m_internalStartEmitted.store(false, std::memory_order_release);
   m_osMediaLoadedEmitted.store(false, std::memory_order_release);
+  m_fedAudioPts = NO_PTS;
+  m_fedVideoPts = NO_PTS;
+  m_started = false;
   CLog::LogF(LOGINFO, "Resetting internal play state tracking variables (Load)");
   UpdateGUISounds(true);
 
@@ -1120,16 +1123,10 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
     }
   }
 
-  m_fedAudioPts = NO_PTS;
-  m_fedVideoPts = NO_PTS;
-  m_started = false;
-  m_osPlayState.store(OSPlayState::Unloaded, std::memory_order_release);
-  m_internalStartEmitted.store(false, std::memory_order_release);
-
   m_videoClosed = false;
   if (m_hasAudio)
     m_audioClosed = false;
-  m_renderManager.ShowVideo(true);
+  
   return true;
 }
 
@@ -2082,8 +2079,8 @@ void CMediaPipelineWebOS::UpdatePlayTime()
   ProcessOverlays(pts);
   m_picture.dts = pts;
   m_picture.pts = pts;
-  std::atomic<bool> stop(false);
-  m_renderManager.AddVideoPicture(m_picture, stop, VS_INTERLACEMETHOD_AUTO, false);
+  // Pass the thread's native stop flag to allow Display Resolution teardowns to abort the lock
+  m_renderManager.AddVideoPicture(m_picture, m_bStop, VS_INTERLACEMETHOD_AUTO, false);
   m_clock.Discontinuity(pts);
 }
 
