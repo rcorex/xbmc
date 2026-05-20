@@ -1126,7 +1126,7 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
   m_videoClosed = false;
   if (m_hasAudio)
     m_audioClosed = false;
-  
+  m_renderManager.ShowVideo(true);
   return true;
 }
 
