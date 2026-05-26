@@ -577,6 +577,7 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
     m_fedAudioPts = NO_PTS;
     m_started = false;
     m_osPlayState.store(OSPlayState::Unloaded, std::memory_order_release);
+    m_apiPlayState.store(APIPlayState::Unknown, std::memory_order_release);
     m_internalStartEmitted.store(false, std::memory_order_release);
 
     bool altMethod = CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
@@ -646,6 +647,7 @@ bool CMediaPipelineWebOS::OpenVideoStream(CDVDStreamInfo hint)
     m_started = false;
     m_videoClosed = false;
     m_osPlayState.store(OSPlayState::Unloaded, std::memory_order_release);
+    m_apiPlayState.store(APIPlayState::Unknown, std::memory_order_release);
     m_internalStartEmitted.store(false, std::memory_order_release);
     if (m_videoHint.codec == hint.codec && m_videoHint.hdrType == hint.hdrType)
     {
@@ -803,14 +805,24 @@ void CMediaPipelineWebOS::SetSpeed(const int speed)
 
   if (speed == DVD_PLAYSPEED_PAUSE)
   {
-    if (!m_mediaAPIs->Pause())
-      CLog::LogF(LOGERROR, "Pause failed");
+    if (m_apiPlayState.load(std::memory_order_acquire) != APIPlayState::Paused)
+    {
+      if (!m_mediaAPIs->Pause())
+        CLog::LogF(LOGERROR, "Pause failed");
+      else
+        m_apiPlayState.store(APIPlayState::Paused, std::memory_order_release);
+    }
     return;
   }
   if (speed == DVD_PLAYSPEED_NORMAL)
   {
-    if (!m_mediaAPIs->Play())
-      CLog::LogF(LOGERROR, "Play failed");
+    if (m_apiPlayState.load(std::memory_order_acquire) != APIPlayState::Playing)
+    {
+      if (!m_mediaAPIs->Play())
+        CLog::LogF(LOGERROR, "Play failed");
+      else
+        m_apiPlayState.store(APIPlayState::Playing, std::memory_order_release);
+    }
   }
 
   CVariant payload;
@@ -852,6 +864,7 @@ void CMediaPipelineWebOS::SetSubtitleDelay(const double delay)
 bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHint)
 {
   m_osPlayState.store(OSPlayState::Unloaded, std::memory_order_release);
+  m_apiPlayState.store(APIPlayState::Unknown, std::memory_order_release);
   m_internalStartEmitted.store(false, std::memory_order_release);
   m_osMediaLoadedEmitted.store(false, std::memory_order_release);
   m_fedAudioPts = NO_PTS;
@@ -1133,6 +1146,7 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
 void CMediaPipelineWebOS::Unload(const bool sync)
 {
   m_osPlayState.store(OSPlayState::Unloaded, std::memory_order_release);
+  m_apiPlayState.store(APIPlayState::Unknown, std::memory_order_release);
 
   const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
   if (buffer && buffer->GetAcbHandle())
@@ -2177,8 +2191,13 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       });
 
       m_renderManager.ShowVideo(true);
-      if (!m_mediaAPIs->Play())
+      if (m_apiPlayState.load(std::memory_order_acquire) != APIPlayState::Playing)
+      {
+        if (!m_mediaAPIs->Play())
           CLog::LogF(LOGERROR, "Failed to play");
+        else
+          m_apiPlayState.store(APIPlayState::Playing, std::memory_order_release);
+      }
       m_loaded = true;
       m_flushed = true;
       Create();
@@ -2193,6 +2212,7 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       m_loaded = false;
       m_pipeline = nullptr;
       m_osPlayState.store(OSPlayState::Unloaded, std::memory_order_release);
+      m_apiPlayState.store(APIPlayState::Unknown, std::memory_order_release);
       m_internalStartEmitted.store(false, std::memory_order_release);
       m_osMediaLoadedEmitted.store(false, std::memory_order_release);
 
@@ -2207,6 +2227,7 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
     }
     case PF_EVENT_TYPE_STR_STATE_UPDATE__PAUSED:
     {
+      m_apiPlayState.store(APIPlayState::Paused, std::memory_order_release);
       // OS EMISSION: Only send if the OS doesn't already know we are paused
       if (m_osPlayState.load(std::memory_order_acquire) != OSPlayState::Paused)
       {
@@ -2230,6 +2251,7 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
     }
     case PF_EVENT_TYPE_STR_STATE_UPDATE__PLAYING: // received after both str_audio_info and str_video_info
     {
+      m_apiPlayState.store(APIPlayState::Playing, std::memory_order_release);
       // REACTIVE TRIGGER: Send PLAYER_STARTED to Kodi if Eager Trigger didn't beat us to it
       if (!m_internalStartEmitted.exchange(true, std::memory_order_acq_rel))
       {
