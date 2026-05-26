@@ -575,6 +575,8 @@ private:
 
   enum class OSPlayState { Unloaded, Playing, Paused };
   std::atomic<OSPlayState> m_osPlayState{OSPlayState::Unloaded};
+  enum class APIPlayState { Unknown, Playing, Paused };
+  std::atomic<APIPlayState> m_apiPlayState{APIPlayState::Unknown};
   std::atomic<bool> m_internalStartEmitted{false};
   std::atomic<bool> m_osMediaLoadedEmitted{false};
 
