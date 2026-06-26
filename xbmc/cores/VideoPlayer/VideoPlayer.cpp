@@ -1521,9 +1521,14 @@ void CVideoPlayer::Prepare()
     double startpts = DVD_NOPTS_VALUE;
     if (m_pDemuxer)
     {
+#if defined(TARGET_WEBOS)
+      FlushBuffers(DVD_NOPTS_VALUE, true, true);
+#endif
       if (m_pDemuxer->SeekTime(starttime.count(), true, &startpts))
       {
+#if !defined(TARGET_WEBOS)
         FlushBuffers(starttime.count() / 1000 * AV_TIME_BASE, true, true);
+#endif
         CLog::Log(LOGDEBUG, "{} - starting demuxer from: {}", __FUNCTION__, starttime.count());
       }
       else
@@ -3304,7 +3309,9 @@ void CVideoPlayer::HandleMessages()
 
       if (speed != DVD_PLAYSPEED_PAUSE && m_playSpeed != DVD_PLAYSPEED_PAUSE && speed != m_playSpeed)
       {
-        m_callback.OnPlayBackSpeedChanged(speed / DVD_PLAYSPEED_NORMAL);
+        m_outboundEvents->Submit([this, ratio = speed / DVD_PLAYSPEED_NORMAL]() {
+          m_callback.OnPlayBackSpeedChanged(ratio);
+        });
         m_processInfo->SeekFinished(0);
       }
 

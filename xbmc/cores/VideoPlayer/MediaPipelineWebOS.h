@@ -132,6 +132,11 @@ private:
  * @class CMediaPipelineWebOS
  * @brief WebOS media pipeline for audio/video playback.
  */
+namespace mediapipeline
+{
+class CustomPipeline;
+} // namespace mediapipeline
+
 class CMediaPipelineWebOS final : public CThread, public ISettingCallback
 {
 public:
@@ -396,6 +401,8 @@ private:
    * @param sync If true, wait for unload to complete.
    */
   void Unload(bool sync);
+  std::atomic<bool> m_isSeeking{false};
+  std::atomic<uint64_t> m_seekTargetPts{0};
 
   /**
    * @brief Sets up audio stream parameters and transcoding if necessary.
@@ -519,12 +526,14 @@ private:
   CDVDClock& m_clock;
   CDVDOverlayContainer& m_overlayContainer;
   bool m_hasAudio{true};
+  std::atomic<bool> m_convertDovi{false};
 
   std::atomic<bool> m_videoClosed{true};
   std::atomic<bool> m_audioClosed{true};
   std::atomic<bool> m_allowPassthrough{false};
   std::atomic<bool> m_passthroughSetting{false};
   std::atomic<int> m_processQuality{0};
+  std::atomic<int> m_guiSoundMode{0};
   std::atomic<double> m_mixSubLevel{0.0};
   std::atomic<bool> m_stereoUpmix{false};
   std::atomic<bool> m_maintainOriginalVolume{false};

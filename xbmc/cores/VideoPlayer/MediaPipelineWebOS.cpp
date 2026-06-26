@@ -85,7 +85,7 @@ constexpr unsigned int MIN_SRC_BUFFER_LEVEL_AUDIO = 1 * 1024 * 1024; // 1 MB
 constexpr unsigned int MIN_SRC_BUFFER_LEVEL_VIDEO = 1 * 1024 * 1024; // 1 MB
 constexpr unsigned int MAX_SRC_BUFFER_LEVEL_AUDIO = 2 * 1024 * 1024; // 2 MB
 constexpr unsigned int MAX_SRC_BUFFER_LEVEL_VIDEO = 8 * 1024 * 1024; // 8 MB
-constexpr std::chrono::nanoseconds MAX_FEED_AHEAD_TIME = 1600ms;
+constexpr std::chrono::nanoseconds MAX_FEED_AHEAD_TIME = 2000ms;
 
 constexpr unsigned int SVP_VERSION_30 = 30;
 constexpr unsigned int SVP_VERSION_40 = 40;
@@ -428,6 +428,7 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
   m_downmixStereoOnly71 = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71);
   m_bypassDialnorm = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM);
   m_bypassDialnormAtmos = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS);
+  m_guiSoundMode = settings->GetInt(CSettings::SETTING_AUDIOOUTPUT_GUISOUNDMODE);
 
   settings->RegisterCallback(this, {CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH,
                                     CSettings::SETTING_AUDIOOUTPUT_PROCESSQUALITY,
@@ -437,7 +438,8 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
                                     CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO,
                                     CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71,
                                     CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM,
-                                    CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS});
+                                    CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS,
+                                    CSettings::SETTING_AUDIOOUTPUT_GUISOUNDMODE});
 }
 
 CMediaPipelineWebOS::~CMediaPipelineWebOS()
@@ -446,6 +448,7 @@ CMediaPipelineWebOS::~CMediaPipelineWebOS()
   if (const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer))
     buffer->ResetAcbHandle();
 
+  UpdateGUISounds(false);
   CServiceBroker::GetSettingsComponent()->GetSettings()->UnregisterCallback(this);
 }
 
@@ -472,6 +475,8 @@ void CMediaPipelineWebOS::OnSettingChanged(const std::shared_ptr<const CSetting>
     m_bypassDialnorm = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM);
   else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS)
     m_bypassDialnormAtmos = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS);
+  else if (settingId == CSettings::SETTING_AUDIOOUTPUT_GUISOUNDMODE)
+    m_guiSoundMode = settings->GetInt(CSettings::SETTING_AUDIOOUTPUT_GUISOUNDMODE);
 }
 
 int CMediaPipelineWebOS::GetVideoBitrate() const
@@ -548,7 +553,7 @@ bool CMediaPipelineWebOS::Supports(const AVCodecID codec, const int profile)
 void CMediaPipelineWebOS::AcbCallback(
     long acbId, long taskId, long eventType, long appState, long playState, const char* reply)
 {
-  CLog::LogF(LOGDEBUG, "acbId={}, taskId={}, eventType={}, appState={}, playState={}, reply={}",
+  CLog::LogF(LOGINFO, "acbId={}, taskId={}, eventType={}, appState={}, playState={}, reply={}",
              acbId, taskId, eventType, appState, playState, reply);
 }
 
@@ -704,6 +709,9 @@ void CMediaPipelineWebOS::Flush(bool sync)
   CWorkerGate::Lock videoLock(m_videoGate);
   CWorkerGate::Lock audioLock(m_audioGate);
 
+  // Directly execute any pending ACB commands on this thread.
+  ProcessTasks();
+
   if (!m_mediaAPIs->flush())
     CLog::LogF(LOGDEBUG, "Failed to flush media APIs");
   FlushAudioMessages();
@@ -836,6 +844,15 @@ void CMediaPipelineWebOS::SetSubtitleDelay(const double delay)
 
 bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHint)
 {
+  m_osPlayState.store(OSPlayState::Unloaded, std::memory_order_release);
+  m_apiPlayState.store(APIPlayState::Unknown, std::memory_order_release);
+  m_osMediaLoadedEmitted.store(false, std::memory_order_release);
+  m_fedAudioPts = NO_PTS;
+  m_fedVideoPts = NO_PTS;
+  m_started = false;
+  CLog::LogF(LOGINFO, "Resetting internal play state tracking variables (Load)");
+  UpdateGUISounds(true);
+
   CWorkerGate::Lock videoLock(m_videoGate);
   CWorkerGate::Lock audioLock(m_audioGate);
 
@@ -918,6 +935,7 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
       const std::unique_ptr<AcbHandle>& acb = buffer->CreateAcbHandle();
       if (acb->Id())
       {
+        CLog::LogF(LOGINFO, "AcbAPI_initialize(acbId={})", acb->Id());
         if (!AcbAPI_initialize(acb->Id(), PLAYER_TYPE_MSE, getenv("APPID"), &AcbCallback))
         {
           buffer->ResetAcbHandle();
@@ -1098,10 +1116,6 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
     }
   }
 
-  m_fedAudioPts = NO_PTS;
-  m_fedVideoPts = NO_PTS;
-  m_started = false;
-
   m_videoClosed = false;
   if (m_hasAudio)
     m_audioClosed = false;
@@ -1111,9 +1125,26 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
 
 void CMediaPipelineWebOS::Unload(const bool sync)
 {
+  m_osPlayState.store(OSPlayState::Unloaded, std::memory_order_release);
+  m_apiPlayState.store(APIPlayState::Unknown, std::memory_order_release);
+
+  const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
+  if (buffer && buffer->GetAcbHandle())
+  {
+    CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_UNLOADED)", buffer->GetAcbHandle()->Id(), buffer->GetAcbHandle()->TaskId());
+    AcbAPI_setState(buffer->GetAcbHandle()->Id(), APPSTATE_FOREGROUND, PLAYSTATE_UNLOADED,
+                    &buffer->GetAcbHandle()->TaskId());
+  }
+
   CThread::StopThread(true);
   if (m_audioThread.joinable())
     m_audioThread.join();
+
+  // Clear any unexecuted tasks to prevent bleed-over into the next playback session
+  {
+    std::lock_guard<std::mutex> lock(m_taskMutex);
+    m_tasks.clear();
+  }
 
   if (!m_mediaAPIs->Unload())
     CLog::LogF(LOGERROR, "Unload failed");
@@ -1293,8 +1324,9 @@ void CMediaPipelineWebOS::SetupBitstreamConverter(CDVDStreamInfo& hint)
 
           // Only set for profile 7, container hint allows to skip parsing unnecessarily
           // set profile 8 and single layer when converting
-          if (!removeDovi && convertDovi && hint.dovi.dv_profile == 7)
+          if (!removeDovi && convertDovi && (hint.dovi.dv_profile == 7 || m_convertDovi))
           {
+            m_convertDovi = true;
             m_bitstream->SetConvertDovi(true);
             hint.dovi.dv_profile = 8;
             hint.dovi.el_present_flag = false;
@@ -1672,6 +1704,23 @@ void CMediaPipelineWebOS::SetDynamicRangeCompression(const long drc)
 {
   m_audioLimiter.SetAmplification(std::pow(
       10.0f, (static_cast<float>(drc) / 100.0f + m_volumeAmplificationBoost.load()) / 20.0f));
+}
+
+void CMediaPipelineWebOS::QueueTask(std::function<void()> task)
+{
+  std::lock_guard<std::mutex> lock(m_taskMutex);
+  m_tasks.push_back(std::move(task));
+}
+
+void CMediaPipelineWebOS::ProcessTasks()
+{
+  std::vector<std::function<void()>> tasks;
+  {
+    std::lock_guard<std::mutex> lock(m_taskMutex);
+    tasks.swap(m_tasks);
+  }
+  for (const auto& task : tasks)
+    task();
 }
 
 void CMediaPipelineWebOS::Process()

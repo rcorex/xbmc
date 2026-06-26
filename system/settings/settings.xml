@@ -3459,10 +3459,12 @@
           </dependencies>
           <control type="toggle" />
         </setting>
-        <setting id="audiooutput.webosaltaudiotrackchange" type="boolean" label="39230" help="39231">
-          <visible>false</visible>
+        <setting id="audiooutput.webosaltaudiotrackchange" type="boolean" label="39229" help="39230">
           <level>1</level>
           <default>false</default>
+          <requirement>
+            <condition>HAVE_WEBOS</condition>
+          </requirement>
           <control type="toggle" />
         </setting>
         <setting id="audiooutput.webosbypassdialnorm" type="boolean" label="39225" help="39226">
