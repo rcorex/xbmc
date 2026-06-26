@@ -397,9 +397,6 @@ private:
    * @return True if loading succeeded.
    */
   bool Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHint);
-  std::atomic<bool> m_isSeeking{false};
-  std::atomic<uint64_t> m_seekTargetPts{0};
-
 
   /**
    * @brief Unloads the media pipeline for cleanup.
