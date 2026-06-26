@@ -2289,7 +2289,6 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       }
       break;
     }
-    }
     case PF_EVENT_TYPE_STR_BUFFERFULL:
     {
       SStateMsg msg{.syncState = IDVDStreamPlayer::SYNC_INSYNC, .player = VideoPlayer_AUDIO};
