@@ -30,9 +30,6 @@
           <default>true</default>
           <visible>true</visible>
         </setting>
-        <setting id="audiooutput.webosaltaudiotrackchange">
-          <visible>true</visible>
-        </setting>
         <setting id="audiooutput.webosbypassdialnorm">
           <visible>true</visible>
         </setting>
