@@ -3014,7 +3014,9 @@ void CVideoPlayer::HandleMessages()
         m_State.dts = start;
         m_State.lastSeek = m_clock.GetAbsoluteClock();
 
+#if !defined(TARGET_WEBOS)
         FlushBuffers(start, msg.GetAccurate(), msg.GetSync());
+#endif
       }
       else if (m_pDemuxer)
       {
@@ -3705,6 +3707,11 @@ void CVideoPlayer::Seek(bool bPlus, bool bLargeStep, bool bChapterOverride)
   if (seekTarget.has_value())
   {
     int64_t target = seekTarget.value();
+#if defined(TARGET_WEBOS)
+  if (seekTarget < 0)
+    seekTarget = 0;
+#endif
+
     CDVDMsgPlayerSeek::CMode mode;
     mode.time = target;
     mode.backward = !bPlus;

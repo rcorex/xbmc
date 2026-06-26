@@ -487,10 +487,10 @@ int CMediaPipelineWebOS::GetVideoBitrate() const
 void CMediaPipelineWebOS::UpdateGUISounds(const bool playing)
 {
   IAE* activeAE = CServiceBroker::GetActiveAE();
-  const int guiSoundMode = CServiceBroker::GetSettingsComponent()->GetSettings()->GetInt(
-      CSettings::SETTING_AUDIOOUTPUT_GUISOUNDMODE);
+  if (!activeAE)
+    return;
 
-  if (guiSoundMode != AE_SOUND_IDLE)
+  if (m_guiSoundMode.load() != AE_SOUND_IDLE)
     return;
 
   if (playing)
