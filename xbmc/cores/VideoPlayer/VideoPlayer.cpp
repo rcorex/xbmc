@@ -3034,6 +3034,22 @@ void CVideoPlayer::HandleMessages()
       if(m_pInputStream->IsStreamType(DVDSTREAM_TYPE_DVD))
         m_dvd.state = DVDSTATE_SEEK;
 
+      // Fix for rapid-seek subtitle freezing on embedded MKV streams.
+      // Wipes the forward look-ahead cache and forces the demuxer to re-read missing text packets.
+      if (m_CurrentSubtitle.id >= 0 && STREAM_SOURCE_MASK(m_CurrentSubtitle.source) == STREAM_SOURCE_DEMUX)
+      {
+        if (!msg.GetTrickPlay())
+        {
+          CDVDMsgPlayerSeek::CMode trickMode;
+          trickMode.time = static_cast<double>(GetUpdatedTime());
+          trickMode.backward = true;
+          trickMode.accurate = true;
+          trickMode.trickplay = true;
+          trickMode.sync = true;
+          m_messenger.Put(std::make_shared<CDVDMsgPlayerSeek>(trickMode));
+        }
+      }
+      
       m_processInfo->SetStateSeeking(false);
     }
     else if (pMsg->IsType(CDVDMsg::PLAYER_SEEK_CHAPTER) &&
