@@ -3074,13 +3074,22 @@ void CVideoPlayer::HandleMessages()
           }
         }
 
-        if (m_pDemuxer->SeekTime(time, true, &start))
-        {
-          FlushBuffers(start, true, true);
-          int64_t beforeSeek = GetTime();
-          offset = DVD_TIME_TO_MSEC(start) - static_cast<int>(beforeSeek);
-          m_callback.OnPlayBackSeekChapter(msg.GetChapter());
-        }
+        //use time based seek for chapter seek in the Demuxer case
+        m_processInfo->SetStateSeeking(true);
+
+        CDVDMsgPlayerSeek::CMode mode;
+        mode.time = time;
+        mode.backward = msg.GetChapter() < GetChapter();
+        mode.accurate = false;
+        mode.trickplay = false;
+        mode.sync = true;
+        mode.restore = true;
+
+        m_messenger.Put(std::make_shared<CDVDMsgPlayerSeek>(mode));
+        m_outboundEvents->Submit([this, chapter = msg.GetChapter()]() {
+          m_callback.OnPlayBackSeekChapter(chapter);
+        });
+        continue;
       }
       else if (m_pInputStream)
       {
