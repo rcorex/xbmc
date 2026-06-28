@@ -3955,7 +3955,11 @@ bool CVideoPlayer::SeekTimeRelative(int64_t iTime)
   mode.time = (int)iTime;
   mode.relative = true;
   mode.backward = (iTime < 0) ? true : false;
+#if defined(TARGET_WEBOS)
+  mode.accurate = true;
+#else  
   mode.accurate = false;
+#endif
   mode.trickplay = false;
   mode.sync = true;
 
