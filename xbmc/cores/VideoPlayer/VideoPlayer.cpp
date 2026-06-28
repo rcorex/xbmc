@@ -2950,7 +2950,24 @@ void CVideoPlayer::HandleMessages()
         continue;
       }
 
-#if !defined(TARGET_WEBOS)
+#if defined(TARGET_WEBOS)
+      // Intelligent seek debouncer to prevent back-to-back hardware flush deadlocks
+      if (m_CurrentVideo.id >= 0 && m_CurrentVideo.syncState != IDVDStreamPlayer::SYNC_INSYNC)
+      {
+        int waitTime = 0;
+        while (waitTime < 300 && !m_bAbortRequest)
+        {
+          CThread::Sleep(30ms);
+          waitTime += 30;
+          if (m_messenger.GetPacketCount(CDVDMsg::PLAYER_SEEK) > 0 ||
+              m_messenger.GetPacketCount(CDVDMsg::PLAYER_SEEK_CHAPTER) > 0)
+            break;
+        }
+        if (m_messenger.GetPacketCount(CDVDMsg::PLAYER_SEEK) > 0 ||
+            m_messenger.GetPacketCount(CDVDMsg::PLAYER_SEEK_CHAPTER) > 0)
+          continue; // Defer execution and let queue compression absorb the new spam
+      }
+#else
       // skip seeks if player has not finished the last seek
       if (m_CurrentVideo.id >= 0 &&
           m_CurrentVideo.syncState != IDVDStreamPlayer::SYNC_INSYNC)
