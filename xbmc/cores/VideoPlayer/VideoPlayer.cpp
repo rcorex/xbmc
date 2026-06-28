@@ -2539,10 +2539,22 @@ bool CVideoPlayer::CheckContinuity(CCurrentStream& current, DemuxPacket* pPacket
               current.type, current.dts, pPacket->dts, pPacket->dts - current.dts);
   }
 
-  // Freeze continuity tracking during sync stabilization or for 0.5 seconds post-seek
-  double now = m_clock.GetAbsoluteClock();
-  if (m_CurrentVideo.syncState != IDVDStreamPlayer::SYNC_INSYNC || (now - m_State.lastSeek) / 1000.0 < 500.0)
-    correction = 0.0;
+  // State-machine guard: protect timeline until the pipeline has digested valid new data
+  if (m_seekStabilizingPackets < 20)
+  {
+    // If a packet is wildly ahead of our new seek destination, it's a stale pre-seek packet
+    if (m_State.dts != DVD_NOPTS_VALUE && pPacket->dts > m_State.dts + DVD_SEC_TO_TIME(2))
+    {
+      correction = 0.0; // Suppress correction, but do not increment packet count
+    }
+    else
+    {
+      if (pPacket->dts != DVD_NOPTS_VALUE)
+        m_seekStabilizingPackets++;
+        
+      correction = 0.0; // Keep corrections frozen during the initial stream pre-roll
+    }
+  }
 
   double lastdts = pPacket->dts;
   if(correction != 0.0)
@@ -3029,6 +3041,7 @@ void CVideoPlayer::HandleMessages()
 
         m_State.dts = start;
         m_State.lastSeek = m_clock.GetAbsoluteClock();
+        m_seekStabilizingPackets = 0; // Reset state counter to engage the guard        
 
         FlushBuffers(start, msg.GetAccurate(), msg.GetSync());
       }
@@ -3123,6 +3136,9 @@ void CVideoPlayer::HandleMessages()
         if (pChapter && pChapter->SeekChapter(msg.GetChapter()))
         {
           FlushBuffers(start, true, true);
+#if defined(TARGET_WEBOS)
+          m_seekStabilizingPackets = 0; // Guard against stale packets after input-stream chapter jumps
+#endif          
           int64_t beforeSeek = GetTime();
           offset = DVD_TIME_TO_MSEC(start) - static_cast<int>(beforeSeek);
           m_callback.OnPlayBackSeekChapter(msg.GetChapter());
@@ -6101,6 +6117,7 @@ void CVideoPlayer::WebOSRestartAudioStream(int audioDemuxerId, int audioStreamId
 
     m_State.dts = start;
     m_State.lastSeek = m_clock.GetAbsoluteClock();
+    m_seekStabilizingPackets = 0; // Engage continuity guard for the audio restart
   }
 
   if (m_CurrentAudio.source != STREAM_SOURCE_NONE)
