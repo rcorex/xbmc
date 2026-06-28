@@ -4532,7 +4532,7 @@ void CVideoPlayer::FlushBuffers(double pts, bool accurate, bool sync)
   m_CurrentVideo.packets = 0;
 
   m_CurrentSubtitle.dts      = DVD_NOPTS_VALUE;
-  m_CurrentSubtitle.startpts = startpts;
+  m_CurrentSubtitle.startpts = pts; // Hold the absolute target seek time to filter stale lookahead subtitles
   m_CurrentSubtitle.packets = 0;
 
   m_CurrentTeletext.dts      = DVD_NOPTS_VALUE;
