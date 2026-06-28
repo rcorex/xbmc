@@ -2539,8 +2539,9 @@ bool CVideoPlayer::CheckContinuity(CCurrentStream& current, DemuxPacket* pPacket
               current.type, current.dts, pPacket->dts, pPacket->dts - current.dts);
   }
 
-  // Suspend continuity tracking during any phase of seek/flush stabilization
-  if (m_CurrentVideo.syncState != IDVDStreamPlayer::SYNC_INSYNC)
+  // Freeze continuity tracking during sync stabilization or for 2 seconds post-seek
+  double now = m_clock.GetAbsoluteClock();
+  if (m_CurrentVideo.syncState != IDVDStreamPlayer::SYNC_INSYNC || (now - m_State.lastSeek) / 1000.0 < 2000.0)
     correction = 0.0;
 
   double lastdts = pPacket->dts;
@@ -3955,11 +3956,7 @@ bool CVideoPlayer::SeekTimeRelative(int64_t iTime)
   mode.time = (int)iTime;
   mode.relative = true;
   mode.backward = (iTime < 0) ? true : false;
-#if defined(TARGET_WEBOS)
-  mode.accurate = true;
-#else  
   mode.accurate = false;
-#endif
   mode.trickplay = false;
   mode.sync = true;
 
