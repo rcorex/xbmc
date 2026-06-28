@@ -3041,7 +3041,6 @@ void CVideoPlayer::HandleMessages()
 
         m_State.dts = start;
         m_State.lastSeek = m_clock.GetAbsoluteClock();
-        m_seekStabilizingPackets = 0; // Reset state counter to engage the guard        
 
         FlushBuffers(start, msg.GetAccurate(), msg.GetSync());
       }
@@ -3136,9 +3135,6 @@ void CVideoPlayer::HandleMessages()
         if (pChapter && pChapter->SeekChapter(msg.GetChapter()))
         {
           FlushBuffers(start, true, true);
-#if defined(TARGET_WEBOS)
-          m_seekStabilizingPackets = 0; // Guard against stale packets after input-stream chapter jumps
-#endif          
           int64_t beforeSeek = GetTime();
           offset = DVD_TIME_TO_MSEC(start) - static_cast<int>(beforeSeek);
           m_callback.OnPlayBackSeekChapter(msg.GetChapter());
@@ -4497,6 +4493,10 @@ bool CVideoPlayer::CloseStream(CCurrentStream& current, bool bWaitForBuffers)
 void CVideoPlayer::FlushBuffers(double pts, bool accurate, bool sync)
 {
   CLog::Log(LOGDEBUG, "CVideoPlayer::FlushBuffers - flushing buffers");
+
+#if defined(TARGET_WEBOS)
+  m_seekStabilizingPackets = 0; // Lock continuity tracking whenever the pipeline flushes
+#endif
 
   double startpts;
   if (accurate)
@@ -6117,7 +6117,6 @@ void CVideoPlayer::WebOSRestartAudioStream(int audioDemuxerId, int audioStreamId
 
     m_State.dts = start;
     m_State.lastSeek = m_clock.GetAbsoluteClock();
-    m_seekStabilizingPackets = 0; // Engage continuity guard for the audio restart
   }
 
   if (m_CurrentAudio.source != STREAM_SOURCE_NONE)
