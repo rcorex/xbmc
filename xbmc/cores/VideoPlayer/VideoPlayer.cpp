@@ -2539,6 +2539,10 @@ bool CVideoPlayer::CheckContinuity(CCurrentStream& current, DemuxPacket* pPacket
               current.type, current.dts, pPacket->dts, pPacket->dts - current.dts);
   }
 
+  // Suspend continuity tracking during any phase of seek/flush stabilization
+  if (m_CurrentVideo.syncState != IDVDStreamPlayer::SYNC_INSYNC)
+    correction = 0.0;
+
   double lastdts = pPacket->dts;
   if(correction != 0.0)
   {
