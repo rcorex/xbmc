@@ -2950,6 +2950,7 @@ void CVideoPlayer::HandleMessages()
         continue;
       }
 
+#if !defined(TARGET_WEBOS)
       // skip seeks if player has not finished the last seek
       if (m_CurrentVideo.id >= 0 &&
           m_CurrentVideo.syncState != IDVDStreamPlayer::SYNC_INSYNC)
@@ -2963,6 +2964,7 @@ void CVideoPlayer::HandleMessages()
           continue;
         }
       }
+#endif
 
       if (!msg.GetTrickPlay())
       {
