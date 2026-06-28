@@ -2541,7 +2541,7 @@ bool CVideoPlayer::CheckContinuity(CCurrentStream& current, DemuxPacket* pPacket
 
   // Freeze continuity tracking during sync stabilization or for 2 seconds post-seek
   double now = m_clock.GetAbsoluteClock();
-  if (m_CurrentVideo.syncState != IDVDStreamPlayer::SYNC_INSYNC || (now - m_State.lastSeek) / 1000.0 < 2000.0)
+  if (m_CurrentVideo.syncState != IDVDStreamPlayer::SYNC_INSYNC || (now - m_State.lastSeek) / 1000.0 < 500.0)
     correction = 0.0;
 
   double lastdts = pPacket->dts;
