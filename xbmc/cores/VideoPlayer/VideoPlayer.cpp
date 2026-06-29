@@ -3046,10 +3046,16 @@ void CVideoPlayer::HandleMessages()
              m_messenger.GetPacketCount(CDVDMsg::PLAYER_SEEK) == 0 &&
              m_messenger.GetPacketCount(CDVDMsg::PLAYER_SEEK_CHAPTER) == 0)
     {
+      CDVDMsgPlayerSeekChapter& msg(*std::static_pointer_cast<CDVDMsgPlayerSeekChapter>(pMsg));
+      if (msg.GetChapter() <= GetChapter() && GetTime() <= 0)
+      {
+        m_processInfo->SetStateSeeking(false); // Reset the seeking state to prevent UI lockup
+        continue; // Drop backward chapter seeks safely if the timeline is at or below zero
+      }
+
       m_processInfo->SeekFinished(0);
       SetCaching(CACHESTATE_FLUSH);
 
-      CDVDMsgPlayerSeekChapter& msg(*std::static_pointer_cast<CDVDMsgPlayerSeekChapter>(pMsg));
       double start = DVD_NOPTS_VALUE;
       int offset = 0;
 
