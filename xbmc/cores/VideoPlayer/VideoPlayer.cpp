@@ -2956,29 +2956,6 @@ void CVideoPlayer::HandleMessages()
         continue;
       }
 
-#if defined(TARGET_WEBOS)
-      // Intelligent seek debouncer modified to mirror standard non-webOS skip-seeks target conditions
-      double now = m_clock.GetAbsoluteClock();
-      if (m_CurrentVideo.id >= 0 && 
-          m_CurrentVideo.syncState != IDVDStreamPlayer::SYNC_INSYNC &&
-          m_playSpeed == DVD_PLAYSPEED_NORMAL &&
-          (now - m_State.lastSeek) / 1000 < 2000 &&
-          !msg.GetAccurate())
-      {
-        int waitTime = 0;
-        while (waitTime < 300 && !m_bAbortRequest)
-        {
-          CThread::Sleep(30ms);
-          waitTime += 30;
-          if (m_messenger.GetPacketCount(CDVDMsg::PLAYER_SEEK) > 0 ||
-              m_messenger.GetPacketCount(CDVDMsg::PLAYER_SEEK_CHAPTER) > 0)
-            break;
-        }
-        if (m_messenger.GetPacketCount(CDVDMsg::PLAYER_SEEK) > 0 ||
-            m_messenger.GetPacketCount(CDVDMsg::PLAYER_SEEK_CHAPTER) > 0)
-          continue; // Defer execution and let queue compression absorb the new spam
-      }
-#else
       // skip seeks if player has not finished the last seek
       if (m_CurrentVideo.id >= 0 &&
           m_CurrentVideo.syncState != IDVDStreamPlayer::SYNC_INSYNC)
@@ -2992,7 +2969,6 @@ void CVideoPlayer::HandleMessages()
           continue;
         }
       }
-#endif
 
       if (!msg.GetTrickPlay())
       {
@@ -5543,11 +5519,7 @@ void CVideoPlayer::UpdatePlayState(double timeout)
     }
     else if (pDisplayTime && pDisplayTime->GetTotalTime() > 0)
     {
-      // Check if the pipeline has actually started digesting new packets post-seek
-      bool hasPackets = (m_CurrentVideo.id >= 0 && m_CurrentVideo.packets > 0) ||
-                        (m_CurrentAudio.id >= 0 && m_CurrentAudio.packets > 0);
-
-      if (state.dts != DVD_NOPTS_VALUE && hasPackets)
+      if (state.dts != DVD_NOPTS_VALUE)
       {
         int dispTime = 0;
         if (m_CurrentVideo.id >= 0 && m_CurrentVideo.dispTime)
@@ -5556,11 +5528,6 @@ void CVideoPlayer::UpdatePlayState(double timeout)
           dispTime = m_CurrentAudio.dispTime;
 
         state.time_offset = DVD_MSEC_TO_TIME(dispTime) - state.dts;
-      }
-      else
-      {
-        // Default to a neutral offset during pre-roll so state.time mirrors m_clock
-        state.time_offset = 0;
       }
       state.time += state.time_offset * 1000 / DVD_TIME_BASE;
       state.timeMax = pDisplayTime->GetTotalTime();
