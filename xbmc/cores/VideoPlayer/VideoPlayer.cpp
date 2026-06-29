@@ -3939,7 +3939,11 @@ void CVideoPlayer::SeekTime(int64_t iTime)
 
 bool CVideoPlayer::SeekTimeRelative(int64_t iTime)
 {
-  int64_t abstime = GetTime() + iTime;
+  const int64_t time = GetTime();
+  if (iTime < 0 && time <= 0)
+    return false; // Silently drop backward relative seeks during timeline instability
+
+  int64_t abstime = time + iTime;
 
   // if the file has EDL cuts we can't rely on m_clock for relative seeks
   // EDL cuts remove time from the original file, hence we might seek to
