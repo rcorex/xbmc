@@ -5519,7 +5519,9 @@ void CVideoPlayer::UpdatePlayState(double timeout)
     }
     else if (pDisplayTime && pDisplayTime->GetTotalTime() > 0)
     {
-      if (state.dts != DVD_NOPTS_VALUE)
+      if (state.dts != DVD_NOPTS_VALUE && 
+          (m_CurrentVideo.syncState == IDVDStreamPlayer::SYNC_INSYNC || 
+           m_CurrentAudio.syncState == IDVDStreamPlayer::SYNC_INSYNC))
       {
         int dispTime = 0;
         if (m_CurrentVideo.id >= 0 && m_CurrentVideo.dispTime)
