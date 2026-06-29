@@ -638,9 +638,4 @@ protected:
   std::atomic<bool> m_displayLost;
 
   double m_messageQueueTimeSize{0.0};
-
-#if defined(TARGET_WEBOS)
-  int m_seekStabilizingPackets{100}; // Track post-flush data stabilization
-#endif
-
 };
