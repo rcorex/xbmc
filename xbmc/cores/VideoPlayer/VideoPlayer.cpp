@@ -3598,7 +3598,7 @@ void CVideoPlayer::Seek(bool bPlus, bool bLargeStep, bool bChapterOverride)
 
   std::optional<int64_t> seekTarget;
   const int64_t time = GetTime();
-  if (!bPlus && time == 0)
+  if (!bPlus && time <= 0)
     return; // Safely ignore any backward seeks when the timeline is at zero
 
 #if defined(TARGET_WEBOS)
