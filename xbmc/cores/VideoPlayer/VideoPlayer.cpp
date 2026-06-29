@@ -5543,7 +5543,11 @@ void CVideoPlayer::UpdatePlayState(double timeout)
     }
     else if (pDisplayTime && pDisplayTime->GetTotalTime() > 0)
     {
-      if (state.dts != DVD_NOPTS_VALUE)
+      // Check if the pipeline has actually started digesting new packets post-seek
+      bool hasPackets = (m_CurrentVideo.id >= 0 && m_CurrentVideo.packets > 0) ||
+                        (m_CurrentAudio.id >= 0 && m_CurrentAudio.packets > 0);
+
+      if (state.dts != DVD_NOPTS_VALUE && hasPackets)
       {
         int dispTime = 0;
         if (m_CurrentVideo.id >= 0 && m_CurrentVideo.dispTime)
@@ -5552,6 +5556,11 @@ void CVideoPlayer::UpdatePlayState(double timeout)
           dispTime = m_CurrentAudio.dispTime;
 
         state.time_offset = DVD_MSEC_TO_TIME(dispTime) - state.dts;
+      }
+      else
+      {
+        // Default to a neutral offset during pre-roll so state.time mirrors m_clock
+        state.time_offset = 0;
       }
       state.time += state.time_offset * 1000 / DVD_TIME_BASE;
       state.timeMax = pDisplayTime->GetTotalTime();
