@@ -2539,21 +2539,10 @@ bool CVideoPlayer::CheckContinuity(CCurrentStream& current, DemuxPacket* pPacket
               current.type, current.dts, pPacket->dts, pPacket->dts - current.dts);
   }
 
-  // State-machine guard: protect timeline until the pipeline has digested valid new data
-  if (m_seekStabilizingPackets < 20)
+  // Protect timeline for 300ms after the last seek destination
+  if ((m_clock.GetAbsoluteClock() - m_State.lastSeek) / 1000 < 300)
   {
-    // If a packet is wildly ahead of our new seek destination, it's a stale pre-seek packet
-    if (m_State.dts != DVD_NOPTS_VALUE && pPacket->dts > m_State.dts + DVD_SEC_TO_TIME(2))
-    {
-      correction = 0.0; // Suppress correction, but do not increment packet count
-    }
-    else
-    {
-      if (pPacket->dts != DVD_NOPTS_VALUE)
-        m_seekStabilizingPackets++;
-        
-      correction = 0.0; // Keep corrections frozen during the initial stream pre-roll
-    }
+    correction = 0.0; // Keep corrections frozen during the initial stream pre-roll
   }
 
   double lastdts = pPacket->dts;
@@ -4510,10 +4499,6 @@ bool CVideoPlayer::CloseStream(CCurrentStream& current, bool bWaitForBuffers)
 void CVideoPlayer::FlushBuffers(double pts, bool accurate, bool sync)
 {
   CLog::Log(LOGDEBUG, "CVideoPlayer::FlushBuffers - flushing buffers");
-
-#if defined(TARGET_WEBOS)
-  m_seekStabilizingPackets = 0; // Lock continuity tracking whenever the pipeline flushes
-#endif
 
   double startpts;
   if (accurate)
