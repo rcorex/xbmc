@@ -2539,8 +2539,8 @@ bool CVideoPlayer::CheckContinuity(CCurrentStream& current, DemuxPacket* pPacket
               current.type, current.dts, pPacket->dts, pPacket->dts - current.dts);
   }
 
-  // Protect timeline for 300ms after the last seek destination
-  if ((m_clock.GetAbsoluteClock() - m_State.lastSeek) / 1000 < 300)
+  // Protect timeline until the individual stream has digested 20 valid packets
+  if (current.packets < 20)
   {
     correction = 0.0; // Keep corrections frozen during the initial stream pre-roll
   }
