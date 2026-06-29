@@ -2968,8 +2968,13 @@ void CVideoPlayer::HandleMessages()
       }
 
 #if defined(TARGET_WEBOS)
-      // Intelligent seek debouncer to prevent back-to-back hardware flush deadlocks
-      if (m_CurrentVideo.id >= 0 && m_CurrentVideo.syncState != IDVDStreamPlayer::SYNC_INSYNC)
+      // Intelligent seek debouncer modified to mirror standard non-webOS skip-seeks target conditions
+      double now = m_clock.GetAbsoluteClock();
+      if (m_CurrentVideo.id >= 0 && 
+          m_CurrentVideo.syncState != IDVDStreamPlayer::SYNC_INSYNC &&
+          m_playSpeed == DVD_PLAYSPEED_NORMAL &&
+          (now - m_State.lastSeek) / 1000 < 2000 &&
+          !msg.GetAccurate())
       {
         int waitTime = 0;
         while (waitTime < 300 && !m_bAbortRequest)
@@ -3118,7 +3123,7 @@ void CVideoPlayer::HandleMessages()
         CDVDMsgPlayerSeek::CMode mode;
         mode.time = time;
         mode.backward = msg.GetChapter() < GetChapter();
-        mode.accurate = false;
+        mode.accurate = true;
         mode.trickplay = false;
         mode.sync = true;
         mode.restore = true;
@@ -3628,7 +3633,11 @@ void CVideoPlayer::Seek(bool bPlus, bool bLargeStep, bool bChapterOverride)
 
   std::optional<int64_t> seekTarget;
   const int64_t time = GetTime();
+#if defined(TARGET_WEBOS)
+  bool accurate = true;
+#else
   bool accurate = false;
+#endif
 
   if (bLargeStep && bChapterOverride)
   {
@@ -3774,7 +3783,11 @@ bool CVideoPlayer::SeekScene(Direction seekDirection)
     CDVDMsgPlayerSeek::CMode mode;
     mode.time = sceneMarker.value().count();
     mode.backward = seekDirection == Direction::BACKWARD;
+#if defined(TARGET_WEBOS)
+    mode.accurate = true;
+#else
     mode.accurate = false;
+#endif
     mode.restore = false;
     mode.trickplay = false;
     mode.sync = true;
@@ -3968,7 +3981,11 @@ bool CVideoPlayer::SeekTimeRelative(int64_t iTime)
   mode.time = (int)iTime;
   mode.relative = true;
   mode.backward = (iTime < 0) ? true : false;
+#if defined(TARGET_WEBOS)
+  mode.accurate = true;
+#else
   mode.accurate = false;
+#endif
   mode.trickplay = false;
   mode.sync = true;
 
