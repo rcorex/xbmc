@@ -6026,11 +6026,6 @@ void CVideoPlayer::SetAudioStream(int iStream)
 }
 
 #if defined(TARGET_WEBOS)
-bool CVideoPlayer::NeedsFullMediaRestartOnAudioChange() const
-{
-  return true;
-}
-
 void CVideoPlayer::RestartAudioStream()
 {
   m_messenger.Put(std::make_shared<CDVDMsgPlayerRestartAudioStream>(m_CurrentAudio.demuxerId, m_CurrentAudio.id, m_CurrentAudio.source));
