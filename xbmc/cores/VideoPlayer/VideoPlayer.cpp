@@ -3076,6 +3076,10 @@ void CVideoPlayer::HandleMessages()
 
         if (m_pDemuxer->SeekTime(time, true, &start))
         {
+          if (m_pSubtitleDemuxer)
+          {
+            m_pSubtitleDemuxer->SeekTime(time, true);
+          }
           FlushBuffers(start, true, true);
           int64_t beforeSeek = GetTime();
           offset = DVD_TIME_TO_MSEC(start) - static_cast<int>(beforeSeek);
