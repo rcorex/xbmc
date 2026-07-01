@@ -13,6 +13,7 @@
 #include "ServiceBroker.h"
 #include "StringUtils.h"
 #include "URL.h"
+#include "Util.h"
 #ifdef HAVE_LIBBLURAY
 #include "filesystem/BlurayDirectory.h"
 #endif
@@ -21,21 +22,18 @@
 #include "filesystem/StackDirectory.h"
 #include "network/DNSNameCache.h"
 #include "network/Network.h"
+#if defined(TARGET_WINDOWS)
+#include "platform/win32/CharsetConverter.h"
+#endif
 #include "pvr/channels/PVRChannelsPath.h"
 #include "settings/AdvancedSettings.h"
 #include "utils/FileExtensionProvider.h"
 #include "utils/log.h"
 
-#if defined(TARGET_WINDOWS)
-#include "platform/win32/CharsetConverter.h"
-#endif
-
-#include "Util.h"
-#include "application/Application.h"
-
 #include <algorithm>
 #include <array>
 #include <cassert>
+#include <cctype>
 #include <charconv>
 #include <cstdint>
 #include <optional>
@@ -703,14 +701,16 @@ std::string URIUtils::GetBlurayMenuPath(const std::string& path)
   return AddFileToFolder(GetBlurayPath(path), "menu");
 }
 
-std::string URIUtils::GetBlurayRootPath(const std::string& path)
+std::string URIUtils::GetBlurayTitlesPath(const std::string& path,
+                                          GetAllTitles getAllTitles,
+                                          AllTitlesOptions options)
 {
-  return AddFileToFolder(GetBlurayPath(path), "root");
-}
-
-std::string URIUtils::GetBlurayTitlesPath(const std::string& path)
-{
-  return AddFileToFolder(GetBlurayPath(path), "root", "titles");
+  std::string newPath{AddFileToFolder(GetBlurayPath(path), "root", "titles")};
+  if (options == AllTitlesOptions::EPISODES)
+    newPath = AddFileToFolder(newPath, "episodes");
+  if (getAllTitles == GetAllTitles::ALL)
+    newPath = AddFileToFolder(newPath, "all");
+  return newPath;
 }
 
 std::string URIUtils::GetBlurayMainTitlePath(const std::string& path)
@@ -1928,4 +1928,68 @@ CURL URIUtils::AddCredentials(CURL url)
   if (CPasswordManager::GetInstance().IsURLSupported(url) && url.GetUserName().empty())
     CPasswordManager::GetInstance().AuthenticateURL(url);
   return url;
+}
+
+std::string URIUtils::SanitiseUrlEncoding(std::string_view path)
+{
+  std::string out;
+  out.reserve(path.size());
+
+  // Firstly look at encoded character capitalization.
+  // Some providers (eg. vfs rar) return paths with %2F instead of %2f,
+  // which causes problems when comparing paths.
+  // This only applies to the hostname element of the url
+  auto protocolEnd{path.find("://")};
+  if (protocolEnd == std::string::npos)
+    return std::string(path);
+  protocolEnd += 3;
+
+  auto hostEnd{path.find('/', protocolEnd)};
+  if (hostEnd == std::string::npos)
+    hostEnd = path.size();
+
+  constexpr auto is_hex = [](char c) noexcept
+  { return ('0' <= c && c <= '9') || ('a' <= c && c <= 'f') || ('A' <= c && c <= 'F'); };
+
+  if (protocolEnd >= path.size() || hostEnd > path.size())
+    return std::string(path);
+
+  for (auto it = path.begin() + static_cast<long long>(protocolEnd);
+       it != path.begin() + static_cast<long long>(hostEnd); ++it)
+  {
+    if (*it == '%' && std::ranges::distance(it, path.end()) > 2)
+    {
+      if (is_hex(it[1]) && is_hex(it[2]))
+      {
+        out += '%';
+        out += StringUtils::ToLowerAscii(it[1]);
+        out += StringUtils::ToLowerAscii(it[2]);
+        std::ranges::advance(it, 2);
+      }
+      else
+      {
+        CLog::LogF(LOGDEBUG, "Invalid encoding in path {}", CURL::GetRedacted(std::string(path)));
+        out += *it;
+      }
+    }
+    else
+      out += *it;
+  }
+
+  // In case addon (eg. vfs rar) returns malformed DOS paths (eg. c:/ and not c:\)
+  // m_basePath is used to populate the VIDEODB_ID_BASEPATH column which in turn is used
+  // by GetItemsByPath() to find items when browsing Video -> Files
+  // Pattern for DOS drive letter path: "D:/" encoded as "D%3a%2f"
+  constexpr std::string_view DOS_DRIVE_PATTERN = "%3a%2f";
+  if (out.size() >= 7 && std::isalpha(static_cast<unsigned char>(out[0])) &&
+      out.compare(1, DOS_DRIVE_PATTERN.length(), DOS_DRIVE_PATTERN) == 0)
+    StringUtils::Replace(out, "%2f", "%5c");
+
+  std::string result;
+  result.reserve(protocolEnd + out.size() + (path.size() - hostEnd));
+  result.append(path.substr(0, protocolEnd));
+  result.append(out);
+  result.append(path.substr(hostEnd));
+
+  return result;
 }
