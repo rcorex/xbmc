@@ -3907,15 +3907,15 @@ bool CVideoPlayer::SeekTimeRelative(int64_t iTime)
   }
 
   CDVDMsgPlayerSeek::CMode mode;
-  mode.time = static_cast<double>(abstime);
+  mode.time = (int)iTime;
+  mode.relative = true;
   mode.backward = (iTime < 0) ? true : false;
   mode.accurate = false;
-  mode.restore = false;
   mode.trickplay = false;
   mode.sync = true;
 
   m_messenger.Put(std::make_shared<CDVDMsgPlayerSeek>(mode));
-  SynchronizeDemuxer();
+  m_processInfo->SetStateSeeking(true);
 
   m_callback.OnPlayBackSeek(abstime, iTime);
   m_processInfo->SeekFinished(iTime);
