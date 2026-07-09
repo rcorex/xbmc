@@ -13,6 +13,7 @@
 #include "DVDStreamInfo.h"
 #include "IVideoPlayer.h"
 #include "cores/AudioEngine/Utils/AELimiter.h"
+#include "settings/lib/ISettingCallback.h"
 #include "threads/Thread.h"
 #include "utils/BitstreamStats.h"
 
@@ -25,6 +26,7 @@
 #include <thread>
 
 #include <starfish-media-pipeline/StarfishMediaAPIs.h>
+#include <functional>
 
 namespace ActiveAE
 {
@@ -34,6 +36,7 @@ class CActiveAEBufferPoolResample;
 
 namespace mediapipeline
 {
+class CustomPipeline;
 struct PipelineGStreamerElements;
 } // namespace mediapipeline
 
@@ -131,7 +134,12 @@ private:
  * @class CMediaPipelineWebOS
  * @brief WebOS media pipeline for audio/video playback.
  */
-class CMediaPipelineWebOS final : public CThread
+namespace mediapipeline
+{
+class CustomPipeline;
+} // namespace mediapipeline
+
+class CMediaPipelineWebOS final : public CThread, public ISettingCallback
 {
 public:
   /**
@@ -338,6 +346,8 @@ public:
    */
   void GetVideoResolution(unsigned int& width, unsigned int& height) const;
 
+  void OnSettingChanged(const std::shared_ptr<const CSetting>& setting) override;
+
 protected:
   /**
    * @brief Video processing thread loop.
@@ -393,6 +403,8 @@ private:
    * @param sync If true, wait for unload to complete.
    */
   void Unload(bool sync);
+  std::atomic<bool> m_isSeeking{false};
+  std::atomic<uint64_t> m_seekTargetPts{0};
 
   /**
    * @brief Sets up audio stream parameters and transcoding if necessary.
@@ -476,11 +488,37 @@ private:
                              int& width,
                              int& height,
                              int& framerate) const;
+  /**
+   * @brief Queues a task to be safely executed on the main video Process() thread.
+   */
+  void QueueTask(std::function<void()> task);
+
+  /**
+   * @brief Executes all pending queued tasks.
+   */
+  void ProcessTasks();
+
+  /**
+   * @brief Updates the @ref m_pts member variable with the current presentation timestamp from the
+   * media pipeline, and processes any overlays that need to be displayed at that time. Also adds a
+   * video picture to the render manager and updates the DVD clock with the new PTS. This should be
+   * called regularly during playback to keep the video output and timing in sync with the media
+   * pipeline.
+   */
+  void UpdatePlayTime();
+
+  /**
+   * @brief Gets the custom pipeline pointer
+   * @return Pointer to the custom pipeline, or nullptr if not available.
+   */
+  mediapipeline::CustomPipeline* GetPipeline() const;
 
   static constexpr std::chrono::nanoseconds NO_PTS{-1};
 
   std::condition_variable m_eventCondition;
   std::mutex m_eventMutex;
+  std::mutex m_taskMutex;
+  std::vector<std::function<void()>> m_tasks;
 
   mediapipeline::PipelineGStreamerElements* m_pipeline{nullptr};
   unsigned int m_webOSVersion{4};
@@ -501,6 +539,7 @@ private:
   std::unique_ptr<ActiveAE::CActiveAEBufferPoolResample> m_audioResample{nullptr};
   std::unique_ptr<CAEEncoderFFmpeg> m_audioEncoder{nullptr};
   CAELimiter m_audioLimiter;
+  std::atomic<float> m_volumeAmplificationBoost{0.0f};
   std::atomic<unsigned long> m_droppedFrames{0};
   std::chrono::duration<double, std::ratio<1, DVD_TIME_BASE>> m_audioClock{0.0};
 
@@ -515,13 +554,30 @@ private:
   CDVDClock& m_clock;
   CDVDOverlayContainer& m_overlayContainer;
   bool m_hasAudio{true};
+  std::atomic<bool> m_convertDovi{false};
 
   std::atomic<bool> m_videoClosed{true};
   std::atomic<bool> m_audioClosed{true};
+  std::atomic<bool> m_allowPassthrough{false};
+  std::atomic<bool> m_passthroughSetting{false};
+  std::atomic<int> m_processQuality{0};
+  std::atomic<int> m_guiSoundMode{0};
+  std::atomic<double> m_mixSubLevel{0.0};
+  std::atomic<bool> m_stereoUpmix{false};
+  std::atomic<bool> m_maintainOriginalVolume{false};
+  std::atomic<bool> m_downmixStereo{false};
+  std::atomic<bool> m_downmixStereoOnly71{false};
+  std::atomic<bool> m_bypassDialnorm{false};
+  std::atomic<bool> m_bypassDialnormAtmos{true};
 
   std::atomic<std::chrono::nanoseconds> m_fedAudioPts{NO_PTS};
   std::atomic<std::chrono::nanoseconds> m_fedVideoPts{NO_PTS};
   std::atomic<bool> m_started{false};
+  enum class OSPlayState { Unloaded, Playing, Paused };
+  std::atomic<OSPlayState> m_osPlayState{OSPlayState::Unloaded};
+  enum class APIPlayState { Unknown, Playing, Paused };
+  std::atomic<APIPlayState> m_apiPlayState{APIPlayState::Unknown};
+  std::atomic<bool> m_osMediaLoadedEmitted{false};
 
   BitstreamStats m_audioStats{};
   BitstreamStats m_videoStats{};

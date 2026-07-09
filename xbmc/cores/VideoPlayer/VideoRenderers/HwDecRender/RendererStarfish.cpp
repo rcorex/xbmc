@@ -116,28 +116,49 @@ void CRendererStarfish::ManageRenderArea()
       break;
   }
 
-  if ((m_exportedDestRect != m_destRect || m_exportedSourceRect != m_sourceRect) &&
+  bool rectsChanged = m_exportedDestRect != m_destRect || m_exportedSourceRect != m_sourceRect;
+  auto* acbHandle = (m_videoBuffer && m_videoBuffer->GetAcbHandle()) ? m_videoBuffer->GetAcbHandle().get() : nullptr;
+  long currentAcbId = acbHandle ? acbHandle->Id() : 0;
+
+  if ((rectsChanged || (currentAcbId && currentAcbId != m_lastAcbId)) &&
       !m_sourceRect.IsEmpty() && !m_destRect.IsEmpty())
   {
     const auto origRect =
         CRect{0, 0, static_cast<float>(m_sourceWidth), static_cast<float>(m_sourceHeight)};
     using namespace KODI::WINDOWING::WAYLAND;
     auto winSystem = static_cast<CWinSystemWaylandWebOS*>(CServiceBroker::GetWinSystem());
+
     if (winSystem->SupportsExportedWindow())
     {
-      winSystem->SetExportedWindow(origRect, m_sourceRect, m_destRect);
+      if (rectsChanged)
+      {
+        winSystem->SetExportedWindow(origRect, m_sourceRect, m_destRect);
+        m_exportedSourceRect = m_sourceRect;
+        m_exportedDestRect = m_destRect;
+      }
     }
-    else if (m_videoBuffer->GetAcbHandle())
+    else if (currentAcbId && acbHandle)
     {
+      CLog::LogF(LOGINFO, "AcbAPI_setCustomDisplayWindow - AcbId: {}, TaskId: {}, "
+                          "SourceRect: [x:{}, y:{}, w:{}, h:{}], "
+                          "DestRect: [x:{}, y:{}, w:{}, h:{}]",
+                 currentAcbId, acbHandle->TaskId(),
+                 static_cast<long>(m_sourceRect.x1), static_cast<long>(m_sourceRect.y1),
+                 static_cast<long>(m_sourceRect.Width()), static_cast<long>(m_sourceRect.Height()),
+                 static_cast<long>(m_destRect.x1), static_cast<long>(m_destRect.y1),
+                 static_cast<long>(m_destRect.Width()), static_cast<long>(m_destRect.Height()));
+
       AcbAPI_setCustomDisplayWindow(
-          m_videoBuffer->GetAcbHandle()->Id(), static_cast<long>(m_sourceRect.x1),
+          currentAcbId, static_cast<long>(m_sourceRect.x1),
           static_cast<long>(m_sourceRect.y1), static_cast<long>(m_sourceRect.Width()),
           static_cast<long>(m_sourceRect.Height()), static_cast<long>(m_destRect.x1),
           static_cast<long>(m_destRect.y1), static_cast<long>(m_destRect.Width()),
-          static_cast<long>(m_destRect.Height()), false, &m_videoBuffer->GetAcbHandle()->TaskId());
+          static_cast<long>(m_destRect.Height()), false, &acbHandle->TaskId());
+
+      m_lastAcbId = currentAcbId;
+      m_exportedSourceRect = m_sourceRect;
+      m_exportedDestRect = m_destRect;
     }
-    m_exportedSourceRect = m_sourceRect;
-    m_exportedDestRect = m_destRect;
   }
 }
 
@@ -186,6 +207,7 @@ bool CRendererStarfish::RenderCapture(int index, CRenderCapture* capture)
 void CRendererStarfish::UnInit()
 {
   m_configured = false;
+  m_lastAcbId = 0;
 }
 
 void CRendererStarfish::Update()
