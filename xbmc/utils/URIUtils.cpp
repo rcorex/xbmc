@@ -1932,17 +1932,18 @@ CURL URIUtils::AddCredentials(CURL url)
 
 std::string URIUtils::SanitiseUrlEncoding(std::string_view path)
 {
-  std::string out;
-  out.reserve(path.size());
-
   // Firstly look at encoded character capitalization.
   // Some providers (eg. vfs rar) return paths with %2F instead of %2f,
   // which causes problems when comparing paths.
   // This only applies to the hostname element of the url
-  auto protocolEnd{path.find("://")};
+  constexpr std::string_view PROTOCOL_SEP = "://";
+  auto protocolEnd{path.find(PROTOCOL_SEP)};
   if (protocolEnd == std::string::npos)
     return std::string(path);
-  protocolEnd += 3;
+
+  protocolEnd += PROTOCOL_SEP.size();
+  if (protocolEnd >= path.size())
+    return std::string(path);
 
   auto hostEnd{path.find('/', protocolEnd)};
   if (hostEnd == std::string::npos)
@@ -1951,9 +1952,7 @@ std::string URIUtils::SanitiseUrlEncoding(std::string_view path)
   constexpr auto is_hex = [](char c) noexcept
   { return ('0' <= c && c <= '9') || ('a' <= c && c <= 'f') || ('A' <= c && c <= 'F'); };
 
-  if (protocolEnd >= path.size() || hostEnd > path.size())
-    return std::string(path);
-
+  std::string out{path.substr(0, protocolEnd)};
   for (auto it = path.begin() + static_cast<long long>(protocolEnd);
        it != path.begin() + static_cast<long long>(hostEnd); ++it)
   {
@@ -1981,15 +1980,13 @@ std::string URIUtils::SanitiseUrlEncoding(std::string_view path)
   // by GetItemsByPath() to find items when browsing Video -> Files
   // Pattern for DOS drive letter path: "D:/" encoded as "D%3a%2f"
   constexpr std::string_view DOS_DRIVE_PATTERN = "%3a%2f";
-  if (out.size() >= 7 && std::isalpha(static_cast<unsigned char>(out[0])) &&
-      out.compare(1, DOS_DRIVE_PATTERN.length(), DOS_DRIVE_PATTERN) == 0)
+  constexpr size_t DOS_DRIVE_PATTERN_LENGTH =
+      DOS_DRIVE_PATTERN.length() + 1; // +1 for the drive letter
+  if (out.size() >= DOS_DRIVE_PATTERN_LENGTH &&
+      std::isalpha(static_cast<unsigned char>(out[protocolEnd])) &&
+      out.compare(protocolEnd + 1, DOS_DRIVE_PATTERN.length(), DOS_DRIVE_PATTERN) == 0)
     StringUtils::Replace(out, "%2f", "%5c");
 
-  std::string result;
-  result.reserve(protocolEnd + out.size() + (path.size() - hostEnd));
-  result.append(path.substr(0, protocolEnd));
-  result.append(out);
-  result.append(path.substr(hostEnd));
-
-  return result;
+  out += path.substr(hostEnd);
+  return out;
 }
