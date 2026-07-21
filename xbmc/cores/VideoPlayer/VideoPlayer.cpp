@@ -4517,12 +4517,9 @@ void CVideoPlayer::FlushBuffers(double pts, bool accurate, bool sync)
   m_VideoPlayerRadioRDS->Flush();
   m_VideoPlayerAudioID3->Flush();
 
-  // Prevent subtitle loss on platforms with slow hardware flushes: SynchronizeDemuxer stalls 
-  // the video thread flush, causing a GUI timeout. RenderManager then uses a stale pre-seek 
-  // PTS to clear overlays, prematurely destroying newly decoded post-seek subtitles
-  // Force RenderManager to drop its stale PTS immediately
+  // drop queued pre-seek frames to avoid starving RenderManager's buffer pool so post-seek overlays/subtitles do not get dropped
   if (sync)
-    FlushRenderer();
+    m_renderManager.DiscardBuffer();
 
   if (m_playSpeed == DVD_PLAYSPEED_NORMAL || m_playSpeed == DVD_PLAYSPEED_PAUSE ||
       m_processInfo->IsTempoAllowed(static_cast<float>(m_playSpeed) / DVD_PLAYSPEED_NORMAL))

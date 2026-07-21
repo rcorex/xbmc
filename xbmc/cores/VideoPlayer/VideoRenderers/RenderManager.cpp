@@ -1264,6 +1264,7 @@ void CRenderManager::DiscardBuffer()
 
   if(m_presentstep == PRESENT_READY)
     m_presentstep = PRESENT_IDLE;
+  m_presentpts = DVD_NOPTS_VALUE;
   m_presentevent.notifyAll();
 }
 
