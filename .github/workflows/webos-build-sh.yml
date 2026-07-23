@@ -102,7 +102,7 @@ jobs:
             echo "Skipping binary addons. They will not be compiled or restored."
           elif [ "${{ inputs.build_binary_addons }}" == "true" ]; then
             echo "Building PVR, InputStream, and VFS binary addons..."
-            make -j4 -C ../tools/depends/target/binary-addons PREFIX=$PWD/tools/webOS/packaging TARBALLS_LOCATION=$HOME/kodi-deps/tarballs ADDONS="pvr.* inputstream.* vfs.*"
+            make -j4 -C ../tools/depends/target/binary-addons PREFIX=$PWD/tools/webOS/packaging TARBALLS_LOCATION=$HOME/kodi-deps/tarballs ADDONS="pvr.* inputstream.*"
             
             echo "Wiping old backup directory to ensure a clean state..."
             rm -rf $HOME/kodi-addons-backup
@@ -121,8 +121,8 @@ jobs:
             fi
           fi
 
-      - name: Patch webosbrew verify-symbols script (Fix WSL pipe)
-        run: sed -i 's/grep -q/grep > \/dev\/null/g' tools/webOS/verify-symbols.sh
+#      - name: Patch webosbrew verify-symbols script (Fix WSL pipe)
+#        run: sed -i 's/grep -q/grep > \/dev\/null/g' tools/webOS/verify-symbols.sh
 
       - name: Package Kodi app
         working-directory: build
