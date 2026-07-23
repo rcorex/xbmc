@@ -101,8 +101,8 @@ jobs:
           if [ "${{ inputs.include_binary_addons }}" == "false" ]; then
             echo "Skipping binary addons. They will not be compiled or restored."
           elif [ "${{ inputs.build_binary_addons }}" == "true" ]; then
-            echo "Building binary addons..."
-            make -j4 -C ../tools/depends/target/binary-addons PREFIX=$PWD/tools/webOS/packaging TARBALLS_LOCATION=$HOME/kodi-deps/tarballs
+            echo "Building PVR, InputStream, and VFS binary addons..."
+            make -j4 -C ../tools/depends/target/binary-addons PREFIX=$PWD/tools/webOS/packaging TARBALLS_LOCATION=$HOME/kodi-deps/tarballs ADDONS="pvr.* inputstream.* vfs.*"
             
             echo "Wiping old backup directory to ensure a clean state..."
             rm -rf $HOME/kodi-addons-backup
