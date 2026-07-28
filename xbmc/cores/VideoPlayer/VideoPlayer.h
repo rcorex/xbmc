@@ -505,6 +505,7 @@ protected:
   bool OpenDemuxStream();
   void CloseDemuxer();
   void OpenDefaultStreams(bool reset = true);
+  void UpdateHasVideoAudio();
 
   void UpdatePlayState(double timeout);
   void GetGeneralInfo(std::string& strVideoInfo);

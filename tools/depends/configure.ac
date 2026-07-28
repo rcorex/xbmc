@@ -2,10 +2,20 @@ AC_PREREQ(2.59)
 AC_INIT([xbmc-depends], [2.00], [https://github.com/xbmc/xbmc])
 :${CFLAGS=""}
 AC_CONFIG_AUX_DIR([build-aux])
-AC_CONFIG_FILES([native/config.site.native Makefile.include
+# Only touch Makefile.include's mtime if its content actually changed, since every
+# dependency's rebuild stamp depends on it and an unconditional rewrite here would
+# force a full rebuild of all dependencies on every ./configure run.
+AC_CONFIG_FILES([native/config.site.native
+                 Makefile.include.tmp:Makefile.include.in
                  target/config.site target/config-binaddons.site
                  target/Toolchain.cmake target/Toolchain_binaddons.cmake
                  native/Toolchain-Native.cmake])
+AC_CONFIG_COMMANDS([Makefile.include],
+  [if test -f Makefile.include && cmp -s Makefile.include.tmp Makefile.include; then
+     rm -f Makefile.include.tmp
+   else
+     mv -f Makefile.include.tmp Makefile.include
+   fi])
 AC_CANONICAL_HOST
 AC_CANONICAL_BUILD
 
@@ -495,6 +505,10 @@ case $host in
         target_platform=iphoneos
         platform_os="darwin_embedded"
       ;;
+      ios-simulator)
+        target_platform=iphonesimulator
+        platform_os="darwin_embedded"
+      ;;
       macos)
         target_platform=macosx
         platform_os="osx"
@@ -566,7 +580,7 @@ case $host in
 esac
 
 case $use_platform in
-  ios|tvos|macos)
+  ios|ios-simulator|tvos|macos)
     ;;
   webos)
     ;;
@@ -906,13 +920,6 @@ EOF
 
 AC_OUTPUT
 
-if test "$platform_os" = "darwin_embedded"; then
-  if test "$use_platform" = "ios"; then
-    simulator_sdk_path=[`$use_xcrun --sdk iphonesimulator --show-sdk-path`]
-    echo -e "use simulator:\t $simulator_sdk_path"
-  fi
-fi
-
 cp -vf target/config.site $prefix/$deps_dir/share
 cp -vf target/config-binaddons.site $prefix/$tool_dir/share
 cp -vf target/Toolchain.cmake $prefix/$deps_dir/share
@@ -944,4 +951,10 @@ echo -e "depends:\t\t $prefix/$deps_dir"
 if test "$platform_os" = "android"; then
   echo -e "ndk-api-level:\t $use_ndk_api"
   echo -e "build-tools:\t $build_tools_path"
+fi
+if test "$platform_os" = "darwin_embedded"; then
+  if test "$use_platform" = "ios"; then
+    simulator_sdk_path=[`$use_xcrun --sdk iphonesimulator --show-sdk-path`]
+    echo -e "use simulator:\t $simulator_sdk_path"
+  fi
 fi
