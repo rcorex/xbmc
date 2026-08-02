@@ -215,7 +215,7 @@ bool CRenderManager::Configure()
 
     m_playerPort->UpdateRenderInfo(info);
     m_playerPort->UpdateGuiRender(true);
-    m_playerPort->UpdateVideoRender(!m_pRenderer->IsGuiLayer());
+    m_playerPort->UpdateVideoRender(m_pRenderer->HasVideoPlane());
 
     m_queued.clear();
     m_discard.clear();
@@ -231,7 +231,7 @@ bool CRenderManager::Configure()
     m_presentpts = DVD_NOPTS_VALUE;
     m_lateframes = -1;
     m_presentevent.notifyAll();
-    m_renderedOverlay = false;
+    m_renderedDebugOverlay = false;
     m_renderDebug = false;
     m_clockSync.Reset();
     m_dvdClock.SetVsyncAdjust(0);
@@ -350,7 +350,12 @@ void CRenderManager::FrameMove()
     m_bRenderGUI = true;
   }
 
-  m_playerPort->UpdateGuiRender(IsGuiLayer() || firstFrame);
+  m_playerPort->UpdateGuiRender(IsGuiLayer() || !m_pRenderer->HasVideoPlane() || firstFrame);
+
+  // Run libass for the current PTS and cache the output for ConvertLibass
+  // to use during the render pass. PrepareOverlays MarkDirty's on libass
+  // changes and on PGS/DVB/SPU arrival/disappearance.
+  m_overlays.PrepareOverlays(m_presentsource);
 
   ManageCaptures();
 }
@@ -736,7 +741,6 @@ void CRenderManager::Render(bool clear, DWORD flags, DWORD alpha, bool gui)
     if (!m_pRenderer->IsGuiLayer())
       m_pRenderer->Update();
 
-    m_renderedOverlay = m_overlays.HasOverlay(m_presentsource);
     CRect src, dst, view;
     m_pRenderer->GetVideoRect(src, dst, view);
     m_overlays.SetVideoRect(src, dst, view);
@@ -774,7 +778,7 @@ void CRenderManager::Render(bool clear, DWORD flags, DWORD alpha, bool gui)
       m_debugRenderer.Render(src, dst, view);
 
       m_debugTimer.Set(1000ms);
-      m_renderedOverlay = true;
+      m_renderedDebugOverlay = true;
     }
   }
 
@@ -811,25 +815,11 @@ bool CRenderManager::IsGuiLayer()
     if (!m_pRenderer)
       return false;
 
-    if ((m_pRenderer->IsGuiLayer() && IsPresenting()) ||
-        m_renderedOverlay || m_overlays.HasOverlay(m_presentsource))
+    if ((m_pRenderer->IsGuiLayer() && IsPresenting()) || m_renderedDebugOverlay ||
+        m_overlays.HasVisibleOverlay(m_presentsource))
       return true;
 
     if (m_renderDebug && m_debugTimer.IsTimePast())
-      return true;
-  }
-  return false;
-}
-
-bool CRenderManager::IsVideoLayer()
-{
-  {
-    std::unique_lock lock(m_statelock);
-
-    if (!m_pRenderer)
-      return false;
-
-    if (!m_pRenderer->IsGuiLayer())
       return true;
   }
   return false;
@@ -1148,10 +1138,10 @@ void CRenderManager::PrepareNextRender()
   if (!m_showVideo && !m_forceNext)
     return;
 
-  double frameOnScreen = m_dvdClock.GetClock();
-  double frametime = 1.0 /
-                     static_cast<double>(CServiceBroker::GetWinSystem()->GetGfxContext().GetFPS()) *
-                     DVD_TIME_BASE;
+  const double frameOnScreen = m_dvdClock.GetClock();
+  const double frametime =
+      1.0 / static_cast<double>(CServiceBroker::GetWinSystem()->GetGfxContext().GetFPS()) *
+      DVD_TIME_BASE;
 
   m_displayLatency = DVD_MSEC_TO_TIME(
       m_latencyTweak +
@@ -1159,11 +1149,13 @@ void CRenderManager::PrepareNextRender()
       m_videoDelay -
       static_cast<double>(CServiceBroker::GetWinSystem()->GetFrameLatencyAdjustment()));
 
-  double renderPts = frameOnScreen + m_displayLatency;
+  const bool isPaused = m_dvdClock.IsPaused();
+  double renderPts = frameOnScreen;
+  if (!isPaused)
+    renderPts += m_displayLatency;
 
-  double nextFramePts = m_Queue[m_queued.front()].pts;
-  if (m_dvdClock.GetClockSpeed() < 0)
-    nextFramePts = renderPts;
+  const double nextFramePts =
+      m_dvdClock.GetClockSpeed() < 0 ? renderPts : m_Queue[m_queued.front()].pts;
 
   if (m_clockSync.m_enabled)
   {
@@ -1172,14 +1164,15 @@ void CRenderManager::PrepareNextRender()
     m_clockSync.m_errCount ++;
     if (m_clockSync.m_errCount > 30)
     {
-      double average = m_clockSync.m_error / m_clockSync.m_errCount;
+      const double average = m_clockSync.m_error / m_clockSync.m_errCount;
       m_clockSync.m_syncOffset = average;
       m_clockSync.m_error = 0;
       m_clockSync.m_errCount = 0;
 
       m_dvdClock.SetVsyncAdjust(-average);
     }
-    renderPts += frametime / 2 - m_clockSync.m_syncOffset;
+    if (!isPaused)
+      renderPts += frametime / 2 - m_clockSync.m_syncOffset;
   }
   else
   {
@@ -1231,8 +1224,8 @@ void CRenderManager::PrepareNextRender()
       m_queued.pop_front();
     }
 
-    int lateframes = static_cast<int>((renderPts - m_Queue[idx].pts) *
-                                      static_cast<double>(m_fps / DVD_TIME_BASE));
+    const int lateframes = static_cast<int>((renderPts - m_Queue[idx].pts) *
+                                            static_cast<double>(m_fps / DVD_TIME_BASE));
     if (lateframes)
       m_lateframes += lateframes;
     else

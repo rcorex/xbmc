@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2005-2018 Team Kodi
+ *  Copyright (C) 2005-2026 Team Kodi
  *  This file is part of Kodi - https://kodi.tv
  *
  *  SPDX-License-Identifier: GPL-2.0-or-later
@@ -23,6 +23,7 @@
 #include "addons/addoninfo/AddonType.h"
 #include "application/ApplicationComponents.h"
 #include "application/ApplicationPlayer.h"
+#include "application/ApplicationPowerHandling.h"
 #include "dialogs/GUIDialogButtonMenu.h"
 #include "dialogs/GUIDialogKaiToast.h"
 #include "dialogs/GUIDialogSubMenu.h"
@@ -35,6 +36,7 @@
 #include "guilib/GUITextureCallbackManager.h"
 #include "guilib/GUIWindowManager.h"
 #include "guilib/StereoscopicsManager.h"
+#include "interfaces/AnnouncementManager.h"
 #include "messaging/ApplicationMessenger.h"
 #include "messaging/helpers/DialogHelper.h"
 #include "resources/LocalizeStrings.h"
@@ -49,6 +51,8 @@
 #include "utils/log.h"
 #include "video/dialogs/GUIDialogFullScreenInfo.h"
 #include "windowing/WinSystem.h"
+
+#include <set>
 
 using namespace KODI::MESSAGING;
 
@@ -114,6 +118,15 @@ bool CApplicationSkinHandling::LoadSkin(const std::string& skinID)
   }
 
   UnloadSkin();
+
+  if (currentWindowID == WINDOW_SCREENSAVER)
+  {
+    // the screensaver may have just been woken up as part of UnloadSkin(), which navigates back
+    // to whatever window was active before the screensaver kicked in; restore that window
+    // instead of blindly reactivating the (now defunct) screensaver window
+    currentWindowID = CServiceBroker::GetGUI()->GetWindowManager().GetActiveWindow();
+    currentFocusedControlID = -1;
+  }
 
   skin->Start();
 
@@ -243,6 +256,11 @@ void CApplicationSkinHandling::UnloadSkin()
 
   gui->GetAudioManager().Enable(false);
 
+  auto& components = CServiceBroker::GetAppComponents();
+  const auto appPower = components.GetComponent<CApplicationPowerHandling>();
+  if (appPower && appPower->IsInScreenSaver())
+    appPower->WakeUpScreenSaverAndDPMS();
+
   gui->GetWindowManager().DeInitialize();
 
   const std::shared_ptr<CTextureCache> textureCache{CServiceBroker::GetTextureCache()};
@@ -275,6 +293,12 @@ bool CApplicationSkinHandling::LoadCustomWindows()
   std::vector<std::string> vecSkinPath;
   skin->GetSkinPaths(vecSkinPath);
 
+  // A skin can have more than one <res> folder (e.g. a resolution/aspect-matched folder
+  // plus a default fallback folder). The same custom*.xml is commonly present, unchanged,
+  // in more than one of these folders, so track which files have already been processed
+  // to tell an expected duplicate from a genuine window id collision.
+  std::set<std::string> processedSkinFiles;
+
   for (const auto& skinPath : vecSkinPath)
   {
     CLog::Log(LOGINFO, "Loading custom window XMLs from skin path {}", skinPath);
@@ -290,6 +314,9 @@ bool CApplicationSkinHandling::LoadCustomWindows()
         std::string skinFile = URIUtils::GetFileName(item->GetPath());
         if (StringUtils::StartsWithNoCase(skinFile, "custom"))
         {
+          std::string skinFileLower = skinFile;
+          StringUtils::ToLower(skinFileLower);
+
           CXBMCTinyXML xmlDoc;
           if (!xmlDoc.LoadFile(item->GetPath()))
           {
@@ -333,6 +360,20 @@ bool CApplicationSkinHandling::LoadCustomWindows()
           if (id == WINDOW_INVALID ||
               CServiceBroker::GetGUI()->GetWindowManager().GetWindow(windowId))
           {
+            // A skin file of the same name was already successfully loaded from a
+            // higher-priority skin path (e.g. the resolution-matched <res> folder). This is
+            // the expected fallback duplicate from a lower-priority <res> folder, not a
+            // genuine id collision, so skip it quietly.
+            if (id != WINDOW_INVALID &&
+                processedSkinFiles.find(skinFileLower) != processedSkinFiles.end())
+            {
+              CLog::Log(LOGDEBUG,
+                        "Skipping duplicate custom window {} already loaded from a "
+                        "higher-priority skin path",
+                        skinFile);
+              continue;
+            }
+
             // No id specified or id already in use
             CLog::Log(LOGERROR, "No id specified or id already in use for custom window in {}",
                       skinFile);
@@ -382,6 +423,7 @@ bool CApplicationSkinHandling::LoadCustomWindows()
                                                    : CGUIWindow::KEEP_IN_MEMORY);
 
           CServiceBroker::GetGUI()->GetWindowManager().AddCustomWindow(pWindow);
+          processedSkinFiles.insert(skinFileLower);
         }
       }
     }
@@ -404,10 +446,19 @@ void CApplicationSkinHandling::ReloadSkin(bool confirm)
   CGUIMessage msg(GUI_MSG_LOAD_SKIN, -1, gui->GetWindowManager().GetActiveWindow());
   gui->GetWindowManager().SendMessage(msg);
 
+  // Let listeners (e.g. addons with their own custom windows) know the skin is about
+  // to be unloaded before the window manager tears their windows down, since the C++
+  // OnDeinitWindow path gives the script engine no way to react in time.
+  CServiceBroker::GetAnnouncementManager()->Announce(ANNOUNCEMENT::GUI, "OnSkinUnloading");
+
   const std::shared_ptr<CSettings> settings = CServiceBroker::GetSettingsComponent()->GetSettings();
   std::string newSkin = settings->GetString(CSettings::SETTING_LOOKANDFEEL_SKIN);
   if (LoadSkin(newSkin))
   {
+    // The new skin is up and the previous active window has been restored, so listeners
+    // can safely rebuild any windows they had open.
+    CServiceBroker::GetAnnouncementManager()->Announce(ANNOUNCEMENT::GUI, "OnSkinLoaded");
+
     /* The Reset() or SetString() below will cause recursion, so the m_confirmSkinChange boolean is set so as to not prompt the
        user as to whether they want to keep the current skin. */
     if (confirm && m_confirmSkinChange)
@@ -424,6 +475,11 @@ void CApplicationSkinHandling::ReloadSkin(bool confirm)
   }
   else
   {
+    // Tell listeners the reload has failed so anyone that reacted to OnSkinUnloading
+    // doesn't wait forever. The fallback to the default skin below reloads again and
+    // announces its own events.
+    CServiceBroker::GetAnnouncementManager()->Announce(ANNOUNCEMENT::GUI, "OnSkinLoadFailed");
+
     // skin failed to load - we revert to the default only if we didn't fail loading the default
     auto setting = settings->GetSetting(CSettings::SETTING_LOOKANDFEEL_SKIN);
     if (!setting)

@@ -208,12 +208,6 @@ void CFileItemList::Remove(const CFileItem* pItem)
   }
 }
 
-CFileItemList::Iterator CFileItemList::erase(Iterator first, Iterator last)
-{
-  std::unique_lock lock(m_lock);
-  return m_items.erase(first, last);
-}
-
 void CFileItemList::Remove(int iItem)
 {
   std::unique_lock lock(m_lock);
@@ -365,10 +359,13 @@ void CFileItemList::Sort(SortDescription sortDescription)
             sortDescription.sortBy == SortBy::SORT_TITLE ||
             sortDescription.sortBy == SortBy::ORIGINAL_TITLE ||
             sortDescription.sortBy == SortBy::DATE_ADDED ||
-            sortDescription.sortBy == SortBy::RATING || sortDescription.sortBy == SortBy::YEAR ||
+            sortDescription.sortBy == SortBy::RATING ||
+            sortDescription.sortBy == SortBy::USER_RATING ||
+            sortDescription.sortBy == SortBy::MPAA || sortDescription.sortBy == SortBy::YEAR ||
             sortDescription.sortBy == SortBy::PLAYLIST_ORDER ||
             sortDescription.sortBy == SortBy::LAST_PLAYED ||
-            sortDescription.sortBy == SortBy::PLAYCOUNT) ||
+            sortDescription.sortBy == SortBy::PLAYCOUNT ||
+            sortDescription.sortBy == SortBy::TIME) ||
            m_sortIgnoreFolders)
   {
     sortDescription.sortAttributes =

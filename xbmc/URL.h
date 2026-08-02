@@ -42,72 +42,33 @@ public:
   void SetProtocol(std::string strProtocol);
   void SetOptions(std::string strOptions);
   void SetProtocolOptions(std::string strOptions);
-  void SetPort(int port)
-  {
-    m_iPort = port;
-  }
+  void SetPort(int port) { m_iPort = port; }
 
-  bool HasPort() const
-  {
-    return (m_iPort != 0);
-  }
+  bool HasPort() const { return (m_iPort != 0); }
 
-  int GetPort() const
-  {
-    return m_iPort;
-  }
+  int GetPort() const { return m_iPort; }
 
-  const std::string& GetHostName() const
-  {
-    return m_strHostName;
-  }
+  const std::string& GetHostName() const { return m_strHostName; }
 
-  const std::string& GetDomain() const
-  {
-    return m_strDomain;
-  }
+  const std::string& GetDomain() const { return m_strDomain; }
 
-  const std::string& GetUserName() const
-  {
-    return m_strUserName;
-  }
+  const std::string& GetUserName() const { return m_strUserName; }
 
-  const std::string& GetPassWord() const
-  {
-    return m_strPassword;
-  }
+  const std::string& GetPassWord() const { return m_strPassword; }
 
-  const std::string& GetFileName() const
-  {
-    return m_strFileName;
-  }
+  const std::string& GetFileName() const { return m_strFileName; }
 
-  const std::string& GetProtocol() const
-  {
-    return m_strProtocol;
-  }
+  const std::string& GetProtocol() const { return m_strProtocol; }
 
   std::string GetTranslatedProtocol() const;
 
-  const std::string& GetFileType() const
-  {
-    return m_strFileType;
-  }
+  const std::string& GetFileType() const { return m_strFileType; }
 
-  const std::string& GetShareName() const
-  {
-      return m_strShareName;
-  }
+  const std::string& GetShareName() const { return m_strShareName; }
 
-  const std::string& GetOptions() const
-  {
-    return m_strOptions;
-  }
+  const std::string& GetOptions() const { return m_strOptions; }
 
-  const std::string& GetProtocolOptions() const
-  {
-    return m_strProtocolOptions;
-  }
+  const std::string& GetProtocolOptions() const { return m_strProtocolOptions; }
 
   std::string GetFileNameWithoutPath() const; /* return the filename excluding path */
 
@@ -121,8 +82,9 @@ public:
   static std::string GetRedacted(std::string path);
   bool IsLocal() const;
   bool IsLocalHost() const;
-  static bool IsFileOnly(const std::string &url); ///< return true if there are no directories in the url.
-  static bool IsFullPath(const std::string &url); ///< return true if the url includes the full path
+  static bool IsFileOnly(
+      const std::string& url); ///< return true if there are no directories in the url.
+  static bool IsFullPath(const std::string& url); ///< return true if the url includes the full path
   static std::string Decode(std::string_view strURLData);
   static std::string Encode(std::string_view strURLData);
 
@@ -150,19 +112,19 @@ public:
    */
   bool IsFileType(std::string_view type) const { return m_strFileType == type; }
 
-  void GetOptions(std::map<std::string, std::string> &options) const;
-  bool HasOption(const std::string &key) const;
-  bool GetOption(const std::string &key, std::string &value) const;
-  std::string GetOption(const std::string &key) const;
-  void SetOption(const std::string &key, const std::string &value);
-  void RemoveOption(const std::string &key);
+  void GetOptions(std::map<std::string, std::string>& options) const;
+  bool HasOption(const std::string& key) const;
+  bool GetOption(const std::string& key, std::string& value) const;
+  std::string GetOption(const std::string& key) const;
+  void SetOption(const std::string& key, const std::string& value);
+  void RemoveOption(const std::string& key);
 
-  void GetProtocolOptions(std::map<std::string, std::string> &options) const;
-  bool HasProtocolOption(const std::string &key) const;
-  bool GetProtocolOption(const std::string &key, std::string &value) const;
-  std::string GetProtocolOption(const std::string &key) const;
-  void SetProtocolOption(const std::string &key, const std::string &value);
-  void RemoveProtocolOption(const std::string &key);
+  void GetProtocolOptions(std::map<std::string, std::string>& options) const;
+  bool HasProtocolOption(const std::string& key) const;
+  bool GetProtocolOption(const std::string& key, std::string& value) const;
+  std::string GetProtocolOption(const std::string& key) const;
+  void SetProtocolOption(const std::string& key, const std::string& value);
+  void RemoveProtocolOption(const std::string& key);
 
   bool HasExtension(std::string_view extensions) const;
   std::string GetExtension() const;

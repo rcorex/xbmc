@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2005-2018 Team Kodi
+ *  Copyright (C) 2005-2026 Team Kodi
  *  This file is part of Kodi - https://kodi.tv
  *
  *  SPDX-License-Identifier: GPL-2.0-or-later
@@ -28,6 +28,7 @@
 #include <atomic>
 #include <chrono>
 #include <memory>
+#include <optional>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -49,6 +50,8 @@ struct SPlayerState
     menuType = MenuType::NONE;
     chapter = 0;
     chapters.clear();
+    rawChapters.clear();
+    m_bookmarks.clear();
     canpause = false;
     canseek = false;
     cantempo = false;
@@ -76,9 +79,17 @@ struct SPlayerState
   MenuType menuType;
   bool streamsReady;
 
-  int chapter; // 1-based current chapter. <=0 means no chapter / unknown
-  // name and start timestamp of chapters.
+  // 1-based current chapter, numbered among the chapters visible to the user (i.e. excluding
+  // chapters fully hidden by an EDL cut). <=0 means no chapter / unknown
+  int chapter;
+  // name and start timestamp of chapters visible to the user (chapters fully contained within
+  // an EDL cut are omitted).
   std::vector<std::pair<std::string, std::chrono::milliseconds>> chapters;
+  // for each entry in `chapters`, the corresponding 1-based chapter index reported by the
+  // demuxer/inputstream, used to translate a visible chapter number back to a seekable one.
+  std::vector<int> rawChapters;
+  // position of the bookmarks
+  std::vector<std::chrono::milliseconds> m_bookmarks;
 
   bool canpause;            // pvr: can pause the current playing item
   bool canseek;             // pvr: can seek in the current playing item
@@ -218,6 +229,7 @@ public:
   SelectionStream& Get(StreamType type, int index);
   const SelectionStream& Get(StreamType type, int index) const;
   bool Get(StreamType type, StreamFlags flag, SelectionStream& out);
+  bool Contains(StreamType type, int source, int64_t demuxerId, int id) const;
   void Clear(StreamType type, StreamSource source);
   int Source(StreamSource source, const std::string& filename);
   void Update(SelectionStream& s);
@@ -333,8 +345,11 @@ public:
   int GetChapterCount() const override;
   int GetChapter() const override;
   void GetChapterName(std::string& strChapterName, int chapterIdx = -1) const override;
-  int64_t GetChapterPos(int chapterIdx = -1) const override;
+  int64_t GetChapterPos(int chapterIdx = -1) const override; // chapter start ts in seconds
   int  SeekChapter(int iChapter) override;
+  std::vector<std::chrono::milliseconds> GetBookmarks() const override;
+  bool HasBookmarks() const;
+  void SetBookmarks(const std::vector<std::chrono::milliseconds>& bookmarks) override;
 
   void SeekTime(int64_t iTime) override;
   bool SeekTimeRelative(int64_t iTime) override;
@@ -358,6 +373,7 @@ public:
   unsigned int GetOrientation() const override;
   void TriggerUpdateResolution() override;
   bool IsRenderingVideo() const override;
+  bool HasVisibleOverlay() const override;
   bool IsLiveStream() const override;
   bool Supports(EINTERLACEMETHOD method) const override;
   EINTERLACEMETHOD GetDeinterlacingMethodDefault() const override;
@@ -470,6 +486,7 @@ protected:
   void HandlePlaySpeed();
   bool IsInMenuInternal() const;
   void SynchronizeDemuxer();
+  void QueueAutoSceneSkip(std::chrono::milliseconds seekTime);
   void CheckAutoSceneSkip();
   bool CheckContinuity(CCurrentStream& current, DemuxPacket* pPacket);
   bool CheckSceneSkip(const CCurrentStream& current);
@@ -489,6 +506,7 @@ protected:
   bool OpenDemuxStream();
   void CloseDemuxer();
   void OpenDefaultStreams(bool reset = true);
+  void UpdateHasVideoAudio();
 
   void UpdatePlayState(double timeout);
   void GetGeneralInfo(std::string& strVideoInfo);
@@ -503,6 +521,14 @@ protected:
 
   void UpdateFileItemStreamDetails(CFileItem& item, UpdateStreamDetails update);
   int GetPreviousChapter();
+  std::optional<std::chrono::milliseconds> GetChapterPosMs(int chapterIdx = -1) const;
+  // Translate a 1-based visible chapter number (as seen by GetChapter()/GetChapterCount())
+  // to the 1-based chapter index expected by the demuxer/inputstream. Falls back to
+  // returning visibleChapter unchanged if no mapping is available yet.
+  int ToRawChapter(int visibleChapter) const;
+  int GetPreviousBookmark(std::chrono::milliseconds ts);
+  int GetNextBookmark(std::chrono::milliseconds ts);
+  std::optional<std::chrono::milliseconds> GetBookmarkPos(int idx);
 
   bool m_players_created;
 

@@ -926,6 +926,12 @@ extern "C"
     ///
     bool force_connected;
 
+    /// @brief Flag to auto-connect this port when a game session begins
+    ///
+    /// Set to false to start this port disconnected.
+    ///
+    bool autoconnect;
+
     /// @brief The list of devices that can be connected to the port
     game_input_device* accepted_devices;
 
@@ -1282,6 +1288,8 @@ extern "C"
     GAME_ERROR(__cdecl* RCGetGameIDUrl)(const AddonInstance_Game*, char**, const char*);
     GAME_ERROR(__cdecl* RCGetPatchFileUrl)
     (const AddonInstance_Game*, char**, const char*, const char*, unsigned int);
+    GAME_ERROR(__cdecl* SetRetroAchievementsCredentials)
+    (const AddonInstance_Game*, const char*, const char*);
     GAME_ERROR(__cdecl* RCPostRichPresenceUrl)
     (const AddonInstance_Game*,
      char**,
@@ -1293,7 +1301,23 @@ extern "C"
     GAME_ERROR(__cdecl* RCEnableRichPresence)(const AddonInstance_Game*, const char*);
     GAME_ERROR(__cdecl* RCGetRichPresenceEvaluation)
     (const AddonInstance_Game*, char**, unsigned int);
+    GAME_ERROR(__cdecl* ActivateAchievement)(const AddonInstance_Game*, unsigned int, const char*);
+    GAME_ERROR(__cdecl* GetCheevoUrlId)
+    (const AddonInstance_Game*,
+     void(__cdecl*)(const void*, const char*, unsigned int),
+     const void*);
     GAME_ERROR(__cdecl* RCResetRuntime)(const AddonInstance_Game*);
+    bool(__cdecl* GetEjectState)(const AddonInstance_Game*);
+    GAME_ERROR(__cdecl* SetEjectState)(const AddonInstance_Game*, bool);
+    unsigned int(__cdecl* GetImageIndex)(const AddonInstance_Game*);
+    GAME_ERROR(__cdecl* SetImageIndex)(const AddonInstance_Game*, unsigned int);
+    unsigned int(__cdecl* GetImageCount)(const AddonInstance_Game*);
+    GAME_ERROR(__cdecl* AddImageIndex)(const AddonInstance_Game*);
+    GAME_ERROR(__cdecl* ReplaceImageIndex)(const AddonInstance_Game*, unsigned int, const char*);
+    GAME_ERROR(__cdecl* RemoveImageIndex)(const AddonInstance_Game*, unsigned int);
+    GAME_ERROR(__cdecl* SetInitialImage)(const AddonInstance_Game*, unsigned int, const char*);
+    char*(__cdecl* GetImagePath)(const AddonInstance_Game*, unsigned int);
+    char*(__cdecl* GetImageLabel)(const AddonInstance_Game*, unsigned int);
     void(__cdecl* FreeString)(const AddonInstance_Game*, char*);
   } KodiToAddonFuncTable_Game;
 

@@ -102,8 +102,7 @@ void CAdvancedSettings::OnSettingsLoaded()
     std::ranges::transform(m_settingsLoadedCallbacks, std::back_inserter(callbacks),
                            [](const auto& pair) { return pair.second; });
   }
-  for (const auto& callback : callbacks)
-    callback();
+  std::ranges::for_each(callbacks, &AdvancedSettingsCallback::operator());
 }
 
 void CAdvancedSettings::OnSettingsUnloaded()
@@ -256,7 +255,7 @@ void CAdvancedSettings::Initialize()
   m_fullScreenOnMovieStart = true;
   m_cachePath = "special://temp/";
 
-  m_videoFilenameIdentifierRegExp = R"([\{\[](\w+?)(?:id)?[-=](\w+)[\}|\]])";
+  m_videoFilenameAttributePairsRegExp = R"([\[{]\s*(?<key>\w+)\s*[=\-](?<value>[^\]}]+)[\]}])";
   m_videoCleanDateTimeRegExp = "(.*[^ _\\,\\.\\(\\)\\[\\]\\-])[ _\\.\\(\\)\\[\\]\\-]+(19[0-9][0-9]|20[0-9][0-9])([ _\\,\\.\\(\\)\\[\\]\\-]|[^0-9]$)?";
 
   m_videoCleanStringRegExps.clear();
@@ -304,7 +303,7 @@ void CAdvancedSettings::Initialize()
                                         m_allExcludeFromScanRegExps.end());
 
   m_folderStackStrings = {
-      "^(.*?)[ _.-]*((?:cd|dvd|p(?:(?:ar)?t)|dis[ck])[ _.-]*[0-9])$",
+      "^(.+?)[ _.-]*((?:cd|dvd|p(?:(?:ar)?t)|dis[ck])[ _.-]*[0-9])$",
       "()((?:p(?:(?:ar)?t)[ _.-]*[0-9]))$",
   };
   m_folderStackRegExps = CompileRegexes(m_folderStackStrings);
@@ -401,6 +400,7 @@ void CAdvancedSettings::Initialize()
   m_bVideoLibraryCleanOnUpdate = false;
   m_bVideoLibraryUseFastHash = true;
   m_bVideoScannerIgnoreErrors = false;
+  m_metadataSourcesPriv = "tmdb|imdb|tvdb|anidb|";
   m_iVideoLibraryDateAdded = 1; // prefer mtime over ctime and current time
   m_minimumEpisodePlaylistDuration = 5 * 60; // 5 minutes
   m_disableEpisodeRanges = false;
@@ -408,6 +408,8 @@ void CAdvancedSettings::Initialize()
   m_caseSensitiveLocalArtMatch = true; // case sensitive local art matching
   m_bNoRemoteArtWithLocalScraper =
       false; // If local nfo file refers to online art, it will be retrieved
+  m_ignoreFolderNamesInArchives =
+      true; // Whether the folder name inside an archive (if present) should be ignored when determining the movie name
 
   m_iEpgUpdateCheckInterval = 300; /* Check every X seconds, if EPG data need to be updated. This does not mean that
                                       every X seconds an EPG update is actually triggered, it's just the interval how
@@ -718,7 +720,7 @@ void CAdvancedSettings::ParseSettingsFile(const std::string &file)
     if (pVideoExcludes)
       GetCustomRegexps(pVideoExcludes, m_videoCleanStringRegExps);
 
-    XMLUtils::GetString(pElement, "filenameidentifier", m_videoFilenameIdentifierRegExp);
+    XMLUtils::GetString(pElement, "filenameattributepairs", m_videoFilenameAttributePairsRegExp);
     XMLUtils::GetString(pElement,"cleandatetime", m_videoCleanDateTimeRegExp);
     XMLUtils::GetString(pElement,"ppffmpegpostprocessing",m_videoPPFFmpegPostProc);
     XMLUtils::GetInt(pElement,"vdpauscaling",m_videoVDPAUScaling);
@@ -824,7 +826,7 @@ void CAdvancedSettings::ParseSettingsFile(const std::string &file)
 
     //0 = disable fps detect, 1 = only detect on timestamps with uniform spacing, 2 detect on all timestamps
     XMLUtils::GetInt(pElement, "fpsdetect", m_videoFpsDetect, 0, 2);
-    XMLUtils::GetFloat(pElement, "maxtempo", m_maxTempo, 1.5, 2.1);
+    XMLUtils::GetFloat(pElement, "maxtempo", m_maxTempo, 1.5, 2.0);
     XMLUtils::GetBoolean(pElement, "preferstereostream", m_videoPreferStereoStream);
 
     // Store global display latency settings
@@ -913,12 +915,22 @@ void CAdvancedSettings::ParseSettingsFile(const std::string &file)
     XMLUtils::GetInt(pElement, "minimumepisodeplaylistduration", m_minimumEpisodePlaylistDuration);
     XMLUtils::GetBoolean(pElement, "disableepisoderanges", m_disableEpisodeRanges);
     XMLUtils::GetBoolean(pElement, "noremoteartwithlocalscraper", m_bNoRemoteArtWithLocalScraper);
+    XMLUtils::GetBoolean(pElement, "ignorefoldernamesinarchives", m_ignoreFolderNamesInArchives);
   }
 
   pElement = pRootElement->FirstChildElement("videoscanner");
   if (pElement)
   {
     XMLUtils::GetBoolean(pElement, "ignoreerrors", m_bVideoScannerIgnoreErrors);
+
+    // Adjust the builtin list with the advanced setting then prepare for use.
+    if (const TiXmlElement* elem = pElement->FirstChildElement("metadatasources"); elem != nullptr)
+      GetCustomExtensions(elem, m_metadataSourcesPriv);
+
+    StringUtils::ToLower(m_metadataSourcesPriv);
+    const std::vector<std::string> split = StringUtils::Split(m_metadataSourcesPriv, '|');
+    m_videoScannerMetadataSources = std::unordered_set<std::string>(
+        std::make_move_iterator(split.begin()), std::make_move_iterator(split.end()));
   }
 
   // Backward-compatibility of ExternalPlayer config
@@ -1235,23 +1247,19 @@ void CAdvancedSettings::ParseSettingsFile(const std::string &file)
     const TiXmlElement* pSortDecription = pPVR->FirstChildElement("pvrrecordings");
     if (pSortDecription)
     {
-      constexpr const char* XML_SORTMETHOD = "sortmethod";
-      auto sortMethod = static_cast<int>(SortBy::NONE);
       static constexpr CSet validSortMethods{SortBy::LABEL,          SortBy::DATE,
                                              SortBy::SIZE,           SortBy::FILE,
                                              SortBy::EPISODE_NUMBER, SortBy::PROVIDER};
-      XMLUtils::GetInt(pSortDecription, XML_SORTMETHOD, sortMethod, static_cast<int>(SortBy::NONE),
-                       static_cast<int>(SortBy::USER_PREFERENCE));
-      if (validSortMethods.contains(static_cast<SortBy>(sortMethod)))
+      std::string smString;
+      XMLUtils::GetString(pSortDecription, "sortmethod", smString);
+      const auto sortMethod = SortUtils::SortMethodFromString(smString);
+      if (validSortMethods.contains(sortMethod))
       {
-        int sortOrder;
-        constexpr const char* XML_SORTORDER = "sortorder";
-        if (XMLUtils::GetInt(pSortDecription, XML_SORTORDER, sortOrder,
-                             static_cast<int>(SortOrder::ASCENDING),
-                             static_cast<int>(SortOrder::DESCENDING)))
+        std::string soString;
+        if (XMLUtils::GetString(pSortDecription, "sortorder", soString))
         {
-          m_PVRDefaultSortOrder.sortBy = static_cast<SortBy>(sortMethod);
-          m_PVRDefaultSortOrder.sortOrder = static_cast<SortOrder>(sortOrder);
+          m_PVRDefaultSortOrder.sortBy = sortMethod;
+          m_PVRDefaultSortOrder.sortOrder = SortUtils::SortOrderFromString(soString);
         }
       }
     }
@@ -1296,9 +1304,18 @@ void CAdvancedSettings::ParseSettingsFile(const std::string &file)
   if (!seekSteps.empty())
   {
     m_seekSteps.clear();
-    std::vector<std::string> steps = StringUtils::Split(seekSteps, ',');
-    for (const auto& step : steps)
-      m_seekSteps.emplace_back(std::atoi(step.c_str()));
+    const auto steps = StringUtils::Split(seekSteps, ',');
+    try
+    {
+      std::ranges::transform(steps, std::back_inserter(m_seekSteps),
+                             [](const auto& step) { return std::stoi(step); });
+    }
+    catch (const std::exception& e)
+    {
+      CLog::Log(LOGERROR, R"(Error parsing seeksteps (="{}"): {}\n Clearing all values)", seekSteps,
+                e.what());
+      m_seekSteps.clear();
+    }
   }
 
   XMLUtils::GetBoolean(pRootElement, "opengldebugging", m_openGlDebugging);

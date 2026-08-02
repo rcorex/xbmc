@@ -6,12 +6,15 @@
  *  See LICENSES/README.md for more information.
  */
 
+#include "Edl/EdlParsers/MultipleEpisodeEdlParser.h"
 #include "FileItem.h"
 #include "ServiceBroker.h"
 #include "cores/VideoPlayer/Edl.h"
 #include "settings/AdvancedSettings.h"
 #include "settings/SettingsComponent.h"
 #include "test/TestUtils.h"
+#include "video/VideoDatabase.h"
+#include "video/VideoInfoTag.h"
 
 #include <chrono>
 #include <cmath>
@@ -35,7 +38,7 @@ TEST_F(TestEdl, TestParsingMplayerTimeBasedEDL)
   CFileItem mediaItem;
   mediaItem.SetPath(
       XBMC_REF_FILE_PATH("xbmc/cores/VideoPlayer/Edl/test/testdata/mplayertimebased.mkv"));
-  const bool found = edl.ReadEditDecisionLists(mediaItem, 0);
+  const bool found = edl.ReadEditDecisionLists(mediaItem, 0, 0ms);
   // expect kodi to be able to parse the file correctly
   EXPECT_EQ(found, true);
   // the file has 5 interest points: 2 scenemarkers, 1 mute, 1 cut and 1 commbreak
@@ -79,7 +82,7 @@ TEST_F(TestEdl, TestParsingMplayerTimeBasedEDL)
   EXPECT_EQ(edl.GetSceneMarkers().at(0),
             edl.GetTimeWithoutCuts(duration_cast<std::chrono::milliseconds>(255.3s)));
   // one of them only has start defined, at 720.1 secs
-  EXPECT_EQ(edl.GetSceneMarkers().at(1),
+  EXPECT_EQ(edl.GetSceneMarkers().at(2),
             edl.GetTimeWithoutCuts(duration_cast<std::chrono::milliseconds>(720.1s)));
 
   // commbreaks
@@ -123,7 +126,7 @@ TEST_F(TestEdl, TestParsingMplayerTimeBasedInterleavedCutsEDL)
   CFileItem mediaItem;
   mediaItem.SetPath(XBMC_REF_FILE_PATH(
       "xbmc/cores/VideoPlayer/Edl/test/testdata/mplayertimebasedinterleavedcuts.mkv"));
-  const bool found = edl.ReadEditDecisionLists(mediaItem, 0);
+  const bool found = edl.ReadEditDecisionLists(mediaItem, 0, 0ms);
   // expect kodi to be able to parse the file correctly
   EXPECT_EQ(found, true);
   EXPECT_EQ(edl.GetEditList().size(), 2);
@@ -153,7 +156,7 @@ TEST_F(TestEdl, TestParsingMplayerFrameBasedEDL)
   CFileItem mediaItem;
   mediaItem.SetPath(
       XBMC_REF_FILE_PATH("xbmc/cores/VideoPlayer/Edl/test/testdata/mplayerframebased.mkv"));
-  const bool found = edl.ReadEditDecisionLists(mediaItem, fps);
+  const bool found = edl.ReadEditDecisionLists(mediaItem, fps, 0ms);
   // expect kodi to be able to parse the file correctly
   EXPECT_EQ(found, true);
   EXPECT_EQ(edl.HasEdits(), true);
@@ -180,7 +183,7 @@ TEST_F(TestEdl, TestParsingMplayerTimeBasedMixedEDL)
   CFileItem mediaItem;
   mediaItem.SetPath(
       XBMC_REF_FILE_PATH("xbmc/cores/VideoPlayer/Edl/test/testdata/mplayertimebasedmixed.mkv"));
-  bool found = edl.ReadEditDecisionLists(mediaItem, 0);
+  bool found = edl.ReadEditDecisionLists(mediaItem, 0, 0ms);
   // expect kodi to be able to parse the file correctly
   EXPECT_EQ(found, true);
   EXPECT_EQ(edl.HasEdits(), true);
@@ -210,7 +213,7 @@ TEST_F(TestEdl, TestParsingVideoRedoEDL)
   // this is an edl file in VideoReDo format
   CFileItem mediaItem;
   mediaItem.SetPath(XBMC_REF_FILE_PATH("xbmc/cores/VideoPlayer/Edl/test/testdata/videoredo.mkv"));
-  bool found = edl.ReadEditDecisionLists(mediaItem, 0);
+  bool found = edl.ReadEditDecisionLists(mediaItem, 0, 0ms);
   EXPECT_EQ(found, true);
   EXPECT_EQ(edl.HasEdits(), true);
   // videoredo only supports cuts or scenemarkers, hence the editlist should be empty. Raw editlist should contain the cuts.
@@ -233,7 +236,7 @@ TEST_F(TestEdl, TestSnapStreamEDL)
   // this is an edl file in SnapStream BeyondTV format
   CFileItem mediaItem;
   mediaItem.SetPath(XBMC_REF_FILE_PATH("xbmc/cores/VideoPlayer/Edl/test/testdata/snapstream.mkv"));
-  const bool found = edl.ReadEditDecisionLists(mediaItem, 0);
+  const bool found = edl.ReadEditDecisionLists(mediaItem, 0, 0ms);
   EXPECT_EQ(found, true);
   // this format only supports commbreak types
   EXPECT_EQ(edl.HasEdits(), true);
@@ -255,12 +258,12 @@ TEST_F(TestEdl, TestComSkipVersion1EDL)
   CFileItem mediaItem;
   mediaItem.SetPath(
       XBMC_REF_FILE_PATH("xbmc/cores/VideoPlayer/Edl/test/testdata/comskipversion1.mkv"));
-  bool found = edl.ReadEditDecisionLists(mediaItem, 0);
+  bool found = edl.ReadEditDecisionLists(mediaItem, 0, 0ms);
   // fps was not supplied, kodi will not be able to process the file
   EXPECT_EQ(found, false);
   // parse the file again this time supplying 60 fps
   const float fps = 60;
-  found = edl.ReadEditDecisionLists(mediaItem, fps);
+  found = edl.ReadEditDecisionLists(mediaItem, fps, 0ms);
   EXPECT_EQ(found, true);
   EXPECT_EQ(edl.HasEdits(), true);
   EXPECT_EQ(edl.GetCutMarkers().empty(), true);
@@ -283,7 +286,7 @@ TEST_F(TestEdl, TestComSkipVersion2EDL)
   CFileItem mediaItem;
   mediaItem.SetPath(
       XBMC_REF_FILE_PATH("xbmc/cores/VideoPlayer/Edl/test/testdata/comskipversion2.mkv"));
-  const bool found = edl.ReadEditDecisionLists(mediaItem, 0);
+  const bool found = edl.ReadEditDecisionLists(mediaItem, 0, 0ms);
   EXPECT_EQ(found, true);
   // fps is obtained from the file as it always takes precedence (note we supplied 0 above),
   // the EDL file has the value of 2500 for fps. kodi converts this to 25 fps by dividing by a factor of 100
@@ -338,7 +341,7 @@ TEST_F(TestEdl, TestCommBreakAdvancedSettings)
   CFileItem mediaItem;
   mediaItem.SetPath(
       XBMC_REF_FILE_PATH("xbmc/cores/VideoPlayer/Edl/test/testdata/edlautowindautowait.mkv"));
-  bool found = edl.ReadEditDecisionLists(mediaItem, 0);
+  bool found = edl.ReadEditDecisionLists(mediaItem, 0, 0ms);
   EXPECT_EQ(found, true);
   // confirm the start and end times of all the commbreaks match
   EXPECT_EQ(edl.GetEditList().size(), 5);
@@ -358,7 +361,7 @@ TEST_F(TestEdl, TestCommBreakAdvancedSettings)
   advancedSettings->m_iEdlCommBreakAutowind = 3; // secs
   EXPECT_EQ(advancedSettings->m_iEdlCommBreakAutowait, 3);
   EXPECT_EQ(advancedSettings->m_iEdlCommBreakAutowind, 3);
-  found = edl.ReadEditDecisionLists(mediaItem, 0);
+  found = edl.ReadEditDecisionLists(mediaItem, 0, 0ms);
   EXPECT_EQ(edl.GetEditList().size(), 5);
   // the second edit has a duration smaller than the autowait
   // this moves the start time to the end of the edit
@@ -408,7 +411,7 @@ TEST_F(TestEdl, TestCommBreakAdvancedSettingsRemoveSmallCommbreaks)
   CFileItem mediaItem;
   mediaItem.SetPath(
       XBMC_REF_FILE_PATH("xbmc/cores/VideoPlayer/Edl/test/testdata/edlautowindautowait.mkv"));
-  const bool found = edl.ReadEditDecisionLists(mediaItem, 0);
+  const bool found = edl.ReadEditDecisionLists(mediaItem, 0, 0ms);
   EXPECT_EQ(found, true);
   EXPECT_EQ(edl.GetEditList().size(), 3);
 }
@@ -437,7 +440,7 @@ TEST_F(TestEdl, TestMergeSmallCommbreaks)
   CFileItem mediaItem;
   mediaItem.SetPath(
       XBMC_REF_FILE_PATH("xbmc/cores/VideoPlayer/Edl/test/testdata/edlautowindautowait.mkv"));
-  const bool found = edl.ReadEditDecisionLists(mediaItem, 0);
+  const bool found = edl.ReadEditDecisionLists(mediaItem, 0, 0ms);
   EXPECT_EQ(found, true);
   // kodi should merge all commbreaks into a single one starting at the first point (0)
   // and ending at the last edit time
@@ -470,7 +473,7 @@ TEST_F(TestEdl, TestMergeSmallCommbreaksAdvanced)
   CFileItem mediaItem;
   mediaItem.SetPath(
       XBMC_REF_FILE_PATH("xbmc/cores/VideoPlayer/Edl/test/testdata/edlautowindautowait.mkv"));
-  const bool found = edl.ReadEditDecisionLists(mediaItem, 0);
+  const bool found = edl.ReadEditDecisionLists(mediaItem, 0, 0ms);
   EXPECT_EQ(found, true);
   // kodi should merge all commbreaks into two
   EXPECT_EQ(edl.GetEditList().size(), 2);
@@ -478,4 +481,467 @@ TEST_F(TestEdl, TestMergeSmallCommbreaksAdvanced)
   EXPECT_EQ(edl.GetEditList().at(0).end - edl.GetEditList().at(0).start, 32s - 10s);
   // 4th, 5th and 6th commbreaks joined
   EXPECT_EQ(edl.GetEditList().at(1).end - edl.GetEditList().at(1).start, 65100ms - 37s);
+}
+
+TEST_F(TestEdl, TestMultipleEpisodeEdlProcess)
+{
+  // Helper: build an EpisodeFileMap entry with a bookmark at the given time (seconds)
+  auto testEntry = [](int episode, double bookmarkTimeSec) -> EpisodeFileMapEntry
+  {
+    EpisodeInformation info;
+    info.season = 1;
+    info.episode = episode;
+    info.bookmark.timeInSeconds = bookmarkTimeSec;
+    info.bookmark.totalTimeInSeconds = 3600.0;
+    info.bookmark.type = CBookmark::EPISODE;
+    return {"video.mkv", info};
+  };
+
+  // Helper: build a CFileItem tagged as the given episode
+  auto testItem = [](int episode) -> CFileItem
+  {
+    CFileItem item;
+    item.SetPath("/path/to/video.mkv");
+    CVideoInfoTag* tag = item.GetVideoInfoTag();
+    tag->m_type = MediaTypeEpisode;
+    tag->m_iIdShow = 1;
+    tag->m_iFileId = 1;
+    tag->m_iSeason = 1;
+    tag->m_iEpisode = episode;
+    return item;
+  };
+
+  constexpr std::chrono::milliseconds fileDurationMs = 3600s; // 60 minutes
+
+  // Scenario 1: 3-episode file, playing the middle episode (ep 2).
+  // Ep1=0s, Ep2=1200s (20min), Ep3=2400s (40min). File=60min.
+  // Expect CUT [0 - 20min] and CUT [40min - 60min].
+  {
+    EpisodeFileMap fileMap;
+    fileMap.insert(testEntry(1, 0.0));
+    fileMap.insert(testEntry(2, 1200.0));
+    fileMap.insert(testEntry(3, 2400.0));
+
+    const auto item = testItem(2);
+    const auto result = CMultipleEpisodeEdlParser::Process(item, 0, fileDurationMs, fileMap);
+
+    EXPECT_EQ(result.GetEdits().size(), 2);
+    EXPECT_EQ(result.GetEdits().at(0).edit.action, Action::CUT);
+    EXPECT_EQ(result.GetEdits().at(0).edit.start, 0ms);
+    EXPECT_EQ(result.GetEdits().at(0).edit.end, 1200000ms);
+    EXPECT_EQ(result.GetEdits().at(1).edit.action, Action::CUT);
+    EXPECT_EQ(result.GetEdits().at(1).edit.start, 2400000ms);
+    EXPECT_EQ(result.GetEdits().at(1).edit.end, std::chrono::milliseconds(fileDurationMs));
+  }
+
+  // Scenario 2: 2-episode file, playing the first episode.
+  // Ep1=0s, Ep2=1800s (30min). File=60min.
+  // start=0 → no leading CUT; end=30min → CUT [30min - 60min].
+  {
+    EpisodeFileMap fileMap;
+    fileMap.insert(testEntry(1, 0.0));
+    fileMap.insert(testEntry(2, 1800.0));
+
+    const auto item = testItem(1);
+    const auto result = CMultipleEpisodeEdlParser::Process(item, 0, fileDurationMs, fileMap);
+
+    EXPECT_EQ(result.GetEdits().size(), 1);
+    EXPECT_EQ(result.GetEdits().at(0).edit.start, 1800000ms);
+    EXPECT_EQ(result.GetEdits().at(0).edit.end, std::chrono::milliseconds(fileDurationMs));
+  }
+
+  // Scenario 3: 2-episode file, playing the last episode.
+  // Ep1=0s, Ep2=1500s (25min). File=60min.
+  // start=25min → CUT [0 - 25min]; no next ep → end=length, no trailing CUT.
+  {
+    EpisodeFileMap fileMap;
+    fileMap.insert(testEntry(1, 0.0));
+    fileMap.insert(testEntry(2, 1500.0));
+
+    const auto item = testItem(2);
+    const auto result = CMultipleEpisodeEdlParser::Process(item, 0, fileDurationMs, fileMap);
+
+    EXPECT_EQ(result.GetEdits().size(), 1);
+    EXPECT_EQ(result.GetEdits().at(0).edit.start, 0ms);
+    EXPECT_EQ(result.GetEdits().at(0).edit.end, 1500000ms);
+  }
+
+  // Scenario 4: Single episode, no bookmarks → empty result (no EDL needed).
+  {
+    EpisodeFileMap fileMap;
+    EpisodeInformation info;
+    info.season = 1;
+    info.episode = 1;
+    info.bookmark.timeInSeconds = 0.0;
+    info.bookmark.totalTimeInSeconds = 0.0;
+    fileMap.insert({"video.mkv", info});
+
+    const auto item = testItem(1);
+    const auto result = CMultipleEpisodeEdlParser::Process(item, 0, fileDurationMs, fileMap);
+
+    EXPECT_EQ(result.IsEmpty(), true);
+  }
+
+  // Scenario 5: Episode not in file map → empty result.
+  {
+    EpisodeFileMap fileMap;
+    fileMap.insert(testEntry(1, 0.0));
+    fileMap.insert(testEntry(2, 1200.0));
+
+    const auto item = testItem(5);
+    const auto result = CMultipleEpisodeEdlParser::Process(item, 0, fileDurationMs, fileMap);
+
+    EXPECT_EQ(result.IsEmpty(), true);
+  }
+
+  // Scenario 6: 4-episode file with unequal splits, playing episode 3.
+  // Ep1=0s, Ep2=600s, Ep3=900s (15min), Ep4=2700s (45min). File=60min.
+  // Expect CUT [0 - 15min] and CUT [45min - 60min]. Playable = 30min.
+  {
+    EpisodeFileMap fileMap;
+    fileMap.insert(testEntry(1, 0.0));
+    fileMap.insert(testEntry(2, 600.0));
+    fileMap.insert(testEntry(3, 900.0));
+    fileMap.insert(testEntry(4, 2700.0));
+
+    const auto item = testItem(3);
+    const auto result = CMultipleEpisodeEdlParser::Process(item, 0, fileDurationMs, fileMap);
+
+    EXPECT_EQ(result.GetEdits().size(), 2);
+    EXPECT_EQ(result.GetEdits().at(0).edit.start, 0ms);
+    EXPECT_EQ(result.GetEdits().at(0).edit.end, 900000ms);
+    EXPECT_EQ(result.GetEdits().at(1).edit.start, 2700000ms);
+    EXPECT_EQ(result.GetEdits().at(1).edit.end, std::chrono::milliseconds(fileDurationMs));
+    // playable duration = 60min - 15min - 15min = 30min
+    const auto totalCut = (result.GetEdits().at(0).edit.end - result.GetEdits().at(0).edit.start) +
+                          (result.GetEdits().at(1).edit.end - result.GetEdits().at(1).edit.start);
+    EXPECT_EQ(std::chrono::milliseconds(fileDurationMs) - totalCut, 1800000ms);
+  }
+
+  // Scenario 7: Next episode's bookmark is 0 (unset) → end defaults to file length.
+  // Ep1=0s, Ep2=1200s, Ep3 bookmark=0. File=60min. Playing Ep2.
+  // Expect only CUT [0 - 20min].
+  {
+    EpisodeFileMap fileMap;
+    fileMap.insert(testEntry(1, 0.0));
+    fileMap.insert(testEntry(2, 1200.0));
+    fileMap.insert(testEntry(3, 0.0));
+
+    const auto item = testItem(2);
+    const auto result = CMultipleEpisodeEdlParser::Process(item, 0, fileDurationMs, fileMap);
+
+    EXPECT_EQ(result.GetEdits().size(), 1);
+    EXPECT_EQ(result.GetEdits().at(0).edit.start, 0ms);
+    EXPECT_EQ(result.GetEdits().at(0).edit.end, 1200000ms);
+  }
+}
+
+class TestParseEditsForEpisode : public ::testing::Test
+{
+protected:
+  // Build a CEdlParserResult with a start cut [0 - startEnd] and/or
+  // an end cut [endStart - fileDuration].
+  static EDL::CEdlParserResult MakeMultiEpResult(std::chrono::milliseconds startCutEnd,
+                                                 std::chrono::milliseconds endCutStart,
+                                                 std::chrono::milliseconds fileDuration)
+  {
+    EDL::CEdlParserResult r;
+    EDL::Edit edit;
+    edit.action = EDL::Action::CUT;
+    if (startCutEnd > 0ms)
+    {
+      edit.start = 0ms;
+      edit.end = startCutEnd;
+      r.AddEdit(edit);
+    }
+    if (endCutStart > 0ms && endCutStart < fileDuration)
+    {
+      edit.start = endCutStart;
+      edit.end = fileDuration;
+      r.AddEdit(edit);
+    }
+    return r;
+  }
+
+  static void CallParseEditsForEpisode(CEdl& edl,
+                                       const EDL::CEdlParserResult& multiEpisodeResult,
+                                       std::chrono::milliseconds duration)
+  {
+    edl.ParseEditsForEpisode(multiEpisodeResult, duration);
+  }
+
+  static bool AddEdit(CEdl& edl, const EDL::Edit& edit) { return edl.AddEdit(edit); }
+};
+
+TEST_F(TestParseEditsForEpisode, EmptyMultiEpisodeResultIsNoOp)
+{
+  // ParseEditsForEpisode with an empty result should not modify the existing edits
+  CEdl edl;
+  CFileItem mediaItem;
+  mediaItem.SetPath(
+      XBMC_REF_FILE_PATH("xbmc/cores/VideoPlayer/Edl/test/testdata/mplayertimebased.mkv"));
+  edl.ReadEditDecisionLists(mediaItem, 0, 0ms);
+  const size_t editsBefore = edl.GetRawEditList().size();
+  const size_t markersBefore = edl.GetSceneMarkers().size();
+
+  EDL::CEdlParserResult empty;
+  CallParseEditsForEpisode(edl, empty, 0ms);
+
+  EXPECT_EQ(edl.GetRawEditList().size(), editsBefore);
+  EXPECT_EQ(edl.GetSceneMarkers().size(), markersBefore);
+}
+
+TEST_F(TestParseEditsForEpisode, EditsOutsideEpisodeWindowAreRemoved)
+{
+  // The mplayertimebased.edl has a cut at 5.3s-7.1s and other edits.
+  // Apply a multi-episode window starting at 10s - meaning the cut is before the window.
+  // The cut [5.3s - 7.1s] should be removed.
+  CEdl edl;
+  CFileItem mediaItem;
+  mediaItem.SetPath(
+      XBMC_REF_FILE_PATH("xbmc/cores/VideoPlayer/Edl/test/testdata/mplayertimebased.mkv"));
+  edl.ReadEditDecisionLists(mediaItem, 0, 0ms);
+
+  // Sanity check: cut exists before ParseEditsForEpisode
+  EXPECT_TRUE(edl.HasCuts() && edl.GetCutMarkers().size() == 1);
+
+  // Episode window: 10s to 1000s (file duration 1000s)
+  // Start cut [0 - 10s] will remove the 5.3s-7.1s cut which is inside [0-10s]
+  const std::chrono::milliseconds fileDuration = 1000s;
+  auto multiEpResult = MakeMultiEpResult(10s, 0ms, fileDuration);
+  CallParseEditsForEpisode(edl, multiEpResult, fileDuration);
+
+  // There should still be one cut (the start cut)
+  EXPECT_TRUE(edl.HasCuts() && edl.GetCutMarkers().size() == 1);
+}
+
+TEST_F(TestParseEditsForEpisode, EpisodeStartCutIsAddedToEditList)
+{
+  // After ParseEditsForEpisode with a start cut, that cut should be present in the raw edit list
+  CEdl edl;
+  CFileItem mediaItem;
+  mediaItem.SetPath(
+      XBMC_REF_FILE_PATH("xbmc/cores/VideoPlayer/Edl/test/testdata/mplayertimebased.mkv"));
+  edl.ReadEditDecisionLists(mediaItem, 0, 0ms);
+
+  const std::chrono::milliseconds fileDuration = 1000s;
+  auto multiEpResult = MakeMultiEpResult(30s, 0ms, fileDuration);
+  CallParseEditsForEpisode(edl, multiEpResult, fileDuration);
+
+  // The start cut [0 - 30s] should now appear at the start of the raw edit list
+  EXPECT_TRUE(edl.HasCuts());
+  if (edl.HasCuts())
+  {
+    const auto& edit{edl.GetRawEditList()[0]};
+    EXPECT_TRUE(edit.action == EDL::Action::CUT && edit.start == 0ms && edit.end == 30s)
+        << "Expected start cut [0 - 30s] at the start of the raw edit list";
+  }
+}
+
+TEST_F(TestParseEditsForEpisode, EpisodeEndCutIsAddedToEditList)
+{
+  // After ParseEditsForEpisode with an end cut, that cut should be present in the raw edit list
+  CEdl edl;
+  CFileItem mediaItem;
+  mediaItem.SetPath(
+      XBMC_REF_FILE_PATH("xbmc/cores/VideoPlayer/Edl/test/testdata/mplayertimebased.mkv"));
+  edl.ReadEditDecisionLists(mediaItem, 0, 0ms);
+
+  const std::chrono::milliseconds fileDuration = 1000s;
+  auto multiEpResult = MakeMultiEpResult(0ms, 500s, fileDuration);
+  CallParseEditsForEpisode(edl, multiEpResult, fileDuration);
+
+  // The end cut [500s - 1000s] should now appear at the end of the raw edit list
+  EXPECT_TRUE(edl.HasCuts());
+  if (edl.HasCuts())
+  {
+    const auto& edit{edl.GetRawEditList().back()};
+    EXPECT_TRUE(edit.action == EDL::Action::CUT && edit.start == 500s && edit.end == fileDuration)
+        << "Expected end cut [500s - 1000s] at the end of the raw edit list";
+  }
+}
+
+TEST_F(TestParseEditsForEpisode, TotalCutTimeIsRecalculatedAfterEpisodeWindow)
+{
+  // Verify m_totalCutTime is correct after episode window filtering removes cuts
+  // mplayertimebased has cut [5.3s - 7.1s] = 1800ms
+  CEdl edl;
+  CFileItem mediaItem;
+  mediaItem.SetPath(
+      XBMC_REF_FILE_PATH("xbmc/cores/VideoPlayer/Edl/test/testdata/mplayertimebased.mkv"));
+  edl.ReadEditDecisionLists(mediaItem, 0, 0ms);
+  EXPECT_EQ(edl.GetTotalCutTime(), 1800ms);
+
+  // Apply episode window that removes the cut (window starts at 10s)
+  const std::chrono::milliseconds fileDuration = 1000s;
+  auto multiEpResult = MakeMultiEpResult(10s, 0ms, fileDuration);
+  CallParseEditsForEpisode(edl, multiEpResult, fileDuration);
+
+  // The original 1800ms cut is gone; only the episode start cut [0-10s] remains
+  EXPECT_EQ(edl.GetTotalCutTime(), 10s);
+}
+
+TEST_F(TestParseEditsForEpisode, SceneMarkersOutsideEpisodeWindowAreRemoved)
+{
+  // Scene markers outside the episode window should be removed by ParseEditsForEpisode
+  CEdl edl;
+  CFileItem mediaItem;
+  mediaItem.SetPath(
+      XBMC_REF_FILE_PATH("xbmc/cores/VideoPlayer/Edl/test/testdata/mplayertimebased.mkv"));
+  edl.ReadEditDecisionLists(mediaItem, 0, 0ms);
+
+  // There should be 4 scene markers initially
+  // Two explicitly set and two from the commbreak [420s-822s]
+  EXPECT_TRUE(edl.HasSceneMarker() && edl.GetSceneMarkers().size() == 4)
+      << "Expected 4 scene markers initially";
+
+  // The file has scene markers. Apply an episode window [200s - 400s]
+  // Scene markers outside this window should be stripped.
+  const std::chrono::milliseconds fileDuration = 1000s;
+  const std::chrono::milliseconds episodeStart = 200s;
+  auto multiEpResult = MakeMultiEpResult(episodeStart, 400s, fileDuration);
+  CallParseEditsForEpisode(edl, multiEpResult, fileDuration);
+
+  // There should be 1 scene marker remaining
+  EXPECT_TRUE(edl.HasSceneMarker() && edl.GetSceneMarkers().size() == 1)
+      << "Expected only 1 scene marker within the episode window";
+
+  if (edl.HasSceneMarker())
+  {
+    const auto marker{edl.GetSceneMarkers()[0]};
+    EXPECT_EQ(marker, 255300ms - episodeStart);
+  }
+}
+
+TEST_F(TestParseEditsForEpisode, BothStartAndEndCutsApplied)
+{
+  // Apply both a start and end cut, verify both appear in edit list
+  CEdl edl;
+  CFileItem mediaItem;
+  mediaItem.SetPath(
+      XBMC_REF_FILE_PATH("xbmc/cores/VideoPlayer/Edl/test/testdata/mplayertimebased.mkv"));
+  edl.ReadEditDecisionLists(mediaItem, 0, 0ms);
+
+  const std::chrono::milliseconds fileDuration = 1000s;
+  auto multiEpResult = MakeMultiEpResult(20s, 500s, fileDuration);
+  CallParseEditsForEpisode(edl, multiEpResult, fileDuration);
+
+  EXPECT_TRUE(edl.HasCuts() && edl.GetRawEditList().size() >= 2)
+      << "Expected at least 2 cuts - episode start and end";
+
+  // The start cut [0 - 20s] should now appear at the start of the raw edit list
+  if (edl.HasCuts() && edl.GetRawEditList().size() >= 2)
+  {
+    const auto& edit{edl.GetRawEditList()[0]};
+    EXPECT_TRUE(edit.action == EDL::Action::CUT && edit.start == 0ms && edit.end == 20s)
+        << "Expected start cut [0 - 20s] at the start of the raw edit list";
+    // The end cut [500s - 1000s] should now appear at the end of the raw edit list
+    const auto& editEnd{edl.GetRawEditList().back()};
+    EXPECT_TRUE(editEnd.action == EDL::Action::CUT && editEnd.start == 500s &&
+                editEnd.end == fileDuration)
+        << "Expected end cut [500s - 1000s] at the end of the raw edit list";
+  }
+}
+
+TEST_F(TestParseEditsForEpisode, EditsWithinEpisodeWindowAreRetained)
+{
+  // Edits that fall entirely within the episode window must be kept
+  // mplayertimebased has: cut [5.3s-7.1s], mute [15s-16.7s], commbreak [420s-822s]
+  // Apply window [4s - 900s] → cut, mute and commbreak within should survive
+  CEdl edl;
+  CFileItem mediaItem;
+  mediaItem.SetPath(
+      XBMC_REF_FILE_PATH("xbmc/cores/VideoPlayer/Edl/test/testdata/mplayertimebased.mkv"));
+  edl.ReadEditDecisionLists(mediaItem, 0, 0ms);
+
+  const size_t editsBeforeEpisodeWindow = edl.GetRawEditList().size();
+
+  const std::chrono::milliseconds fileDuration = 1000s;
+  auto multiEpResult = MakeMultiEpResult(4s, 900s, fileDuration);
+  CallParseEditsForEpisode(edl, multiEpResult, fileDuration);
+
+  bool cutRetained = false;
+  bool muteRetained = false;
+  bool commbreakRetained = false;
+  for (const auto& edit : edl.GetRawEditList())
+  {
+    if (edit.action == EDL::Action::CUT && edit.start == 5300ms && edit.end == 7100ms)
+      cutRetained = true;
+
+    if (edit.action == EDL::Action::MUTE && edit.start == 15000ms && edit.end == 16700ms)
+      muteRetained = true;
+    if (edit.action == EDL::Action::COMM_BREAK && edit.start == 420000ms && edit.end == 822000ms)
+      commbreakRetained = true;
+  }
+  EXPECT_TRUE(cutRetained) << "Cut [5.3s-7.1s] is within the episode window and should be kept";
+  EXPECT_TRUE(muteRetained) << "Mute [15s-16.7s] is within the episode window and should be kept";
+  EXPECT_TRUE(commbreakRetained)
+      << "CommBreak [420s-822s] is within the episode window and should be kept";
+
+  // Plus episode start and end cuts were added, so total edits = original + 2
+  EXPECT_EQ(edl.GetRawEditList().size(), editsBeforeEpisodeWindow + 2);
+}
+
+TEST_F(TestParseEditsForEpisode, EditStraddlingEpisodeStartIsClamped)
+{
+  // An edit that starts before the episode window but ends inside it should have
+  // its start clamped to the episode start, not be removed entirely.
+  // mplayertimebased has a cut at [5.3s - 7.1s].
+  // Apply an episode window starting at 6s (i.e. start cut [0 - 6s]).
+  // The cut straddles the episode start: starts at 5.3s (outside), ends at 7.1s (inside).
+  // Expected: cut is clamped to [6s - 7.1s], not removed.
+  CEdl edl;
+  CFileItem mediaItem;
+  mediaItem.SetPath(
+      XBMC_REF_FILE_PATH("xbmc/cores/VideoPlayer/Edl/test/testdata/mplayertimebased.mkv"));
+  edl.ReadEditDecisionLists(mediaItem, 0, 0ms);
+  EXPECT_TRUE(edl.HasCuts());
+
+  const std::chrono::milliseconds fileDuration = 1000s;
+  const std::chrono::milliseconds episodeStart = 6s;
+  auto multiEpResult = MakeMultiEpResult(episodeStart, 0ms, fileDuration);
+  CallParseEditsForEpisode(edl, multiEpResult, fileDuration);
+
+  // The cut should have been clamped, not removed
+  bool clampedCutFound = false;
+  bool originalCutFound = false;
+  for (const auto& edit : edl.GetRawEditList())
+  {
+    if (edit.action == EDL::Action::CUT && edit.start == episodeStart && edit.end == 7100ms)
+      clampedCutFound = true;
+    if (edit.action == EDL::Action::CUT && edit.start == 5300ms)
+      originalCutFound = true;
+  }
+  EXPECT_TRUE(clampedCutFound) << "Expected cut clamped to [6s - 7.1s]";
+  EXPECT_FALSE(originalCutFound) << "Original unclamped cut start (5.3s) should not exist";
+}
+
+TEST_F(TestParseEditsForEpisode, EditStraddlingBothBoundariesIsClamped)
+{
+  // An edit that starts before the episode window but ends after the episode window should have
+  // its start and end clamped to the episode window.
+  // mplayertimebased has a commbreak at [420s - 822s].
+  // Apply an episode window starting at 500s and ending at 600s.
+  // The commbreak straddles the episode window: starts at 420s (outside), ends at 822s (outside).
+  // Expected: commbreak is clamped to [500s - 600s], not removed.
+  CEdl edl;
+  CFileItem mediaItem;
+  mediaItem.SetPath(
+      XBMC_REF_FILE_PATH("xbmc/cores/VideoPlayer/Edl/test/testdata/mplayertimebased.mkv"));
+  edl.ReadEditDecisionLists(mediaItem, 0, 0ms);
+
+  const std::chrono::milliseconds fileDuration = 1000s;
+  auto multiEpResult = MakeMultiEpResult(500s, 600s, fileDuration);
+  CallParseEditsForEpisode(edl, multiEpResult, fileDuration);
+
+  bool clampedFound = false;
+  for (const auto& edit : edl.GetRawEditList())
+  {
+    if (edit.action == EDL::Action::COMM_BREAK && edit.start == 500s && edit.end == 600s)
+    {
+      clampedFound = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(clampedFound) << "Expected wide commbreak clamped to episode window [500s - 600s]";
 }

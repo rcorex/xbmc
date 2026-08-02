@@ -35,6 +35,7 @@
 #include "utils/log.h"
 
 #include <utility>
+#include <vector>
 
 using namespace KODI;
 using namespace JOYSTICK;
@@ -70,6 +71,8 @@ CPeripheral::CPeripheral(CPeripherals& manager,
 {
   PeripheralTypeTranslator::FormatHexString(scanResult.m_iVendorId, m_strVendorId);
   PeripheralTypeTranslator::FormatHexString(scanResult.m_iProductId, m_strProductId);
+  m_strPhysicalLocation = scanResult.m_strPhysicalLocation;
+  m_strMappedDeviceName = scanResult.m_strMappedDeviceName;
   if (scanResult.m_iSequence > 0)
   {
     m_strFileLocation =
@@ -98,6 +101,15 @@ CPeripheral::~CPeripheral(void)
   m_subDevices.clear();
 
   ClearSettings();
+}
+
+void CPeripheral::OnDeviceRemoved(void)
+{
+  if (m_controllerInput)
+  {
+    m_controllerInput->Deinitialize();
+    m_controllerInput.reset();
+  }
 }
 
 bool CPeripheral::operator==(const CPeripheral& right) const
@@ -161,28 +173,95 @@ bool CPeripheral::Initialise(void)
 
   m_manager.GetSettingsFromMapping(*this);
 
+  const std::string busStr = PeripheralTypeTranslator::BusTypeToString(m_mappedBusType);
+
   std::string safeDeviceName = m_strDeviceName;
   StringUtils::Replace(safeDeviceName, ' ', '_');
+  safeDeviceName = CUtil::MakeLegalFileName(std::move(safeDeviceName), LegalPath::WIN32_COMPAT);
 
+  // Disambiguates settings for adapters of the same model (identical vendor/product/name).
+  std::string safeLocation = m_strPhysicalLocation;
+  StringUtils::Replace(safeLocation, ' ', '_');
+  safeLocation = CUtil::MakeLegalFileName(std::move(safeLocation), LegalPath::WIN32_COMPAT);
+
+  // A settings file may be keyed by either the bus-reported per-adapter name
+  // (e.g. "HDMI 1") or the generic peripherals.xml mapping name, so both are tried below.
+  std::string safeMappedDeviceName = m_strMappedDeviceName;
+  StringUtils::Replace(safeMappedDeviceName, ' ', '_');
+  safeMappedDeviceName =
+      CUtil::MakeLegalFileName(std::move(safeMappedDeviceName), LegalPath::WIN32_COMPAT);
+
+  // Candidate settings files that don't encode a physical location, in preference order,
+  // so settings saved without a location are still found. The first is also the name
+  // written back when this adapter has no location (see the fallback below).
+  std::vector<std::string> legacyCandidates;
   if (m_iVendorId == 0x0000 && m_iProductId == 0x0000)
   {
-    m_strSettingsFile = StringUtils::Format(
-        "special://profile/peripheral_data/{}_{}.xml",
-        PeripheralTypeTranslator::BusTypeToString(m_mappedBusType),
-        CUtil::MakeLegalFileName(std::move(safeDeviceName), LegalPath::WIN32_COMPAT));
+    legacyCandidates.emplace_back(
+        StringUtils::Format("special://profile/peripheral_data/{}_{}.xml", busStr, safeDeviceName));
+
+    if (!safeMappedDeviceName.empty() && safeMappedDeviceName != safeDeviceName)
+      legacyCandidates.emplace_back(StringUtils::Format(
+          "special://profile/peripheral_data/{}_{}.xml", busStr, safeMappedDeviceName));
   }
   else
   {
-    // Backwards compatibility - old settings files didn't include the device name
-    m_strSettingsFile = StringUtils::Format(
-        "special://profile/peripheral_data/{}_{}_{}.xml",
-        PeripheralTypeTranslator::BusTypeToString(m_mappedBusType), m_strVendorId, m_strProductId);
+    legacyCandidates.emplace_back(StringUtils::Format(
+        "special://profile/peripheral_data/{}_{}_{}.xml", busStr, m_strVendorId, m_strProductId));
 
-    if (!CFileUtils::Exists(m_strSettingsFile))
-      m_strSettingsFile = StringUtils::Format(
-          "special://profile/peripheral_data/{}_{}_{}_{}.xml",
-          PeripheralTypeTranslator::BusTypeToString(m_mappedBusType), m_strVendorId, m_strProductId,
-          CUtil::MakeLegalFileName(std::move(safeDeviceName), LegalPath::WIN32_COMPAT));
+    // variant that also appends the device name
+    legacyCandidates.emplace_back(
+        StringUtils::Format("special://profile/peripheral_data/{}_{}_{}_{}.xml", busStr,
+                            m_strVendorId, m_strProductId, safeDeviceName));
+
+    if (!safeMappedDeviceName.empty() && safeMappedDeviceName != safeDeviceName)
+      legacyCandidates.emplace_back(
+          StringUtils::Format("special://profile/peripheral_data/{}_{}_{}_{}.xml", busStr,
+                              m_strVendorId, m_strProductId, safeMappedDeviceName));
+  }
+
+  // None on disk yet: fall back to the first candidate, the location-less name that is
+  // also written back when this adapter has no physical location.
+  std::string legacyFile = legacyCandidates.front();
+  for (const auto& candidate : legacyCandidates)
+  {
+    if (CFileUtils::Exists(candidate))
+    {
+      legacyFile = candidate;
+      break;
+    }
+  }
+
+  // Settings file scoped to this adapter's physical location. The display name
+  // must not be part of the identity (it can change - e.g. a CEC adapter is
+  // "HDMI" alone but "HDMI 1"/"HDMI 2" once a second one appears - which would
+  // orphan the saved settings).
+  std::string locationFile;
+  if (m_iVendorId == 0x0000 && m_iProductId == 0x0000)
+  {
+    locationFile =
+        StringUtils::Format("special://profile/peripheral_data/{}_{}.xml", busStr, safeLocation);
+  }
+  else
+  {
+    locationFile = StringUtils::Format("special://profile/peripheral_data/{}_{}_{}_{}.xml", busStr,
+                                       m_strVendorId, m_strProductId, safeLocation);
+  }
+
+  // Write to the per-location file, but keep reading the location-less file until a write
+  // supersedes it, so read-only sessions don't migrate.
+  if (safeLocation.empty())
+  {
+    m_strSettingsFile = legacyFile;
+    m_strSettingsFileLoad = legacyFile;
+  }
+  else
+  {
+    m_strSettingsFile = locationFile;
+    if (!CFileUtils::Exists(locationFile) && CFileUtils::Exists(legacyFile))
+      m_strSettingsFileLoad = legacyFile;
+    else
+      m_strSettingsFileLoad = locationFile;
   }
 
   // Load settings and initialize state
@@ -436,7 +515,7 @@ const std::string CPeripheral::GetSettingString(const std::string& strKey) const
   return "";
 }
 
-bool CPeripheral::SetSetting(const std::string& strKey, bool bValue)
+bool CPeripheral::SetSetting(const std::string& strKey, bool bValue, bool bNotify /* = true */)
 {
   bool bChanged(false);
   std::map<std::string, PeripheralDeviceSetting>::iterator it = m_settings.find(strKey);
@@ -448,14 +527,14 @@ bool CPeripheral::SetSetting(const std::string& strKey, bool bValue)
     {
       bChanged = boolSetting->GetValue() != bValue;
       boolSetting->SetValue(bValue);
-      if (bChanged && m_bInitialised)
+      if (bChanged && bNotify && m_bInitialised)
         m_changedSettings.insert(strKey);
     }
   }
   return bChanged;
 }
 
-bool CPeripheral::SetSetting(const std::string& strKey, int iValue)
+bool CPeripheral::SetSetting(const std::string& strKey, int iValue, bool bNotify /* = true */)
 {
   bool bChanged(false);
   std::map<std::string, PeripheralDeviceSetting>::iterator it = m_settings.find(strKey);
@@ -467,14 +546,14 @@ bool CPeripheral::SetSetting(const std::string& strKey, int iValue)
     {
       bChanged = intSetting->GetValue() != iValue;
       intSetting->SetValue(iValue);
-      if (bChanged && m_bInitialised)
+      if (bChanged && bNotify && m_bInitialised)
         m_changedSettings.insert(strKey);
     }
   }
   return bChanged;
 }
 
-bool CPeripheral::SetSetting(const std::string& strKey, float fValue)
+bool CPeripheral::SetSetting(const std::string& strKey, float fValue, bool bNotify /* = true */)
 {
   bool bChanged(false);
   std::map<std::string, PeripheralDeviceSetting>::iterator it = m_settings.find(strKey);
@@ -486,7 +565,7 @@ bool CPeripheral::SetSetting(const std::string& strKey, float fValue)
     {
       bChanged = floatSetting->GetValue() != static_cast<double>(fValue);
       floatSetting->SetValue(static_cast<double>(fValue));
-      if (bChanged && m_bInitialised)
+      if (bChanged && bNotify && m_bInitialised)
         m_changedSettings.insert(strKey);
     }
   }
@@ -508,7 +587,9 @@ bool CPeripheral::IsSettingVisible(const std::string& strKey) const
   return false;
 }
 
-bool CPeripheral::SetSetting(const std::string& strKey, const std::string& strValue)
+bool CPeripheral::SetSetting(const std::string& strKey,
+                             const std::string& strValue,
+                             bool bNotify /* = true */)
 {
   bool bChanged(false);
   std::map<std::string, PeripheralDeviceSetting>::iterator it = m_settings.find(strKey);
@@ -528,7 +609,7 @@ bool CPeripheral::SetSetting(const std::string& strKey, const std::string& strVa
 
         bChanged = !StringUtils::EqualsNoCase(stringSetting->GetValue(), strValue);
         stringSetting->SetValue(strValue);
-        if (bChanged && m_bInitialised)
+        if (bChanged && bNotify && m_bInitialised)
           m_changedSettings.insert(strKey);
 
         if (strKey == SETTING_LAST_ACTIVE && !strValue.empty())
@@ -540,11 +621,13 @@ bool CPeripheral::SetSetting(const std::string& strKey, const std::string& strVa
       }
     }
     else if ((*it).second.m_setting->GetType() == SettingType::Integer)
-      bChanged = SetSetting(strKey, strValue.empty() ? 0 : atoi(strValue.c_str()));
+      bChanged = SetSetting(strKey, strValue.empty() ? 0 : atoi(strValue.c_str()), bNotify);
     else if ((*it).second.m_setting->GetType() == SettingType::Number)
-      bChanged = SetSetting(strKey, (float)(strValue.empty() ? 0 : atof(strValue.c_str())));
+      bChanged =
+          SetSetting(strKey, (float)(strValue.empty() ? 0 : atof(strValue.c_str())), bNotify);
     else if ((*it).second.m_setting->GetType() == SettingType::Boolean)
-      bChanged = SetSetting(strKey, strValue == "1" || StringUtils::EqualsNoCase(strValue, "true"));
+      bChanged = SetSetting(strKey, strValue == "1" || StringUtils::EqualsNoCase(strValue, "true"),
+                            bNotify);
   }
   return bChanged;
 }
@@ -630,7 +713,7 @@ void CPeripheral::PersistSettings(bool bExiting /* = false */)
 void CPeripheral::LoadPersistedSettings(void)
 {
   CXBMCTinyXML2 doc;
-  if (doc.LoadFile(m_strSettingsFile))
+  if (doc.LoadFile(m_strSettingsFileLoad))
   {
     const auto* setting = doc.RootElement()->FirstChildElement("setting");
     while (setting != nullptr)

@@ -1,12 +1,16 @@
 /*
- *  Copyright (C) 2005-2018 Team Kodi
+ *  Copyright (C) 2005-2026 Team Kodi
  *  This file is part of Kodi - https://kodi.tv
  *
  *  SPDX-License-Identifier: GPL-2.0-or-later
  *  See LICENSES/README.md for more information.
  */
 
+#include "ServiceBroker.h"
 #include "Util.h"
+#include "settings/AdvancedSettings.h"
+#include "settings/SettingsComponent.h"
+#include "video/FilenameAttributes.h"
 
 #include <gtest/gtest-param-test.h>
 #include <gtest/gtest.h>
@@ -14,6 +18,8 @@
 using ::testing::Test;
 using ::testing::ValuesIn;
 using ::testing::WithParamInterface;
+
+using namespace KODI::VIDEO;
 
 TEST(TestUtil, GetQualifiedFilename)
 {
@@ -111,13 +117,22 @@ std::ostream& operator<<(std::ostream& os, const TestUtilCleanStringData& rhs)
 
 class TestUtilCleanString : public Test, public WithParamInterface<TestUtilCleanStringData>
 {
+public:
+  static void SetUpTestSuite()
+  {
+    // Inject list of known metadata sources for reliable results
+    const std::shared_ptr<CAdvancedSettings> advancedSettings =
+        CServiceBroker::GetSettingsComponent()->GetAdvancedSettings();
+    ASSERT_TRUE(advancedSettings != nullptr);
+    advancedSettings->m_videoScannerMetadataSources = {"tmdb", "imdb"};
+  }
 };
 
 TEST_P(TestUtilCleanString, GetFilenameIdentifier)
 {
   std::string identifierType;
   std::string identifier;
-  CUtil::GetFilenameIdentifier(GetParam().input, identifierType, identifier);
+  CFilenameAttributes(GetParam().input, nullptr).GetIdentifier(identifierType, identifier);
   EXPECT_EQ(identifierType, GetParam().expIdentifierType);
   EXPECT_EQ(identifier, GetParam().expIdentifier);
 }
@@ -614,7 +629,16 @@ const TestBaseData Paths[] = {
     {"archive://%5c%5cServer%5cMovies%5cmovie%5cmovie.tar.gz/BDMV/index.BDMV",
      "\\\\Server\\Movies\\movie\\", "movie"},
     {"archive://%5c%5cServer%5cMovies%5cmovie%5cdisc%201%5cmovie.tar.gz/file.mkv",
-     "\\\\Server\\Movies\\movie\\disc 1\\", "file"}};
+     "\\\\Server\\Movies\\movie\\disc 1\\", "file"},
+    // HTTP URL with query string
+    {"http://192.168.1.1/movie.mkv?session=abc", "http://192.168.1.1/", "movie"},
+    {"http://192.168.1.1/path/movie.mkv?session=abc", "http://192.168.1.1/path/", "movie"},
+    // Endpoint-style URL where the query selects the media
+    {"http://192.168.1.1/stream?file=movie.mkv", "http://192.168.1.1/", "stream"},
+    {"http://192.168.1.1/dir/stream?file=movie.mkv", "http://192.168.1.1/dir/", "stream"},
+    // HTTP URL with multi-param query string
+    {"http://192.168.0.110:80/immich/album-2025/VID_20250624_114200.mp4?index=1&play",
+     "http://192.168.0.110:80/immich/album-2025/", "VID_20250624_114200"}};
 
 TEST_P(TestVideoBasePathAndFileName, GetVideoBasePathAndFileName)
 {

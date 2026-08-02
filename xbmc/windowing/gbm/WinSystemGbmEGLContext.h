@@ -42,6 +42,8 @@ public:
   bool UnbindTextureUploadContext() override;
   bool HasContext() override;
 
+  bool SetVideoOutput(const VideoPicture* videoPicture) override;
+
 protected:
   CWinSystemGbmEGLContext(EGLenum platform, std::string const& platformExtension)
     : CWinSystemEGL{platform, platformExtension}
@@ -53,7 +55,10 @@ protected:
    * and call this function there with appropriate parameters
    */
   bool InitWindowSystemEGL(EGLint renderableType, EGLint apiType);
+  bool ChooseEGLConfig(EGLint renderableType, int bitDepth = 8);
   virtual bool CreateContext() = 0;
+
+  EGLint m_renderableType{0};
 
   std::unique_ptr<KODI::UTILS::EGL::CEGLFence> m_eglFence;
 

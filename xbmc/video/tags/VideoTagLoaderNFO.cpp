@@ -83,16 +83,20 @@ CInfoScanner::InfoType CVideoTagLoaderNFO::Load(CVideoInfoTag& tag,
   CInfoScanner::InfoType result = NONE;
   if (m_info)
   {
-    CNfoFile nfoReader;
-    result = nfoReader.Create(m_path, m_info, GetNfoIndex(m_item, m_info));
+    if (!m_nfoParsed)
+    {
+      m_parseResult = m_nfoReader.Create(m_path, m_info, GetNfoIndex(m_item, m_info));
+      m_nfoParsed = true;
+    }
+    result = m_parseResult;
 
     if (result == FULL || result == COMBINED || result == OVERRIDE)
-      nfoReader.GetDetails(tag, nullptr, prioritise);
+      m_nfoReader.GetDetails(tag, nullptr, prioritise);
 
     if (result == URL || result == COMBINED)
     {
-      m_url = nfoReader.ScraperUrl();
-      m_info = nfoReader.GetScraperInfo();
+      m_url = m_nfoReader.ScraperUrl();
+      m_info = m_nfoReader.GetScraperInfo();
     }
   }
 
@@ -134,6 +138,19 @@ std::string CVideoTagLoaderNFO::FindNFO(const CFileItem& item,
                                             URIUtils::GetFileName(item.GetPath())));
       nfoFile = FindNFO(item2, movieFolder);
       return nfoFile;
+    }
+
+    // For bluray:// paths, use the real file name (either <movie>.iso or index.bdmv)
+    if (URIUtils::IsBlurayPath(item.GetPath()))
+    {
+      CFileItem item2(item);
+      const std::string path{URIUtils::GetDiscFile(item.GetPath())};
+      if (!path.empty())
+      {
+        item2.SetPath(path);
+        nfoFile = FindNFO(item2, movieFolder);
+        return nfoFile;
+      }
     }
 
     // grab the folder path

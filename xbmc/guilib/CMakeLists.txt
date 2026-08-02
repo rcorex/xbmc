@@ -64,6 +64,7 @@ set(SOURCES DDSImage.cpp
             imagefactory.cpp
             ImageSettings.cpp
             IWindowManagerCallback.cpp
+            SkinMapManager.cpp
             StereoscopicsManager.cpp
             TextureBundle.cpp
             TextureBundleXBT.cpp
@@ -154,6 +155,7 @@ set(HEADERS AspectRatio.h
             IRenderingCallback.h
             ISliderCallback.h
             IWindowManagerCallback.h
+            SkinMapManager.h
             StereoscopicsManager.h
             Texture.h
             TextureBase.h
@@ -210,7 +212,8 @@ endif()
 core_add_library(guilib)
 
 if(CORE_SYSTEM_NAME STREQUAL windows OR CORE_SYSTEM_NAME STREQUAL windowsstore)
-  set(SHADERS_VERTEX guishader_vert.hlsl)
+  set(SHADERS_VERTEX guishader_clip_vert.hlsl
+                     guishader_vert.hlsl)
   set(SHADERS_PIXEL guishader_checkerboard_right.hlsl
                     guishader_checkerboard_left.hlsl
                     guishader_default.hlsl

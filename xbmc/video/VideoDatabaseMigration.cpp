@@ -31,9 +31,12 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <ranges>
 #include <sstream>
 #include <stdlib.h>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 using namespace dbiplus;
@@ -97,6 +100,68 @@ static std::string LowerCaseEncodingV143(std::string_view in)
     else
       out += *it;
   }
+
+  return out;
+}
+
+static std::string SanitiseUrlEncodingV147(const std::string& path)
+{
+  // Firstly look at encoded character capitalization.
+  // Some providers (eg. vfs rar) return paths with %2F instead of %2f,
+  // which causes problems when comparing paths.
+  // This only applies to the hostname element of the url
+  constexpr std::string_view PROTOCOL_SEP = "://";
+  auto protocolEnd{path.find(PROTOCOL_SEP)};
+  if (protocolEnd == std::string::npos)
+    return path;
+
+  protocolEnd += PROTOCOL_SEP.size();
+  if (protocolEnd >= path.size())
+    return path;
+
+  auto hostEnd{path.find('/', protocolEnd)};
+  if (hostEnd == std::string::npos)
+    hostEnd = path.size();
+
+  constexpr auto is_hex = [](char c) noexcept
+  { return ('0' <= c && c <= '9') || ('a' <= c && c <= 'f') || ('A' <= c && c <= 'F'); };
+
+  std::string out{path.substr(0, protocolEnd)};
+  for (auto it = path.begin() + static_cast<long long>(protocolEnd);
+       it != path.begin() + static_cast<long long>(hostEnd); ++it)
+  {
+    if (*it == '%' && std::ranges::distance(it, path.end()) > 2)
+    {
+      if (is_hex(it[1]) && is_hex(it[2]))
+      {
+        out += '%';
+        out += StringUtils::ToLowerAscii(it[1]);
+        out += StringUtils::ToLowerAscii(it[2]);
+        std::ranges::advance(it, 2);
+      }
+      else
+      {
+        CLog::LogF(LOGDEBUG, "Invalid encoding in path {}", CURL::GetRedacted(std::string(path)));
+        out += *it;
+      }
+    }
+    else
+      out += *it;
+  }
+
+  // In case addon (eg. vfs rar) returns malformed DOS paths (eg. c:/ and not c:\)
+  // m_basePath is used to populate the VIDEODB_ID_BASEPATH column which in turn is used
+  // by GetItemsByPath() to find items when browsing Video -> Files
+  // Pattern for DOS drive letter path: "D:/" encoded as "D%3a%2f"
+  constexpr std::string_view DOS_DRIVE_PATTERN = "%3a%2f";
+  constexpr size_t DOS_DRIVE_PATTERN_LENGTH =
+      DOS_DRIVE_PATTERN.length() + 1; // +1 for the drive letter
+  if (out.size() >= DOS_DRIVE_PATTERN_LENGTH &&
+      std::isalpha(static_cast<unsigned char>(out[protocolEnd])) &&
+      out.compare(protocolEnd + 1, DOS_DRIVE_PATTERN.length(), DOS_DRIVE_PATTERN) == 0)
+    StringUtils::Replace(out, "%2f", "%5c");
+
+  out += path.substr(hostEnd);
 
   return out;
 }
@@ -493,7 +558,7 @@ void CVideoDatabase::UpdateTables(int iVersion)
   }
 
   if (iVersion < 97)
-    m_pDS->exec("ALTER TABLE sets ADD strOverview TEXT");
+    m_pDS->exec("ALTER TABLE `sets` ADD strOverview TEXT");
 
   if (iVersion < 98)
     m_pDS->exec("ALTER TABLE seasons ADD name text");
@@ -1015,10 +1080,10 @@ void CVideoDatabase::UpdateTables(int iVersion)
 
   if (iVersion < 136)
   {
-    m_pDS->exec("ALTER TABLE sets ADD strOriginalSet TEXT");
+    m_pDS->exec("ALTER TABLE `sets` ADD strOriginalSet TEXT");
 
     // Copy current set title for existing sets
-    m_pDS->exec("UPDATE sets SET strOriginalSet = strSet");
+    m_pDS->exec("UPDATE `sets` SET strOriginalSet = strSet");
   }
 
   if (iVersion < 138)
@@ -1149,10 +1214,217 @@ void CVideoDatabase::UpdateTables(int iVersion)
   }
 
   if (iVersion < 144)
+  {
     m_pDS->exec("ALTER TABLE streamdetails ADD strHdrDetail text");
+  }
+
+  if (iVersion < 145)
+  {
+    m_pDS->exec("UPDATE streamdetails set strAudioCodec = 'dts' where strAudioCodec = 'dca'");
+  }
+
+  if (iVersion < 146)
+  {
+    constexpr int LOCAL_VIDEODB_ID_EPISODE_RUNTIME = 9;
+
+    // Create indices to speed up the queries below (CVideoDatabaseDDL::CreateIndices() has not been called yet)
+    m_pDS->exec("CREATE UNIQUE INDEX ix_episode_file_1 ON episode (idEpisode, idFile)");
+    m_pDS->exec("CREATE UNIQUE INDEX id_episode_file_2 ON episode (idFile, idEpisode)");
+    m_pDS->exec("CREATE INDEX ix_streamdetails ON streamdetails (idFile)");
+
+    // Create temporary table
+    // Avoids MySQL/MariaDB/Sqlite incompatible differences in the later UPDATE and DELETE queries
+    m_pDS->exec("CREATE TABLE single_video_streams "
+                "(idEpisode INTEGER PRIMARY KEY, idFile INTEGER, iVideoDuration INTEGER, "
+                "iTotalStreams INTEGER)");
+
+    // Populate temporary table
+    // Find any episode where the duration (c09) is 0 but there is a video stream with a positive duration in streamdetails
+    // We don't look for height/width = 0 here as the file may have been played and proper streamdetails derived
+    m_pDS->exec(PrepareSQL(
+        "INSERT INTO single_video_streams (idEpisode, idFile, iVideoDuration, iTotalStreams) "
+        "SELECT e.idEpisode, e.idFile, "
+        "  MAX(s.iVideoDuration), "
+        "  (SELECT COUNT(*) FROM streamdetails s2 WHERE s2.idFile = e.idFile) "
+        "FROM episode e "
+        "JOIN streamdetails s ON e.idFile = s.idFile "
+        "WHERE (e.c%02d = '0' OR e.c%02d IS NULL) "
+        "  AND s.iStreamType = 0 AND s.iVideoDuration > 0 "
+        "GROUP BY e.idEpisode, e.idFile",
+        LOCAL_VIDEODB_ID_EPISODE_RUNTIME, LOCAL_VIDEODB_ID_EPISODE_RUNTIME));
+
+    // Update the episodes' duration with the value from streamdetails
+    m_pDS->exec(PrepareSQL("UPDATE episode "
+                           "SET c%02d = (SELECT iVideoDuration FROM single_video_streams AS s "
+                           "            WHERE s.idEpisode = episode.idEpisode) "
+                           "WHERE idEpisode IN (SELECT idEpisode FROM single_video_streams)",
+                           LOCAL_VIDEODB_ID_EPISODE_RUNTIME));
+
+    // Delete any streamdetails where the video height/width are 0 (dummy entry created by scraper)
+    m_pDS->exec(PrepareSQL("DELETE FROM streamdetails "
+                           "WHERE iVideoHeight = 0 AND iVideoWidth = 0 AND iStreamType = 0 "
+                           "  AND idFile IN (SELECT idFile FROM single_video_streams "
+                           "                   WHERE iTotalStreams = 1)"));
+
+    // Remove temporary table
+    m_pDS->exec("DROP TABLE IF EXISTS single_video_streams");
+
+    // Remove indices
+    m_pDS->dropIndex("episode", "ix_episode_file_1");
+    m_pDS->dropIndex("episode", "id_episode_file_2");
+    m_pDS->dropIndex("streamdetails", "ix_streamdetails");
+  }
+
+  if (iVersion < 147)
+  {
+    constexpr int LOCAL_VIDEODB_ID_BASEPATH = 22;
+    constexpr int LOCAL_VIDEODB_ID_PARENTPATHID = 23;
+    constexpr int LOCAL_VIDEODB_ID_EPISODE_BASEPATH = 18;
+    constexpr int LOCAL_VIDEODB_ID_EPISODE_PARENTPATHID = 19;
+
+    std::unordered_set<int> idPathSet;
+    std::unordered_map<int, int> pathMap;
+
+    auto FixParentPath{
+        [&](const std::string& table, const std::string& mediaColumnName, int parentPathIdColumn,
+            int idMedia, int idParentPath, const std::string& parentPath)
+        {
+          if (parentPath.empty() || !URIUtils::IsDOSPath(parentPath))
+            return;
+
+          std::string newPath{parentPath};
+          StringUtils::Replace(newPath, '/', '\\');
+          if (newPath == parentPath)
+            return;
+
+          int newIdParentPath{idParentPath};
+          if (pathMap.contains(idParentPath))
+          {
+            newIdParentPath = pathMap[idParentPath];
+          }
+          else
+          {
+            m_pDS2->query(
+                PrepareSQL("SELECT idPath FROM path WHERE strPath = '%s'", newPath.c_str()));
+            if (!m_pDS2->eof())
+            {
+              newIdParentPath = m_pDS2->fv(0).get_asInt();
+              pathMap[idParentPath] = newIdParentPath;
+            }
+            else if (!idPathSet.contains(idParentPath))
+            {
+              m_pDS2->exec(PrepareSQL("UPDATE path SET strPath = '%s' WHERE idPath = %i",
+                                      newPath.c_str(), idParentPath));
+              idPathSet.insert(idParentPath);
+            }
+            m_pDS2->close();
+          }
+
+          if (newIdParentPath != idParentPath)
+            m_pDS2->exec(PrepareSQL("UPDATE %s SET c%02d = %i WHERE %s = %i", table.c_str(),
+                                    parentPathIdColumn, newIdParentPath, mediaColumnName.c_str(),
+                                    idMedia));
+        }};
+
+    // Movies
+    std::string sql{
+        PrepareSQL("SELECT m.idMovie, m.c%02d, p.idPath, p.strPath, pp.idPath, pp.strPath "
+                   "FROM movie AS m "
+                   "JOIN files AS f ON m.idFile = f.idFile "
+                   "JOIN path AS p ON f.idPath = p.idPath "
+                   "LEFT JOIN path AS pp ON m.c%02d = pp.idPath "
+                   "WHERE p.strPath LIKE 'rar://%%'",
+                   LOCAL_VIDEODB_ID_BASEPATH, LOCAL_VIDEODB_ID_PARENTPATHID)};
+    m_pDS->query(sql);
+
+    while (!m_pDS->eof())
+    {
+      const int idMovie{m_pDS->fv(0).get_asInt()};
+      const std::string basePath{m_pDS->fv(1).get_asString()};
+      const int idPath{m_pDS->fv(2).get_asInt()};
+      const std::string path{m_pDS->fv(3).get_asString()};
+      const int idParentPath{m_pDS->fv(4).get_asInt()};
+      const std::string parentPath{m_pDS->fv(5).get_asString()};
+
+      std::string newPath{KODI::DATABASE::MIGRATION::SanitiseUrlEncodingV147(path)};
+      if (newPath != path && !idPathSet.contains(idPath))
+      {
+        // Update rar:// path (in path)
+        sql =
+            PrepareSQL("UPDATE path SET strPath = '%s' WHERE idPath = %i", newPath.c_str(), idPath);
+        m_pDS2->exec(sql);
+        idPathSet.insert(idPath);
+      }
+
+      if (URIUtils::IsDOSPath(basePath))
+      {
+        newPath = basePath;
+        StringUtils::Replace(newPath, '/', '\\');
+        if (newPath != basePath)
+        {
+          // Update DOS basepath (in movie)
+          sql = PrepareSQL("UPDATE movie SET c%02d = '%s' WHERE idMovie = %i",
+                           LOCAL_VIDEODB_ID_BASEPATH, newPath.c_str(), idMovie);
+          m_pDS2->exec(sql);
+        }
+      }
+
+      FixParentPath("movie", "idMovie", LOCAL_VIDEODB_ID_PARENTPATHID, idMovie, idParentPath,
+                    parentPath);
+
+      m_pDS->next();
+    }
+    m_pDS->close();
+
+    // Episodes
+    sql = PrepareSQL("SELECT e.idEpisode, e.c%02d, p.idPath, p.strPath, pp.idPath, pp.strPath "
+                     "FROM episode AS e "
+                     "JOIN files AS f ON e.idFile = f.idFile "
+                     "JOIN path AS p ON f.idPath = p.idPath "
+                     "LEFT JOIN path AS pp ON e.c%02d = pp.idPath "
+                     "WHERE e.c%02d LIKE 'rar://%%'",
+                     LOCAL_VIDEODB_ID_EPISODE_BASEPATH, LOCAL_VIDEODB_ID_EPISODE_PARENTPATHID,
+                     LOCAL_VIDEODB_ID_EPISODE_BASEPATH);
+    m_pDS->query(sql);
+
+    while (!m_pDS->eof())
+    {
+      const int idEpisode{m_pDS->fv(0).get_asInt()};
+      const std::string basePath{m_pDS->fv(1).get_asString()};
+      const int idPath{m_pDS->fv(2).get_asInt()};
+      const std::string path{m_pDS->fv(3).get_asString()};
+      const int idParentPath{m_pDS->fv(4).get_asInt()};
+      const std::string parentPath{m_pDS->fv(5).get_asString()};
+
+      std::string newPath{KODI::DATABASE::MIGRATION::SanitiseUrlEncodingV147(path)};
+      if (newPath != path && !idPathSet.contains(idPath))
+      {
+        // Update rar:// path (in path)
+        sql =
+            PrepareSQL("UPDATE path SET strPath = '%s' WHERE idPath = %i", newPath.c_str(), idPath);
+        m_pDS2->exec(sql);
+        idPathSet.insert(idPath);
+      }
+
+      newPath = KODI::DATABASE::MIGRATION::SanitiseUrlEncodingV147(basePath);
+      if (newPath != basePath)
+      {
+        // Update rar:// base path (in episode)
+        sql = PrepareSQL("UPDATE episode SET c%02d = '%s' WHERE idEpisode = %i",
+                         LOCAL_VIDEODB_ID_EPISODE_BASEPATH, newPath.c_str(), idEpisode);
+        m_pDS2->exec(sql);
+      }
+
+      FixParentPath("episode", "idEpisode", LOCAL_VIDEODB_ID_EPISODE_PARENTPATHID, idEpisode,
+                    idParentPath, parentPath);
+
+      m_pDS->next();
+    }
+    m_pDS->close();
+  }
 }
 
 int CVideoDatabase::GetSchemaVersion() const
 {
-  return 144;
+  return 147;
 }

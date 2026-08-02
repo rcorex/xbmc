@@ -55,6 +55,17 @@ void CGUITextLayout::SetWrap(bool bWrap)
   m_wrap = bWrap;
 }
 
+void CGUITextLayout::SetFont(CGUIFont* font)
+{
+  const bool usingMonoFont = m_font != nullptr && m_font == m_monoFont;
+  m_varFont = font;
+  m_font = usingMonoFont ? m_monoFont : font;
+
+  // invalidate the cached text so the next Update()/UpdateW() re-lays out using the new font
+  m_lastUtf8Text.clear();
+  m_lastText.clear();
+}
+
 void CGUITextLayout::Render(float x,
                             float y,
                             float angle,
@@ -381,13 +392,23 @@ void CGUITextLayout::ParseText(const std::wstring& text,
   std::stack<KODI::UTILS::COLOR::Color> colorStack;
   colorStack.push(0);
 
-  // these aren't independent, but that's probably not too much of an issue
-  // eg [UPPERCASE]Glah[LOWERCASE]FReD[/LOWERCASE]Georeg[/UPPERCASE] will work (lower case >> upper case)
-  // but [LOWERCASE]Glah[UPPERCASE]FReD[/UPPERCASE]Georeg[/LOWERCASE] won't
+  // Boolean style tags ([B], [I], [LIGHT], [UPPERCASE], [LOWERCASE], [CAPITALIZE])
+  // use per-tag reference counts so that nested identical tags work correctly.
+  // This fixes the case where a skin wraps a label in e.g. [B]...[/B] while the
+  // addon has already formatted the value with [B]...[/B], producing [B][B]text[/B][/B].
+  // With simple |= / &=~ the first [/B] would clear bold for everything that follows.
+  // With reference counts the bit stays set until the last matching open tag is closed.
+  // Unmatched closing tags are no-ops (count floors at 0).
+  int boldDepth = 0;
+  int italicDepth = 0;
+  int lightDepth = 0;
+  int uppercaseDepth = 0;
+  int lowercaseDepth = 0;
+  int capitalizeDepth = 0;
 
   int startPos = 0;
   size_t pos = text.find(L'[');
-  while (pos != std::string::npos && pos + 1 < text.size())
+  while (pos != std::wstring::npos && pos + 1 < text.size())
   {
     uint32_t newStyle = 0;
     KODI::UTILS::COLOR::Color newColor = currentColor;
@@ -404,58 +425,94 @@ void CGUITextLayout::ParseText(const std::wstring& text,
     }
     // check for each type
     if (text.compare(pos, 2, L"B]") == 0)
-    { // bold - finish the current text block and assign the bold state
+    { // bold
       pos += 2;
-      if ((on && text.find(L"[/B]",pos) != std::string::npos) ||          // check for a matching end point
-         (!on && (currentStyle & FONT_STYLE_BOLD)))       // or matching start point
-        newStyle = FONT_STYLE_BOLD;
+      if (on)
+      {
+        if (text.find(L"[/B]", pos) != std::wstring::npos)
+          ++boldDepth;
+      }
+      else if (boldDepth > 0)
+        --boldDepth;
+      newStyle = FONT_STYLE_BOLD;
     }
     else if (text.compare(pos, 2, L"I]") == 0)
     { // italics
       pos += 2;
-      if ((on && text.find(L"[/I]", pos) != std::string::npos) ||          // check for a matching end point
-         (!on && (currentStyle & FONT_STYLE_ITALICS)))    // or matching start point
-        newStyle = FONT_STYLE_ITALICS;
+      if (on)
+      {
+        if (text.find(L"[/I]", pos) != std::wstring::npos)
+          ++italicDepth;
+      }
+      else if (italicDepth > 0)
+        --italicDepth;
+      newStyle = FONT_STYLE_ITALICS;
     }
     else if (text.compare(pos, 10, L"UPPERCASE]") == 0)
     {
       pos += 10;
-      if ((on && text.find(L"[/UPPERCASE]", pos) != std::string::npos) ||  // check for a matching end point
-         (!on && (currentStyle & FONT_STYLE_UPPERCASE)))  // or matching start point
-        newStyle = FONT_STYLE_UPPERCASE;
+      if (on)
+      {
+        if (text.find(L"[/UPPERCASE]", pos) != std::wstring::npos)
+          ++uppercaseDepth;
+      }
+      else if (uppercaseDepth > 0)
+        --uppercaseDepth;
+      newStyle = FONT_STYLE_UPPERCASE;
     }
     else if (text.compare(pos, 10, L"LOWERCASE]") == 0)
     {
       pos += 10;
-      if ((on && text.find(L"[/LOWERCASE]", pos) != std::string::npos) ||  // check for a matching end point
-         (!on && (currentStyle & FONT_STYLE_LOWERCASE)))  // or matching start point
-        newStyle = FONT_STYLE_LOWERCASE;
+      if (on)
+      {
+        if (text.find(L"[/LOWERCASE]", pos) != std::wstring::npos)
+          ++lowercaseDepth;
+      }
+      else if (lowercaseDepth > 0)
+        --lowercaseDepth;
+      newStyle = FONT_STYLE_LOWERCASE;
     }
     else if (text.compare(pos, 11, L"CAPITALIZE]") == 0)
     {
       pos += 11;
-      if ((on && text.find(L"[/CAPITALIZE]", pos) != std::string::npos) ||  // check for a matching end point
-         (!on && (currentStyle & FONT_STYLE_CAPITALIZE)))  // or matching start point
-        newStyle = FONT_STYLE_CAPITALIZE;
+      if (on)
+      {
+        if (text.find(L"[/CAPITALIZE]", pos) != std::wstring::npos)
+          ++capitalizeDepth;
+      }
+      else if (capitalizeDepth > 0)
+        --capitalizeDepth;
+      newStyle = FONT_STYLE_CAPITALIZE;
     }
     else if (text.compare(pos, 6, L"LIGHT]") == 0)
     {
       pos += 6;
-      if ((on && text.find(L"[/LIGHT]", pos) != std::string::npos) ||
-         (!on && (currentStyle & FONT_STYLE_LIGHT)))
-        newStyle = FONT_STYLE_LIGHT;
+      if (on)
+      {
+        if (text.find(L"[/LIGHT]", pos) != std::wstring::npos)
+          ++lightDepth;
+      }
+      else if (lightDepth > 0)
+        --lightDepth;
+      newStyle = FONT_STYLE_LIGHT;
     }
-    else if (text.compare(pos, 5, L"TABS]") == 0 && on)
+    else if (text.compare(pos, 5, L"TABS]") == 0)
     {
       pos += 5;
-      const size_t end = text.find(L"[/TABS]", pos);
-      if (end != std::string::npos)
+      if (on)
       {
-        std::string t;
-        g_charsetConverter.wToUTF8(text.substr(pos), t);
-        tabs = atoi(t.c_str());
-        pos = end + 7;
+        const size_t end = text.find(L"[/TABS]", pos);
+        if (end != std::wstring::npos)
+        {
+          std::string t;
+          g_charsetConverter.wToUTF8(text.substr(pos, end - pos), t);
+          tabs = atoi(t.c_str());
+          pos = end + 7;
+        }
       }
+      // Equivalent of newStyle for other formatting tags to have the tag text discarded.
+      if (!tabs)
+        tabs = -1;
     }
     else if (text.compare(pos, 3, L"CR]") == 0 && on)
     {
@@ -465,7 +522,8 @@ void CGUITextLayout::ParseText(const std::wstring& text,
     else if (text.compare(pos,5, L"COLOR") == 0)
     { // color
       size_t finish = text.find(L']', pos + 5);
-      if (on && finish != std::string::npos && text.find(L"[/COLOR]",finish) != std::string::npos)
+      if (on && finish != std::wstring::npos &&
+          text.find(L"[/COLOR]", finish) != std::wstring::npos)
       {
         std::string t;
         g_charsetConverter.wToUTF8(text.substr(pos + 5, finish - pos - 5), t);
@@ -493,7 +551,7 @@ void CGUITextLayout::ParseText(const std::wstring& text,
         newColor = colorStack.top();
         colorTagChange = true;
       }
-      if (finish != std::string::npos)
+      if (finish != std::wstring::npos)
         pos = finish + 1;
     }
 
@@ -512,13 +570,22 @@ void CGUITextLayout::ParseText(const std::wstring& text,
       for (int i = 0; i < tabs; ++i)
         parsedText.push_back(L'\t');
 
-      // and switch to the new style
+      // switch to the new style, deriving it from the current depths
       startPos = pos;
       currentColor = newColor;
-      if (on)
-        currentStyle |= newStyle;
-      else
-        currentStyle &= ~newStyle;
+      currentStyle = defaultStyle;
+      if (boldDepth > 0)
+        currentStyle |= FONT_STYLE_BOLD;
+      if (italicDepth > 0)
+        currentStyle |= FONT_STYLE_ITALICS;
+      if (lightDepth > 0)
+        currentStyle |= FONT_STYLE_LIGHT;
+      if (uppercaseDepth > 0)
+        currentStyle |= FONT_STYLE_UPPERCASE;
+      if (lowercaseDepth > 0)
+        currentStyle |= FONT_STYLE_LOWERCASE;
+      if (capitalizeDepth > 0)
+        currentStyle |= FONT_STYLE_CAPITALIZE;
     }
     pos = text.find(L'[', pos);
   }

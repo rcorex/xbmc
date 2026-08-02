@@ -13,6 +13,8 @@
 #include "utils/URIUtils.h"
 #include "utils/log.h"
 
+#include <chrono>
+
 namespace
 {
 constexpr const char* COMSKIP_HEADER = "FILE PROCESSING COMPLETE";
@@ -26,7 +28,9 @@ std::string CComskipParser::GetEdlFilePath(const CFileItem& item) const
   return URIUtils::ReplaceExtension(item.GetDynPath(), ".txt");
 }
 
-CEdlParserResult CComskipParser::Parse(const CFileItem& item, float fps)
+CEdlParserResult CComskipParser::Parse(const CFileItem& item,
+                                       float fps,
+                                       std::chrono::milliseconds duration)
 {
   CEdlParserResult result;
 

@@ -56,10 +56,6 @@ extern "C" FILE* fopen_utf8(const char* _Filename, const char* _Mode);
 #define fopen_utf8 fopen
 #endif
 
-#define GC_SCRIPT \
-  "import gc\n" \
-  "gc.collect(2)\n"
-
 #define PY_PATH_SEP DELIM
 
 // Time before ill-behaved scripts are terminated
@@ -88,7 +84,8 @@ static const std::string getListOfAddonClassesAsString(
 }
 
 CPythonInvoker::CPythonInvoker(ILanguageInvocationHandler* invocationHandler)
-  : ILanguageInvoker(invocationHandler), m_threadState(NULL)
+  : ILanguageInvoker(invocationHandler),
+    m_threadState(NULL)
 {
 }
 
@@ -347,7 +344,6 @@ bool CPythonInvoker::execute(const std::string& script, std::vector<std::wstring
     }
   }
 
-  m_systemExitThrown = false;
   InvokerState stateToSet;
   if (!failed && !PyErr_Occurred())
   {
@@ -357,7 +353,6 @@ bool CPythonInvoker::execute(const std::string& script, std::vector<std::wstring
   }
   else if (PyErr_ExceptionMatches(PyExc_SystemExit))
   {
-    m_systemExitThrown = true;
     CLog::Log(LOGDEBUG, "CPythonInvoker({}, {}): script aborted", GetId(), m_sourceFile);
     stateToSet = InvokerStateFailed;
     onAbort();
@@ -546,7 +541,6 @@ bool CPythonInvoker::stop(bool abort)
         PyEval_RestoreThread(ts);
       }
 
-
       PyThreadState* state = PyInterpreterState_ThreadHead(m_threadState->interp);
       while (state)
       {
@@ -583,33 +577,40 @@ void CPythonInvoker::onExecutionDone()
 
     onDeinitialization();
 
-    // run the gc before finishing
-    //
-    // if the script exited by throwing a SystemExit exception then going back
-    // into the interpreter causes this python bug to get hit:
-    //    http://bugs.python.org/issue10582
-    // and that causes major failures. So we are not going to go back in
-    // to run the GC if that's the case.
-    if (!m_stop && m_languageHook->HasRegisteredAddonClasses() && !m_systemExitThrown &&
-        PyRun_SimpleString(GC_SCRIPT) == -1)
-      CLog::Log(LOGERROR,
-                "CPythonInvoker({}, {}): failed to run the gc to clean up after running prior to "
-                "shutting down the Interpreter",
-                GetId(), m_sourceFile);
+    // Clear any lingering Python error state early, so it cannot affect
+    // the garbage collection or module dictionary clearing below.
+    PyErr_Clear();
 
-    // PyErr_Clear() is required to prevent the debug python library to trigger an assert() at the Py_EndInterpreter() level
+    // Force a full GC cycle unconditionally before teardown.
+    PyGC_Collect();
+
+    // Pre-clear all module dictionaries before calling Py_EndInterpreter.
+    // This ensures SWIG destructors fire cleanly while the interpreter
+    // is still fully initialised, preventing a SIGSEGV inside
+    // _PyModule_ClearDict when Py_EndInterpreter tears down the interpreter.
+    PyObject* modules = PyImport_GetModuleDict();
+    if (modules)
+      PyDict_Clear(modules);
+
+    // Collect any objects that became unreachable after dict clearing.
+    PyGC_Collect();
+
+    // Clear any Python error that may have been set by finalizers or
+    // the previous GC, to avoid debug asserts inside Py_EndInterpreter.
     PyErr_Clear();
 
     Py_EndInterpreter(m_threadState);
 
-    // If we still have objects left around, produce an error message detailing what's been left behind
+    // If objects remain, log them. The language hook is still registered,
+    // so destructor callbacks during cleanup unregister from this hook,
+    // avoiding false positives.
     if (m_languageHook->HasRegisteredAddonClasses())
       CLog::Log(LOGWARNING,
                 "CPythonInvoker({}, {}): the python script \"{}\" has left several "
                 "classes in memory that we couldn't clean up. The classes include: {}",
                 GetId(), m_sourceFile, m_sourceFile, getListOfAddonClassesAsString(m_languageHook));
 
-    // unregister the language hook
+    // Unregister the language hook
     m_languageHook->UnregisterMe();
 
     PyThreadState_Swap(m_mainThreadState);

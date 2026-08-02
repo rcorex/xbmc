@@ -306,7 +306,11 @@ void CBaseRenderer::CalculateFrameAspectRatio(unsigned int desired_width, unsign
 
 void CBaseRenderer::ManageRenderArea()
 {
-  m_viewRect = CServiceBroker::GetWinSystem()->GetGfxContext().GetViewWindow();
+  const CRect newRect = CServiceBroker::GetWinSystem()->GetGfxContext().GetViewWindow();
+  if (newRect.Width() != m_viewRect.Width() || newRect.Height() != m_viewRect.Height())
+    CLog::Log(LOGDEBUG, "CBaseRenderer::ManageRenderArea: viewRect {:.0f}x{:.0f} -> {:.0f}x{:.0f}",
+              m_viewRect.Width(), m_viewRect.Height(), newRect.Width(), newRect.Height());
+  m_viewRect = newRect;
 
   m_sourceRect.x1 = 0.0f;
   m_sourceRect.y1 = 0.0f;
@@ -354,17 +358,30 @@ EShaderFormat CBaseRenderer::GetShaderFormat()
 {
   EShaderFormat ret = SHADER_NONE;
 
-  if (m_format == AV_PIX_FMT_YUV420P)
+  // clang-format off
+  if (m_format == AV_PIX_FMT_YUV420P ||
+      m_format == AV_PIX_FMT_YUV422P ||
+      m_format == AV_PIX_FMT_YUV444P)
     ret = SHADER_YV12;
-  else if (m_format == AV_PIX_FMT_YUV420P9)
+  else if (m_format == AV_PIX_FMT_YUV420P9 ||
+           m_format == AV_PIX_FMT_YUV422P9 ||
+           m_format == AV_PIX_FMT_YUV444P9)
     ret = SHADER_YV12_9;
-  else if (m_format == AV_PIX_FMT_YUV420P10)
+  else if (m_format == AV_PIX_FMT_YUV420P10 ||
+           m_format == AV_PIX_FMT_YUV422P10 ||
+           m_format == AV_PIX_FMT_YUV444P10)
     ret = SHADER_YV12_10;
-  else if (m_format == AV_PIX_FMT_YUV420P12)
+  else if (m_format == AV_PIX_FMT_YUV420P12 ||
+           m_format == AV_PIX_FMT_YUV422P12 ||
+           m_format == AV_PIX_FMT_YUV444P12)
     ret = SHADER_YV12_12;
-  else if (m_format == AV_PIX_FMT_YUV420P14)
+  else if (m_format == AV_PIX_FMT_YUV420P14 ||
+           m_format == AV_PIX_FMT_YUV422P14 ||
+           m_format == AV_PIX_FMT_YUV444P14)
     ret = SHADER_YV12_14;
-  else if (m_format == AV_PIX_FMT_YUV420P16)
+  else if (m_format == AV_PIX_FMT_YUV420P16 ||
+           m_format == AV_PIX_FMT_YUV422P16 ||
+           m_format == AV_PIX_FMT_YUV444P16)
     ret = SHADER_YV12_16;
   else if (m_format == AV_PIX_FMT_NV12)
     ret = SHADER_NV12;
@@ -372,8 +389,10 @@ EShaderFormat CBaseRenderer::GetShaderFormat()
     ret = SHADER_YUY2;
   else if (m_format == AV_PIX_FMT_UYVY422)
     ret = SHADER_UYVY;
+  // clang-format on
   else
-    CLog::Log(LOGERROR, "CBaseRenderer::GetShaderFormat - unsupported format {}", m_format);
+    CLog::Log(LOGERROR, "CBaseRenderer::GetShaderFormat - unsupported format {}",
+              m_format == AV_PIX_FMT_NONE ? "none" : av_get_pix_fmt_name(m_format));
 
   return ret;
 }

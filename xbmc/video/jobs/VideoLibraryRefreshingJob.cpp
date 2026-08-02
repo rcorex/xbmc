@@ -32,6 +32,7 @@
 #include "utils/StringUtils.h"
 #include "utils/URIUtils.h"
 #include "utils/log.h"
+#include "video/FilenameAttributes.h"
 #include "video/VideoDatabase.h"
 #include "video/VideoInfoDownloader.h"
 #include "video/VideoInfoScanner.h"
@@ -292,7 +293,7 @@ bool CVideoLibraryRefreshingJob::Work(CVideoDatabase &db)
       CVideoInfoDownloader infoDownloader(scraper);
 
       // try adding by filename identifier
-      if (scraper->IsPython() && CUtil::HasFilenameIdentifier(itemTitle))
+      if (scraper->IsPython() && CFilenameAttributes(itemTitle, nullptr).HasIdentifier())
       {
         CFileItemList items;
         items.Add(m_item);
@@ -468,8 +469,6 @@ bool CVideoLibraryRefreshingJob::Work(CVideoDatabase &db)
           db.DeleteSeason(origDbId);
         else if (m_refreshAll)
           db.DeleteTvShow(origDbId);
-        else
-          db.DeleteDetailsForTvShow(origDbId);
       }
     }
 

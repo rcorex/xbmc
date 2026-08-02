@@ -65,7 +65,7 @@ public:
   void FrameMove();
   void FrameWait(std::chrono::milliseconds duration);
   void Render(bool clear, DWORD flags = 0, DWORD alpha = 255, bool gui = true);
-  bool IsVideoLayer();
+
   RESOLUTION GetResolution();
   void UpdateResolution();
   void TriggerUpdateResolution(float fps, int width, int height, std::string &stereomode);
@@ -100,6 +100,16 @@ public:
   bool AddVideoPicture(const VideoPicture& picture, volatile std::atomic_bool& bStop, EINTERLACEMETHOD deintMethod, bool wait);
   void AddOverlay(std::shared_ptr<CDVDOverlay> o, double pts);
   void ShowVideo(bool enable);
+
+  /*!
+   * \brief True if any subtitle/overlay is visible on the current presented
+   *  frame. Per-frame accurate. See OVERLAY::CRenderer::HasVisibleOverlay
+   *  for the libass vs PGS/DVB/SPU details.
+   *
+   *  Must be called after CRenderManager::FrameMove has run this frame
+   *  (which calls PrepareOverlays). Reads cached state; cheap.
+   */
+  bool HasVisibleOverlay() const { return m_overlays.HasVisibleOverlay(m_presentsource); }
 
   /**
    * If player uses buffering it has to wait for a buffer before it calls
@@ -152,7 +162,7 @@ protected:
   CCriticalSection m_datalock;
   bool m_bTriggerUpdateResolution = false;
   bool m_bRenderGUI = true;
-  bool m_renderedOverlay = false;
+  bool m_renderedDebugOverlay = false;
   bool m_renderDebug = false;
   bool m_renderDebugVideo = false;
   XbmcThreads::EndTime<> m_debugTimer;

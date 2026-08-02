@@ -13,6 +13,8 @@
 #include "utils/URIUtils.h"
 #include "utils/log.h"
 
+#include <chrono>
+
 namespace
 {
 constexpr const char* VIDEOREDO_HEADER = "<Version>2";
@@ -28,7 +30,9 @@ std::string CVideoReDoParser::GetEdlFilePath(const CFileItem& item) const
   return URIUtils::ReplaceExtension(item.GetDynPath(), ".Vprj");
 }
 
-CEdlParserResult CVideoReDoParser::Parse(const CFileItem& item, float fps)
+CEdlParserResult CVideoReDoParser::Parse(const CFileItem& item,
+                                         float fps,
+                                         std::chrono::milliseconds duration)
 {
   /*
    * VideoReDo file is strange. Tags are XML like, but it isn't an XML file.

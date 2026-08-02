@@ -45,7 +45,7 @@ constexpr auto TextureMappingGLES20 = make_map<KD_TEX_FMT, TextureFormat>(
   {KD_TEX_FMT_SDR_RGBA8, {GL_RGBA}},
 #endif
 
-#if defined(GL_EXT_texture_format_BGRA8888) || (GL_IMG_texture_format_BGRA8888)
+#if defined(GL_EXT_texture_format_BGRA8888) || defined(GL_IMG_texture_format_BGRA8888)
   {KD_TEX_FMT_SDR_BGRA8, {GL_BGRA_EXT}},
 #endif
 
@@ -65,7 +65,7 @@ constexpr auto TextureMappingGLES20 = make_map<KD_TEX_FMT, TextureFormat>(
 #if defined(GL_ES_VERSION_3_0)
 constexpr auto TextureMappingGLES30 = make_map<KD_TEX_FMT, TextureFormat>(
 {
-#if defined(GL_EXT_texture_sRGB_R8) && (GL_EXT_texture_sRGB_RG8) // in gl2ext.h, but spec says >= 3.0
+#if defined(GL_EXT_texture_sRGB_R8) && defined(GL_EXT_texture_sRGB_RG8) // in gl2ext.h, but spec says >= 3.0
   {KD_TEX_FMT_SDR_R8, {GL_R8, GL_SR8_EXT, GL_RED}},
   {KD_TEX_FMT_SDR_RG8, {GL_RG8, GL_SRG8_EXT, GL_RG}},
 #else
@@ -98,7 +98,7 @@ constexpr auto TextureMappingGLES30 = make_map<KD_TEX_FMT, TextureFormat>(
 // Common GLES extensions (texture compression)
 constexpr auto TextureMappingGLESExtensions = make_map<KD_TEX_FMT, TextureFormat>(
 {
-#if defined(GL_EXT_texture_compression_s3tc) && (GL_EXT_texture_compression_s3tc_srgb)
+#if defined(GL_EXT_texture_compression_s3tc) && defined(GL_EXT_texture_compression_s3tc_srgb)
   {KD_TEX_FMT_S3TC_RGB8, {GL_COMPRESSED_RGB_S3TC_DXT1_EXT, GL_COMPRESSED_SRGB_S3TC_DXT1_EXT}},
   {KD_TEX_FMT_S3TC_RGB8_A1, {GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT}},
   {KD_TEX_FMT_S3TC_RGB8_A4, {GL_COMPRESSED_RGBA_S3TC_DXT3_EXT, GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT}},
@@ -123,7 +123,7 @@ constexpr auto TextureMappingGLESExtensions = make_map<KD_TEX_FMT, TextureFormat
   {KD_TEX_FMT_BPTC_RGBA8, {GL_COMPRESSED_RGBA_BPTC_UNORM_EXT, GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM_EXT}},
 #endif
 
-#if defined(GL_KHR_texture_compression_astc_ldr) || (GL_KHR_texture_compression_astc_hdr)
+#if defined(GL_KHR_texture_compression_astc_ldr) || defined(GL_KHR_texture_compression_astc_hdr)
   {KD_TEX_FMT_ASTC_LDR_4x4, {GL_COMPRESSED_RGBA_ASTC_4x4_KHR, GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x4_KHR}},
   {KD_TEX_FMT_ASTC_LDR_5x4, {GL_COMPRESSED_RGBA_ASTC_5x4_KHR, GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x4_KHR}},
   {KD_TEX_FMT_ASTC_LDR_5x5, {GL_COMPRESSED_RGBA_ASTC_5x5_KHR, GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x5_KHR}},
@@ -313,7 +313,8 @@ void CGLESTexture::LoadToGPU()
     return;
   }
 
-  if ((m_textureFormat & KD_TEX_FMT_SDR) || (m_textureFormat & KD_TEX_FMT_HDR))
+  const int formatType = m_textureFormat & KD_TEX_FMT_TYPE_MASK;
+  if (formatType == KD_TEX_FMT_SDR || formatType == KD_TEX_FMT_HDR)
   {
     glTexImage2D(GL_TEXTURE_2D, 0, glesFormat.internalFormat, m_textureWidth, m_textureHeight, 0,
                  glesFormat.format, glesFormat.type, m_pixels);
@@ -406,6 +407,7 @@ void CGLESTexture::SwapBlueRedSwizzle(GLint& component)
 TextureFormat CGLESTexture::GetFormatGLES20(KD_TEX_FMT textureFormat)
 {
   TextureFormat glFormat;
+  const int formatType = textureFormat & KD_TEX_FMT_TYPE_MASK;
 
   // GLES 2.0 does not support swizzling. But for some Kodi formats+swizzles,
   // we can map GLES formats (Luminance, Luminance-Alpha, BGRA). The swizzle
@@ -438,8 +440,8 @@ TextureFormat CGLESTexture::GetFormatGLES20(KD_TEX_FMT textureFormat)
       glFormat.format = glFormat.internalFormat = GL_RGBA;
     }
   }
-  else if (textureFormat & KD_TEX_FMT_SDR || textureFormat & KD_TEX_FMT_HDR ||
-           textureFormat & KD_TEX_FMT_ETC1)
+  else if (formatType == KD_TEX_FMT_SDR || formatType == KD_TEX_FMT_HDR ||
+           formatType == KD_TEX_FMT_ETC1)
   {
     const auto it = TextureMappingGLES20.find(textureFormat);
     if (it != TextureMappingGLES20.cend())
@@ -459,8 +461,10 @@ TextureFormat CGLESTexture::GetFormatGLES20(KD_TEX_FMT textureFormat)
 TextureFormat CGLESTexture::GetFormatGLES30(KD_TEX_FMT textureFormat)
 {
   TextureFormat glFormat;
+  const int formatType = textureFormat & KD_TEX_FMT_TYPE_MASK;
 
-  if (textureFormat & KD_TEX_FMT_SDR || textureFormat & KD_TEX_FMT_HDR)
+  if (formatType == KD_TEX_FMT_SDR || formatType == KD_TEX_FMT_HDR ||
+      formatType == KD_TEX_FMT_ETC1 || formatType == KD_TEX_FMT_ETC2)
   {
 #if defined(GL_ES_VERSION_3_0)
     const auto it = TextureMappingGLES30.find(textureFormat);

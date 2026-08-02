@@ -8,6 +8,9 @@
 
 #pragma once
 
+// No advantage to clobbering history when the formatted file is much less readable
+// clang-format off
+
 // Window ID defines to make the code a bit more readable
 #define WINDOW_INVALID                     9999 // do not change. value is used to avoid include in headers.
 #define WINDOW_HOME                       10000
@@ -158,6 +161,7 @@
 #define WINDOW_DIALOG_IN_GAME_SAVES 10829
 #define WINDOW_DIALOG_GAME_SAVES 10830
 #define WINDOW_DIALOG_GAME_AGENTS 10831
+#define WINDOW_DIALOG_GAME_DISC_MANAGER 10832
 
 //#define WINDOW_VIRTUAL_KEYBOARD           11000
 // WINDOW_ID's from 11100 to 11199 reserved for Skins
@@ -205,3 +209,4 @@
 #define WINDOW_ADDON_START                14000
 #define WINDOW_ADDON_END                  14099
 
+// clang-format on

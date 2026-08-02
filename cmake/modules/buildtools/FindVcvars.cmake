@@ -177,6 +177,7 @@ to their associated toolset or Visual Studio major release:
 
   Example mappings:
 
+  - ``Vcvars_TOOLSET_145_MSVC_VERSIONS`` — MSVC versions associated with toolset ``v145`` (Visual Studio 2026)
   - ``Vcvars_TOOLSET_143_MSVC_VERSIONS`` — MSVC versions associated with toolset ``v143`` (Visual Studio 2022)
   - ``Vcvars_TOOLSET_142_MSVC_VERSIONS`` — MSVC versions associated with toolset ``v142`` (Visual Studio 2019)
   - ``Vcvars_TOOLSET_141_MSVC_VERSIONS`` — MSVC versions associated with toolset ``v141`` (Visual Studio 2017)
@@ -196,6 +197,7 @@ to their associated toolset or Visual Studio major release:
 
   Example aliases:
 
+  - ``Vcvars_VS18_MSVC_VERSIONS`` — aliases ``Vcvars_TOOLSET_145_MSVC_VERSIONS`` (Visual Studio 2026)
   - ``Vcvars_VS17_MSVC_VERSIONS`` — aliases ``Vcvars_TOOLSET_143_MSVC_VERSIONS`` (Visual Studio 2022)
   - ``Vcvars_VS16_MSVC_VERSIONS`` — aliases ``Vcvars_TOOLSET_142_MSVC_VERSIONS`` (Visual Studio 2019)
   - ``Vcvars_VS15_MSVC_VERSIONS`` — aliases ``Vcvars_TOOLSET_141_MSVC_VERSIONS`` (Visual Studio 2017)
@@ -223,7 +225,7 @@ cmake_minimum_required(VERSION 3.20.6...3.22.6 FATAL_ERROR)
 # See https://github.com/Kitware/CMake/blob/v4.2.1/Modules/Platform/Windows-MSVC.cmake#L64-L96
 
 set(Vcvars_TOOLSET_145_MSVC_VERSIONS # VS 2026
-  1950
+  1959 1958 1957 1956 1955 1954 1953 1952 1951 1950
   )
 set(Vcvars_TOOLSET_143_MSVC_VERSIONS # VS 2022
   1949 1948 1947 1946 1945 1944 1943 1942 1941 1940

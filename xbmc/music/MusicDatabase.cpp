@@ -10,6 +10,7 @@
 
 #include "Album.h"
 #include "Artist.h"
+#include "DatabaseTypes.h"
 #include "FileItem.h"
 #include "FileItemList.h"
 #include "GUIInfoManager.h"
@@ -116,7 +117,9 @@ void AnnounceUpdate(const std::string& content, int id, bool added = false)
 }
 } // unnamed namespace
 
-CMusicDatabase::CMusicDatabase() = default;
+CMusicDatabase::CMusicDatabase() : CDatabase(KODI::DATABASE::TYPE_MUSIC)
+{
+}
 
 CMusicDatabase::~CMusicDatabase()
 {
@@ -1425,7 +1428,7 @@ int CMusicDatabase::AddAlbum(const std::string& strAlbum,
                              const std::string& strType,
                              const std::string& strReleaseStatus,
                              bool bCompilation,
-                             ReleaseType releaseType)
+                             AudioType::Type releaseType)
 {
   std::string strSQL;
   try
@@ -1462,7 +1465,7 @@ int CMusicDatabase::AddAlbum(const std::string& strAlbum,
                      strAlbum.c_str(), strArtist.c_str(), strGenre.c_str(), //
                      strReleaseDate.c_str(), strOrigReleaseDate.c_str(), bBoxedSet, //
                      strRecordLabel.c_str(), strType.c_str(), strReleaseStatus.c_str(), //
-                     bCompilation, CAlbum::ReleaseTypeToString(releaseType).c_str());
+                     bCompilation, AudioType::ToString(releaseType).c_str());
 
       if (strMusicBrainzAlbumID.empty())
         strSQL += PrepareSQL(", NULL");
@@ -1516,7 +1519,7 @@ int CMusicDatabase::AddAlbum(const std::string& strAlbum,
                      "WHERE idAlbum=%i",
                      strGenre.c_str(), strReleaseDate.c_str(), strOrigReleaseDate.c_str(), //
                      bBoxedSet, strRecordLabel.c_str(), strType.c_str(), strReleaseStatus.c_str(),
-                     bCompilation, CAlbum::ReleaseTypeToString(releaseType).c_str(), //
+                     bCompilation, AudioType::ToString(releaseType).c_str(), //
                      idAlbum);
       m_pDS->exec(strSQL);
       DeleteAlbumArtistsByAlbum(idAlbum);
@@ -1554,7 +1557,7 @@ int CMusicDatabase::UpdateAlbum(int idAlbum,
                                 const std::string& strOrigReleaseDate,
                                 bool bBoxedSet,
                                 bool bCompilation,
-                                ReleaseType releaseType,
+                                AudioType::Type releaseType,
                                 bool bScrapedMBID)
 {
   if (idAlbum < 0)
@@ -1584,7 +1587,7 @@ int CMusicDatabase::UpdateAlbum(int idAlbum,
                       strType.c_str(), static_cast<double>(fRating), iUserrating, iVotes, //
                       strReleaseDate.c_str(), strOrigReleaseDate.c_str(), //
                       bBoxedSet, bCompilation, //
-                      CAlbum::ReleaseTypeToString(releaseType).c_str(), strReleaseStatus.c_str(), //
+                      AudioType::ToString(releaseType).c_str(), strReleaseStatus.c_str(), //
                       CDateTime::GetUTCDateTime().GetAsDBDateTime().c_str(), bScrapedMBID);
   if (strMusicBrainzAlbumID.empty())
     strSQL += PrepareSQL(", strMusicBrainzAlbumID = NULL");
@@ -3212,7 +3215,7 @@ void CMusicDatabase::GetFileItemFromDataset(const dbiplus::sql_record* const rec
   // get the album artist string from songview (not the album_artist and artist tables)
   item->GetMusicInfoTag()->SetAlbumArtist(record->at(song_strAlbumArtists).get_asString());
   item->GetMusicInfoTag()->SetAlbumReleaseType(
-      CAlbum::ReleaseTypeFromString(record->at(song_strAlbumReleaseType).get_asString()));
+      AudioType::FromString(record->at(song_strAlbumReleaseType).get_asString()));
   item->GetMusicInfoTag()->SetBPM(record->at(song_iBPM).get_asInt());
   item->GetMusicInfoTag()->SetBitRate(record->at(song_iBitRate).get_asInt());
   item->GetMusicInfoTag()->SetSampleRate(record->at(song_iSampleRate).get_asInt());
@@ -3747,7 +3750,7 @@ bool CMusicDatabase::GetRecentlyPlayedAlbums(std::vector<CAlbum>& albums)
                    "JOIN albumview ON albumview.idAlbum = playedalbums.idAlbum "
                    "JOIN albumartistview ON albumview.idAlbum = albumartistview.idAlbum "
                    "ORDER BY albumview.lastplayed DESC, albumartistview.iorder ",
-                   CAlbum::ReleaseTypeToString(ReleaseType::Album).c_str(), RECENTLY_PLAYED_LIMIT);
+                   AudioType::ToString(AudioType::Type::Album).c_str(), RECENTLY_PLAYED_LIMIT);
 
     auto queryStart = std::chrono::steady_clock::now();
     CLog::LogF(LOGDEBUG, "query: {}", strSQL);
@@ -4616,6 +4619,7 @@ int CMusicDatabase::Cleanup(CGUIDialogProgress* progressDialog /*= nullptr*/)
   CLog::Log(LOGINFO, "Starting musicdatabase cleanup ...");
   CServiceBroker::GetAnnouncementManager()->Announce(ANNOUNCEMENT::AudioLibrary, "OnCleanStarted");
 
+  BeginTransaction();
   SetLibraryLastCleaned();
 
   // Drop triggers  song_artist and album_artist to avoid creation of entries in removed_link
@@ -8556,11 +8560,12 @@ void CMusicDatabase::UpdateTables(int version)
 
     // set strReleaseType based on album name
     m_pDS->exec(PrepareSQL(
-        "UPDATE album SET strReleaseType = '%s' WHERE strAlbum IS NOT NULL AND strAlbum <> ''",
-        CAlbum::ReleaseTypeToString(ReleaseType::Album).c_str()));
+      "UPDATE album SET strReleaseType = '%s' WHERE strAlbum IS NOT NULL AND strAlbum <> ''",
+        AudioType::ToString(AudioType::Type::Album).c_str()));
     m_pDS->exec(
-        PrepareSQL("UPDATE album SET strReleaseType = '%s' WHERE strAlbum IS NULL OR strAlbum = ''",
-                   CAlbum::ReleaseTypeToString(ReleaseType::Single).c_str()));
+        PrepareSQL(
+        "UPDATE album SET strReleaseType = '%s' WHERE strAlbum IS NULL OR strAlbum = ''",
+         AudioType::ToString(AudioType::Type::Single).c_str()));
   }
   if (version < 51)
   {
@@ -11134,7 +11139,7 @@ int CMusicDatabase::GetSinglesCount()
 {
   CDatabase::Filter filter(
       PrepareSQL("songview.idAlbum IN (SELECT idAlbum FROM album WHERE strReleaseType = '%s')",
-                 CAlbum::ReleaseTypeToString(ReleaseType::Single).c_str()));
+                 AudioType::ToString(AudioType::Type::Single).c_str()));
   return GetSongsCount(filter);
 }
 
@@ -11874,7 +11879,7 @@ void CMusicDatabase::ExportToXML(const CLibExportSettings& settings,
       // Find albums to export
       std::vector<int> albumIds;
       std::string strSQL = PrepareSQL("SELECT idAlbum FROM album WHERE strReleaseType = '%s' ",
-                                      CAlbum::ReleaseTypeToString(ReleaseType::Album).c_str());
+                                      AudioType::ToString(AudioType::Type::Album).c_str());
       if (!settings.IsUnscraped())
         strSQL += "AND lastScraped IS NOT NULL";
       CLog::LogF(LOGDEBUG, "{}", strSQL);
@@ -12764,7 +12769,7 @@ void CMusicDatabase::SetPropertiesFromAlbum(CFileItem& item, const CAlbum& album
 
   item.SetProperty("album_isboxset", album.bBoxedSet);
   item.SetProperty("album_totaldiscs", album.iTotalDiscs);
-  item.SetProperty("album_releasetype", CAlbum::ReleaseTypeToString(album.releaseType));
+  item.SetProperty("album_releasetype", AudioType::ToString(album.releaseType));
   item.SetProperty("album_duration",
                    StringUtils::SecondsToTimeString(album.iAlbumDuration, TIME_FORMAT_GUESS));
 }
@@ -13622,7 +13627,7 @@ bool CMusicDatabase::GetFilter(CDbUrl& musicUrl, Filter& filter, SortDescription
       option = options.find("show_singles");
       if (option == options.end() || !option->second.asBoolean())
         filter.AppendWhere(PrepareSQL("albumview.strReleaseType = '%s'",
-                                      CAlbum::ReleaseTypeToString(ReleaseType::Album).c_str()));
+                                      AudioType::ToString(AudioType::Type::Album).c_str()));
     }
   }
   else if (type == "discs")
@@ -13725,7 +13730,7 @@ bool CMusicDatabase::GetFilter(CDbUrl& musicUrl, Filter& filter, SortDescription
       filter.AppendWhere(PrepareSQL(
           "songview.idAlbum %sIN (SELECT idAlbum FROM album WHERE strReleaseType = '%s')",
           option->second.asBoolean() ? "" : "NOT ",
-          CAlbum::ReleaseTypeToString(ReleaseType::Single).c_str()));
+          AudioType::ToString(AudioType::Type::Single).c_str()));
 
     // When have idAlbum skip year, compilation, boxset criteria as already applied via album
     if (idAlbum < 0)

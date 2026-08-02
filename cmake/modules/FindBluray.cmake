@@ -38,7 +38,20 @@ if(NOT TARGET ${APP_NAME_LC}::${CMAKE_FIND_PACKAGE_NAME})
 
         if(Java_Development_FOUND)
           get_filename_component(java_binpath ${Java_JAVAC_EXECUTABLE} DIRECTORY)
-          get_filename_component(java_homepath ${java_binpath} DIRECTORY)
+
+          # Apple hosts have a complicated potential combination of binary and include paths
+          # If on an apple host, fall back to using the /usr/libexec/java_home binary to search
+          # for path based on the found version in the find_package(Java) call.
+          # This avoids the issue when the java binary is found in /usr/bin, as apple has
+          # potential helpers that dont necessarily stem from JAVA_HOME env vars
+          if(CMAKE_HOST_APPLE)
+            execute_process(COMMAND /usr/libexec/java_home -v ${Java_VERSION}
+                            ERROR_QUIET
+                            OUTPUT_VARIABLE java_homepath
+                            OUTPUT_STRIP_TRAILING_WHITESPACE)
+          else()
+            get_filename_component(java_homepath ${java_binpath} DIRECTORY)
+          endif()
 
           get_target_property(ANT_PATH ANT::ANT ANT_PATH)
           get_target_property(ANT_HOME ANT::ANT ANT_HOME)
@@ -54,6 +67,8 @@ if(NOT TARGET ${APP_NAME_LC}::${CMAKE_FIND_PACKAGE_NAME})
           endif()
           set(temp_extras_arg -Djdk_home=${java_homepath} -Dbdj_jar=enabled)
           unset(temp_env_mod)
+
+          set(build_jar ON)
         endif()
       endif()
     endif()
@@ -196,6 +211,11 @@ if(NOT TARGET ${APP_NAME_LC}::${CMAKE_FIND_PACKAGE_NAME})
     else()
       SETUP_BUILD_TARGET()
       add_dependencies(${APP_NAME_LC}::${CMAKE_FIND_PACKAGE_NAME} ${${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_BUILD_NAME})
+
+      if(build_jar)
+        set_property(TARGET ${APP_NAME_LC}::${CMAKE_FIND_PACKAGE_NAME} PROPERTY BDJ_BUILD ON)
+        set_property(TARGET ${APP_NAME_LC}::${CMAKE_FIND_PACKAGE_NAME} PROPERTY BDJ_VERSION ${${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_VER})
+      endif()
     endif()
 
     set(${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_COMPILE_DEFINITIONS HAVE_LIBBLURAY)
@@ -203,6 +223,12 @@ if(NOT TARGET ${APP_NAME_LC}::${CMAKE_FIND_PACKAGE_NAME})
     # This is incorrectly applied to all platforms. Requires its own handling in the future
     if(NOT CORE_PLATFORM_NAME_LC STREQUAL windowsstore)
       list(APPEND ${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_COMPILE_DEFINITIONS HAVE_LIBBLURAY_BDJ)
+    endif()
+
+    find_package(BlurayBDJ ${SEARCH_QUIET})
+    if(TARGET Extras::BlurayBDJ)
+      #Todo: Relocate the HAVE_LIBBLURAY_BDJ compile definition inside the succesful bdj target?
+      add_dependencies(Extras::BlurayBDJ ${APP_NAME_LC}::${CMAKE_FIND_PACKAGE_NAME})
     endif()
 
     ADD_TARGET_COMPILE_DEFINITION()

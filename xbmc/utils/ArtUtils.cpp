@@ -231,7 +231,7 @@ std::string GetLocalArtBaseFilename(const CFileItem& item,
   {
     // Optical media files (VIDEO_TS.IFO/INDEX.BDMV) should be treated like folders
     useFolder = true; // ByRef so changes behaviour in GetLocalArt()
-    strFile = URIUtils::GetBasePath(file);
+    strFile = URIUtils::GetParentPath(file);
   }
 
   if (!URIUtils::GetFileName(file).empty() && item.HasVideoInfoTag() &&

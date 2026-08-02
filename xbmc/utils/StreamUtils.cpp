@@ -44,7 +44,7 @@ int StreamUtils::GetCodecPriority(const std::string &codec)
     return 4;
   if (codec == "eac3") // Dolby Digital Plus
     return 3;
-  if (codec == "dca") // DTS
+  if (codec == "dts") // DTS
     return 2;
   if (codec == "ac3") // Dolby Digital
     return 1;
@@ -65,8 +65,14 @@ std::string StreamUtils::GetCodecName(int codecId, int profile)
       codecName = "dtshd_ma_x_imax";
     else if (profile == AV_PROFILE_DTS_HD_HRA)
       codecName = "dtshd_hra";
+    else if (profile == AV_PROFILE_DTS_ES)
+      codecName = "dts_es";
+    else if (profile == AV_PROFILE_DTS_96_24)
+      codecName = "dts_96_24";
+    else if (profile == AV_PROFILE_DTS_EXPRESS)
+      codecName = "dts_express";
     else
-      codecName = "dca";
+      codecName = "dts";
 
     return codecName;
   }

@@ -131,8 +131,19 @@ bool CGUIFontTTFGL::FirstBegin()
     m_textureStatus = TEXTURE_READY;
   }
 
-  // Turn Blending On
-  glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE_MINUS_DST_ALPHA, GL_ONE);
+  // Alpha blending assumes linear light. SDR (direct-to-backbuffer or
+  // direct-to-plane) blends in sRGB -- "wrong but consistent", the aesthetic
+  // skins are designed against. HDR FBO compositing draws GUI into an sRGB
+  // FBO that is color-transformed to PQ before compositing with video in
+  // that non-linear space -- two stages of non-linear blending. The
+  // compensated factors below trade accumulator coverage for a squared-
+  // alpha blend that approximately matches SDR perceived translucency. It
+  // is a "close enough" compromise; a mathematically correct fix would
+  // require linear-light compositing (too expensive on typical ARM GPUs).
+  if (CServiceBroker::GetWinSystem()->IsHdrComposite())
+    glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  else
+    glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE_MINUS_DST_ALPHA, GL_ONE);
   glEnable(GL_BLEND);
   glActiveTexture(GL_TEXTURE0);
   glBindTexture(GL_TEXTURE_2D, m_nTexture);
@@ -275,6 +286,7 @@ void CGUIFontTTFGL::LastEnd()
             reinterpret_cast<GLvoid*>(character * sizeof(SVertex) * 4 + offsetof(SVertex, u)));
 
         glDrawElements(GL_TRIANGLES, 6 * count, GL_UNSIGNED_SHORT, 0);
+        CRenderSystemBase::m_GUIElementCount++;
       }
     }
 

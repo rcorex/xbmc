@@ -301,14 +301,10 @@ int SqliteDatabase::setErr(int err_code, const char* qry)
   }
   if (conn)
     ss << " (" << sqlite3_errmsg(conn) << ")";
-  ss << "\nQuery: " << qry;
+  if (qry != nullptr)
+    ss << "\nQuery: " << qry;
   error = ss.str();
   return err_code;
-}
-
-const char* SqliteDatabase::getErrorMsg()
-{
-  return error.c_str();
 }
 
 static int AlphaNumericCollation(
@@ -321,6 +317,16 @@ int SqliteDatabase::connect(bool create)
 {
   if (host.empty() || db.empty())
     return DB_CONNECTION_NONE;
+
+  {
+    static bool showed_ver_info = false;
+    if (!showed_ver_info)
+    {
+      const char* version_string = sqlite3_libversion();
+      CLog::Log(LOGINFO, "SqliteDatabase: library version {}", version_string);
+      showed_ver_info = true;
+    }
+  }
 
   //CLog::Log(LOGDEBUG, "Connecting to sqlite:{}:{}", host, db);
 
@@ -403,6 +409,7 @@ void SqliteDatabase::disconnect()
     return;
   sqlite3_close(conn);
   active = false;
+  conn = nullptr; // Reset handle to avoid stale pointer usage after database is closed
 }
 
 int SqliteDatabase::postconnect()
@@ -491,7 +498,7 @@ int SqliteDatabase::drop_analytics()
   std::string sqlcmd;
   for (const auto record : res.records)
   {
-    sqlcmd = StringUtils::Format("DROP INDEX '{}'", record->at(0).get_asString().c_str());
+    sqlcmd = StringUtils::Format("DROP INDEX `{}`", record->at(0).get_asString().c_str());
     err = sqlite3_exec(conn, sqlcmd.c_str(), nullptr, nullptr, nullptr);
     if (err != SQLITE_OK)
       return DB_UNEXPECTED_RESULT;
@@ -506,7 +513,7 @@ int SqliteDatabase::drop_analytics()
 
   for (const auto& record : res.records)
   {
-    sqlcmd = StringUtils::Format("DROP VIEW '{}'", record->at(0).get_asString().c_str());
+    sqlcmd = StringUtils::Format("DROP VIEW `{}`", record->at(0).get_asString().c_str());
     err = sqlite3_exec(conn, sqlcmd.c_str(), nullptr, nullptr, nullptr);
     if (err != SQLITE_OK)
       return DB_UNEXPECTED_RESULT;
@@ -521,7 +528,7 @@ int SqliteDatabase::drop_analytics()
 
   for (const auto& record : res.records)
   {
-    sqlcmd = StringUtils::Format("DROP TRIGGER '{}'", record->at(0).get_asString().c_str());
+    sqlcmd = StringUtils::Format("DROP TRIGGER `{}`", record->at(0).get_asString().c_str());
     err = sqlite3_exec(conn, sqlcmd.c_str(), nullptr, nullptr, nullptr);
     if (err != SQLITE_OK)
       return DB_UNEXPECTED_RESULT;
@@ -891,7 +898,7 @@ int SqliteDataset::exec(const std::string& sql)
 
   const auto start = std::chrono::steady_clock::now();
 
-  char* errmsg;
+  char* errmsg = nullptr; // Must be initialized to nullptr; sqlite3_exec may not always set it
   const int res =
       db->setErr(sqlite3_exec(handle(), qry.c_str(), &callback, &exec_res, &errmsg), qry.c_str());
 
@@ -908,13 +915,20 @@ int SqliteDataset::exec(const std::string& sql)
   {
     if (errmsg)
     {
-      DbErrors err("%s (%s)", db->getErrorMsg(), errmsg);
+      // Guard against possible NULL strings from getErrorMsg
+      const char* dbErr = db->getErrorMsg();
+      if (!dbErr)
+        dbErr = "unknown database error";
+      DbErrors err("%s (%s)", dbErr, errmsg);
       sqlite3_free(errmsg);
       throw err;
     }
     else
     {
-      throw DbErrors("%s", db->getErrorMsg());
+      const char* dbErr = db->getErrorMsg();
+      if (!dbErr)
+        dbErr = "unknown database error";
+      throw DbErrors("%s", dbErr);
     }
   }
 }

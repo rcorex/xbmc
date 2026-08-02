@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2005-2018 Team Kodi
+ *  Copyright (C) 2005-2026 Team Kodi
  *  This file is part of Kodi - https://kodi.tv
  *
  *  SPDX-License-Identifier: GPL-2.0-or-later
@@ -16,6 +16,7 @@
 #include "threads/CriticalSection.h"
 #include "threads/SystemClock.h"
 
+#include <chrono>
 #include <memory>
 #include <string>
 #include <vector>
@@ -61,6 +62,7 @@ public:
   bool IsRenderingVideo() const;
   bool IsRenderingGuiLayer() const;
   bool IsRenderingVideoLayer() const;
+  bool HasVisibleOverlay() const;
   bool Supports(EINTERLACEMETHOD method) const;
   EINTERLACEMETHOD GetDeinterlacingMethodDefault() const;
   bool Supports(ESCALINGMETHOD method) const;
@@ -87,6 +89,7 @@ public:
   int GetAudioStream();
   int GetAudioStreamCount() const;
   void GetAudioStreamInfo(int index, AudioStreamInfo& info) const;
+  std::vector<std::chrono::milliseconds> GetBookmarks() const;
   int GetCacheLevel() const;
   float GetCachePercentage() const;
   int GetChapterCount() const;
@@ -150,6 +153,7 @@ public:
   void SeekTimeRelative(int64_t iTime = 0);
   void SetAudioStream(int iStream);
   void SetAVDelay(float fValue = 0.0f);
+  void SetBookmarks(const std::vector<std::chrono::milliseconds>& bookmarks);
   void SetDynamicRangeCompression(long drc);
   void SetMute(bool bOnOff);
   bool SetPlayerState(const std::string& state);
@@ -184,6 +188,26 @@ public:
    * \copydoc IPlayer::HasGameAgent
    */
   bool HasGameAgent() const;
+
+  /*!
+   * \copydoc IPlayer::SupportsDiscControl
+   */
+  bool SupportsDiscControl() const;
+
+  /*!
+   * \copydoc IPlayer::IsDiscEjected
+   */
+  bool IsDiscEjected() const;
+
+  /*!
+   * \copydoc IPlayer::DiscLabel
+   */
+  std::string DiscLabel() const;
+
+  /*!
+   * \copydoc IPlayer::IsTrayEmpty
+   */
+  bool IsTrayEmpty() const;
 
 private:
   std::shared_ptr<const IPlayer> GetInternal() const;

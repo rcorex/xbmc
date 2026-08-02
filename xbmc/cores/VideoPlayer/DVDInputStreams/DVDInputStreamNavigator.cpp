@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2005-2022 Team Kodi
+ *  Copyright (C) 2005-2026 Team Kodi
  *  This file is part of Kodi - https://kodi.tv
  *
  *  SPDX-License-Identifier: GPL-2.0-or-later
@@ -36,6 +36,19 @@
 #include <chrono>
 #include <memory>
 #include <string>
+
+/*****************************************************************************
+* iovec structure: vectored data entry
+*****************************************************************************/
+#ifdef TARGET_WINDOWS
+struct iovec
+{
+  void *iov_base;     /* Pointer to data. */
+  size_t iov_len;     /* Length of data.  */
+};
+#else
+#   include <sys/uio.h>                                      /* struct iovec */
+#endif
 
 using namespace std::chrono_literals;
 
@@ -974,6 +987,8 @@ void CDVDInputStreamNavigator::SetSubtitleStreamName(SubtitleStreamInfo &info, c
       default:
         break;
     }
+    info.codecName = "dvd_subtitle";
+    info.codecDesc = "VobSub";
   }
 }
 

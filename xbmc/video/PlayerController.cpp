@@ -93,9 +93,15 @@ bool CPlayerController::OnAction(const CAction &action)
             sub = lang;
           else
             sub = StringUtils::Format("{} - {}", lang, info.name);
+
+          if (!info.codecDesc.empty())
+            sub.append(StringUtils::Format(" ({})", info.codecDesc));
+          else if (!info.codecName.empty())
+            sub.append(StringUtils::Format(" ({})", info.codecName));
         }
         else
           sub = CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(1223);
+
         CGUIDialogKaiToast::QueueNotification(
             CGUIDialogKaiToast::Info,
             CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(287), sub, DisplTime,
@@ -150,9 +156,15 @@ bool CPlayerController::OnAction(const CAction &action)
             sub = lang;
           else
             sub = StringUtils::Format("{} - {}", lang, info.name);
+
+          if (!info.codecDesc.empty())
+            sub.append(StringUtils::Format(" ({})", info.codecDesc));
+          else if (!info.codecName.empty())
+            sub.append(StringUtils::Format(" ({})", info.codecName));
         }
         else
           sub = CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(1223);
+
         CGUIDialogKaiToast::QueueNotification(
             CGUIDialogKaiToast::Info,
             CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(287), sub, DisplTime,

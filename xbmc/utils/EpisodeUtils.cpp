@@ -12,13 +12,22 @@
 #include "ServiceBroker.h"
 #include "URL.h"
 #include "Util.h"
+#include "i18n/ListFormatter.h"
+#include "resources/LocalizeStrings.h"
+#include "resources/ResourcesComponent.h"
 #include "settings/AdvancedSettings.h"
 #include "settings/SettingsComponent.h"
 #include "utils/URIUtils.h"
 #include "utils/log.h"
 
 #include <cctype>
+#include <iterator>
+#include <map>
+#include <memory>
+#include <set>
 #include <string>
+#include <string_view>
+#include <tuple>
 #include <vector>
 
 using namespace KODI;
@@ -166,7 +175,9 @@ void ProcessEpisodeRange(int first,
 }
 } // namespace
 
-bool CEpisodeUtils::EnumerateEpisodeItem(const CFileItem* item, VIDEO::EPISODELIST& episodeList)
+bool CEpisodeUtils::EnumerateEpisodeItem(const CFileItem* item,
+                                         VIDEO::EPISODELIST& episodeList,
+                                         KODI::REGEXP::RegExpCache* cache /* = nullptr */)
 {
   const auto advancedSettings{CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()};
   const auto& tvShowRegExps{advancedSettings->m_tvshowEnumRegExps};
@@ -185,21 +196,22 @@ bool CEpisodeUtils::EnumerateEpisodeItem(const CFileItem* item, VIDEO::EPISODELI
   label = CURL::Decode(CURL::GetRedacted(label));
 
   // Pre-compile multi-part regex
-  CRegExp reg2(true, CRegExp::autoUtf8);
-  const bool multiPartRegexValid{reg2.RegComp(advancedSettings->m_tvshowMultiPartEnumRegExp)};
-  if (!multiPartRegexValid)
+  std::shared_ptr<CRegExp> multiPartRegex = KODI::REGEXP::GetRegExp(
+      advancedSettings->m_tvshowMultiPartEnumRegExp, cache, true, CRegExp::autoUtf8);
+  if (multiPartRegex == nullptr)
     CLog::LogF(LOGWARNING, "Invalid multipart RegExp '{}', multipart episode detection disabled",
                advancedSettings->m_tvshowMultiPartEnumRegExp);
   const bool disableEpisodeRanges{advancedSettings->m_disableEpisodeRanges};
 
   for (const auto& tvShowRegExp : tvShowRegExps)
   {
-    CRegExp reg(true, CRegExp::autoUtf8);
-    if (!reg.RegComp(tvShowRegExp.regexp))
+    std::shared_ptr<CRegExp> reg =
+        KODI::REGEXP::GetRegExp(tvShowRegExp.regexp, cache, true, CRegExp::autoUtf8);
+    if (reg == nullptr)
       continue; // Failed to compile
 
     int regPosition;
-    if ((regPosition = reg.RegFind(label.c_str())) < 0)
+    if ((regPosition = reg->RegFind(label.c_str())) < 0)
       continue;
 
     VIDEO::EPISODE episode;
@@ -215,7 +227,7 @@ bool CEpisodeUtils::EnumerateEpisodeItem(const CFileItem* item, VIDEO::EPISODELI
 
     if (byDate)
     {
-      if (!GetAirDateFromRegExp(reg, episode))
+      if (!GetAirDateFromRegExp(*reg, episode))
         continue;
 
       CLog::LogF(LOGDEBUG, "Found date based match {} ({}) [{}]",
@@ -224,7 +236,7 @@ bool CEpisodeUtils::EnumerateEpisodeItem(const CFileItem* item, VIDEO::EPISODELI
     }
     else if (byTitle)
     {
-      if (!GetEpisodeTitleFromRegExp(reg, episode))
+      if (!GetEpisodeTitleFromRegExp(*reg, episode))
         continue;
 
       CLog::LogF(LOGDEBUG, "Found title based match {} ({}) [{}]",
@@ -232,7 +244,7 @@ bool CEpisodeUtils::EnumerateEpisodeItem(const CFileItem* item, VIDEO::EPISODELI
     }
     else
     {
-      if (!GetEpisodeAndSeasonFromRegExp(reg, episode, defaultSeason))
+      if (!GetEpisodeAndSeasonFromRegExp(*reg, episode, defaultSeason))
         continue;
 
       CLog::LogF(LOGDEBUG, "Found episode match {} (s{}e{}) [{}]",
@@ -242,7 +254,7 @@ bool CEpisodeUtils::EnumerateEpisodeItem(const CFileItem* item, VIDEO::EPISODELI
 
     // Grab the remainder from first regexp run
     // as second run might modify or empty it.
-    std::string remainder(reg.GetMatch(3));
+    std::string remainder(reg->GetMatch(3));
 
     // Check if the files base path is a dedicated folder that contains
     // only this single episode. If season and episode match with the
@@ -251,18 +263,18 @@ bool CEpisodeUtils::EnumerateEpisodeItem(const CFileItem* item, VIDEO::EPISODELI
     URIUtils::RemoveSlashAtEnd(basePath);
     basePath = URIUtils::GetFileName(basePath);
 
-    if (reg.RegFind(basePath.c_str()) > -1)
+    if (reg->RegFind(basePath.c_str()) > -1)
     {
       VIDEO::EPISODE parent;
       if (byDate)
       {
-        GetAirDateFromRegExp(reg, parent);
+        GetAirDateFromRegExp(*reg, parent);
         if (episode.cDate == parent.cDate)
           episode.isFolder = true;
       }
       else
       {
-        GetEpisodeAndSeasonFromRegExp(reg, parent, defaultSeason);
+        GetEpisodeAndSeasonFromRegExp(*reg, parent, defaultSeason);
         if (episode.iSeason == parent.iSeason && episode.iEpisode == parent.iEpisode)
           episode.isFolder = true;
       }
@@ -273,7 +285,7 @@ bool CEpisodeUtils::EnumerateEpisodeItem(const CFileItem* item, VIDEO::EPISODELI
 
     // check the remainder of the string for any further episodes.
     // Multi-part only applies to season/episode matches, not date or title based
-    if (!byDate && !byTitle && multiPartRegexValid)
+    if (!byDate && !byTitle && multiPartRegex != nullptr)
     {
       size_t offset{0};
       int reg2Position;
@@ -281,37 +293,41 @@ bool CEpisodeUtils::EnumerateEpisodeItem(const CFileItem* item, VIDEO::EPISODELI
       int currentEpisode{episode.iEpisode};
 
       // we want "long circuit" OR below so that both offsets are evaluated
-      while (static_cast<int>((reg2Position = reg2.RegFind(remainder.c_str() + offset)) > -1) |
-             static_cast<int>((regPosition = reg.RegFind(remainder.c_str() + offset)) > -1))
+      while (static_cast<int>((reg2Position = multiPartRegex->RegFind(remainder.c_str() + offset)) >
+                              -1) |
+             static_cast<int>((regPosition = reg->RegFind(remainder.c_str() + offset)) > -1))
       {
         if ((regPosition <= reg2Position && regPosition != -1) || // season (or 'ep') match
             (regPosition >= 0 && reg2Position == -1))
         {
-          GetEpisodeAndSeasonFromRegExp(reg, episode, defaultSeason);
+          GetEpisodeAndSeasonFromRegExp(*reg, episode, defaultSeason);
           if (currentSeason == episode.iSeason)
           {
             // Already added SxxEyy now loop (if needed) to SxxEzz
             const int last{episode.iEpisode};
-            const int next{
-                disableEpisodeRanges || !remainder.starts_with("-") ? last : currentEpisode + 1};
+            const int next{disableEpisodeRanges ||
+                                   !std::string_view(remainder).substr(offset).starts_with('-')
+                               ? last
+                               : currentEpisode + 1};
 
             ProcessEpisodeRange(next, last, episode, episodeList,
                                 advancedSettings->m_tvshowMultiPartEnumRegExp, remainder);
 
             currentEpisode = episode.iEpisode;
-            remainder = reg.GetMatch(3);
+            remainder = reg->GetMatch(3);
           }
           else
           {
             // Two possible scenarios here:
-            if (remainder.substr(offset, 1) != "-" || disableEpisodeRanges)
+            if (disableEpisodeRanges ||
+                !std::string_view(remainder).substr(offset).starts_with('-'))
             {
               // (Sxx)Eyy has already been added and we now in a new range (eg. S00E01S01E01....)
               // Add first episode here
               currentSeason = episode.iSeason;
               currentEpisode = episode.iEpisode;
               episodeList.push_back(episode);
-              remainder = reg.GetMatch(3);
+              remainder = reg->GetMatch(3);
             }
             else
             {
@@ -321,7 +337,7 @@ bool CEpisodeUtils::EnumerateEpisodeItem(const CFileItem* item, VIDEO::EPISODELI
               {
                 // Already added first episode of invalid range so remove it
                 episodeList.pop_back();
-                remainder = reg.GetMatch(3);
+                remainder = reg->GetMatch(3);
                 CLog::LogF(
                     LOGDEBUG,
                     "VideoInfoScanner: Removing season {}, episode {} as part of invalid range",
@@ -338,7 +354,7 @@ bool CEpisodeUtils::EnumerateEpisodeItem(const CFileItem* item, VIDEO::EPISODELI
         else if ((reg2Position < regPosition && reg2Position != -1) || // episode match
                  (reg2Position >= 0 && regPosition == -1))
         {
-          const std::string result{reg2.GetMatch(2)};
+          const std::string result{multiPartRegex->GetMatch(2)};
           const int last{std::stoi(result)};
           const std::string prefix{
               offset < remainder.length()
@@ -349,14 +365,120 @@ bool CEpisodeUtils::EnumerateEpisodeItem(const CFileItem* item, VIDEO::EPISODELI
                              : last};
 
           ProcessEpisodeRange(next, last, episode, episodeList,
-                              advancedSettings->m_tvshowMultiPartEnumRegExp, reg2.GetMatch(3));
+                              advancedSettings->m_tvshowMultiPartEnumRegExp,
+                              multiPartRegex->GetMatch(3));
 
           currentEpisode = episode.iEpisode;
-          offset += reg2Position + reg2.GetMatch(1).length() + result.length();
+          offset += reg2Position + multiPartRegex->GetMatch(1).length() + result.length();
         }
       }
     }
     return true;
   }
   return false;
+}
+
+namespace
+{
+std::vector<std::tuple<int, int, int>> ParseEpisodes(const std::string& input)
+{
+  std::map<int, std::set<int>> allEpisodes;
+
+  CRegExp pattern;
+  if (!pattern.RegComp(R"(S(\d{1,3})E(\d{1,3}))"))
+  {
+    CLog::LogF(LOGERROR, "Failed to compile episode regex pattern");
+    return {};
+  }
+
+  // Parse string
+  int pos = 0;
+  while ((pos = pattern.RegFind(input, pos)) >= 0)
+  {
+    int season = static_cast<int>(std::strtol(pattern.GetMatch(1).c_str(), nullptr, 10));
+    int episode = static_cast<int>(std::strtol(pattern.GetMatch(2).c_str(), nullptr, 10));
+    allEpisodes[season].insert(episode);
+    pos += pattern.GetFindLen();
+  }
+
+  // Now find ranges
+  std::vector<std::tuple<int, int, int>> result;
+  for (const auto& [season, episodes] : allEpisodes)
+  {
+    if (episodes.empty())
+      continue;
+
+    int rangeStart{*episodes.begin()};
+    int rangeEnd{rangeStart};
+    for (auto it = std::next(episodes.begin()); it != episodes.end(); ++it)
+    {
+      if (*it == rangeEnd + 1)
+        rangeEnd = *it;
+      else
+      {
+        result.emplace_back(season, rangeStart, rangeEnd);
+        rangeStart = rangeEnd = *it;
+      }
+    }
+    result.emplace_back(season, rangeStart, rangeEnd);
+  }
+
+  return result;
+}
+} // namespace
+
+std::string CEpisodeUtils::GetEpisodesLabel(const CFileItem& item)
+{
+  const std::string episodeString{item.GetProperty("episodes").asString("")};
+  const int numSpecials{item.GetProperty("episodes_specials").asInteger32(0)};
+  const auto episodes{ParseEpisodes(episodeString)};
+  const bool hasSpecials{numSpecials > 0};
+  bool singleSeason{!episodes.empty() &&
+                    std::get<0>(episodes.front()) == std::get<0>(episodes.back())};
+
+  constexpr int BASE{21486};
+  constexpr int RANGE{1};
+  constexpr int SEASON{2};
+  constexpr int SPECIALS{21490};
+
+  std::vector<std::string> labels;
+  if (!episodes.empty())
+  {
+    for (const auto& [season, startEpisode, endEpisode] : episodes)
+    {
+      if (singleSeason)
+      {
+        if (endEpisode == startEpisode)
+          labels.push_back(StringUtils::Format(
+              CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(BASE),
+              startEpisode));
+        else
+          labels.push_back(StringUtils::Format(
+              CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(BASE + RANGE),
+              startEpisode, endEpisode));
+      }
+      else
+      {
+        if (endEpisode == startEpisode)
+          labels.push_back(StringUtils::Format(
+              CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(BASE + SEASON),
+              season, startEpisode));
+        else
+          labels.push_back(
+              StringUtils::Format(CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(
+                                      BASE + SEASON + RANGE),
+                                  season, startEpisode, endEpisode));
+      }
+    }
+  }
+  if (hasSpecials)
+    labels.push_back(CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(SPECIALS));
+
+  // Generate label
+  using namespace KODI::UTILS::I18N;
+  const auto fmt =
+      CListFormatter::CreateInstance(CServiceBroker::GetResourcesComponent().GetLocalizeStrings());
+  const std::string label{fmt.Format(labels)};
+
+  return label;
 }

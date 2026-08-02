@@ -36,7 +36,9 @@ protected:
   bool CreateBuffers() override { return true; }
   bool CreateShaderTextures() override;
   bool CreateSamplers() override { return true; }
-  void RenderShader(IShader& shader, IShaderTexture& source, IShaderTexture& target) override;
+  void RenderShader(IShader& shader,
+                    IShaderTexture& sourceTexture,
+                    IShaderTexture& targetTexture) override;
 };
 } // namespace SHADER
 } // namespace KODI

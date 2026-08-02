@@ -35,6 +35,7 @@
 #include "games/GameSettings.h"
 #include "games/GameUtils.h"
 #include "games/addons/GameClient.h"
+#include "games/addons/disc/GameClientDiscs.h"
 #include "games/addons/input/GameClientInput.h"
 #include "games/tags/GameInfoTag.h"
 #include "guilib/GUIComponent.h"
@@ -199,6 +200,8 @@ bool CRetroPlayer::OpenFile(const CFileItem& file, const CPlayerOptions& options
 
     m_cheevos->EnableRichPresence();
 
+    m_cheevos->ActivateAchievement();
+
     // Initialize gameplay
     CreatePlayback(savestatePath);
     RegisterWindowCallbacks();
@@ -249,10 +252,15 @@ bool CRetroPlayer::CloseFile(bool reopen /* = false */)
   if (m_input)
     m_input->StopAgentManager();
 
-  m_cheevos.reset();
+  // Stop threads that access the game client, but keep the achievement callback
+  // alive until CloseFile() has stopped the add-on from invoking it.
+  if (m_cheevos)
+    m_cheevos->Stop();
 
   if (m_gameClient)
     m_gameClient->CloseFile();
+
+  m_cheevos.reset();
 
   m_input.reset();
 
@@ -429,7 +437,8 @@ bool CRetroPlayer::OnAction(const CAction& action)
   {
     case ACTION_PLAYER_RESET:
     {
-      if (m_gameClient)
+      std::unique_lock lock(m_mutex);
+      if (m_gameClient && m_playback && m_cheevos)
       {
         float speed = static_cast<float>(m_playback->GetSpeed());
 
@@ -511,6 +520,38 @@ bool CRetroPlayer::HasGameAgent() const
 {
   if (m_gameClient)
     return m_gameClient->Input().HasAgent();
+
+  return false;
+}
+
+bool CRetroPlayer::SupportsDiscControl() const
+{
+  if (m_gameClient)
+    return m_gameClient->Discs().SupportsDiscControl();
+
+  return false;
+}
+
+bool CRetroPlayer::IsDiscEjected() const
+{
+  if (m_gameClient)
+    return m_gameClient->Discs().IsEjected();
+
+  return false;
+}
+
+std::string CRetroPlayer::DiscLabel() const
+{
+  if (m_gameClient)
+    return m_gameClient->Discs().GetDiscLabel();
+
+  return "";
+}
+
+bool CRetroPlayer::IsTrayEmpty() const
+{
+  if (m_gameClient)
+    return m_gameClient->Discs().IsTrayEmpty();
 
   return false;
 }

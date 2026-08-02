@@ -10,6 +10,8 @@
 
 #include "cores/VideoPlayer/Edl/EdlParser.h"
 
+#include <chrono>
+
 namespace EDL
 {
 
@@ -24,7 +26,9 @@ class CPvrEdlParser : public IEdlParser
 {
 public:
   bool CanParse(const CFileItem& item) const override;
-  CEdlParserResult Parse(const CFileItem& item, float fps) override;
+  CEdlParserResult Parse(const CFileItem& item,
+                         float fps,
+                         std::chrono::milliseconds duration) override;
 };
 
 } // namespace EDL

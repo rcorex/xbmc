@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2005-2018 Team Kodi
+ *  Copyright (C) 2005-2026 Team Kodi
  *  This file is part of Kodi - https://kodi.tv
  *
  *  SPDX-License-Identifier: GPL-2.0-or-later
@@ -14,6 +14,7 @@
 #include "MenuType.h"
 #include "VideoSettings.h"
 
+#include <chrono>
 #include <memory>
 #include <string>
 #include <vector>
@@ -165,6 +166,8 @@ public:
   virtual int64_t GetChapterPos(int chapterIdx = -1) const { return 0; }
   virtual int  SeekChapter(int iChapter)                       { return -1; }
 //  virtual bool GetChapterInfo(int chapter, SChapterInfo &info) { return false; }
+  virtual std::vector<std::chrono::milliseconds> GetBookmarks() const { return {}; }
+  virtual void SetBookmarks(const std::vector<std::chrono::milliseconds>& bookmarks) {}
 
   virtual void SeekTime(int64_t iTime = 0) {}
   /*
@@ -238,6 +241,12 @@ public:
   virtual float GetRenderAspectRatio() const { return 1.0; }
   virtual void TriggerUpdateResolution() {}
   virtual bool IsRenderingVideo() const { return false; }
+  /*!
+   * \brief True if any subtitle/overlay is actually visible on the current
+   *  presented frame. Per-frame accurate. Default false for players that
+   *  do not render overlays (e.g. retro, paplayer, external).
+   */
+  virtual bool HasVisibleOverlay() const { return false; }
   virtual bool IsLiveStream() const { return false; }
   virtual void GetRects(CRect& source, CRect& dest, CRect& view) const
   {
@@ -281,6 +290,42 @@ public:
    * game, false otherwise
    */
   virtual bool HasGameAgent() const { return false; }
+
+  /*!
+   * \brief Check if disc for the currently playing item can be ejected or
+   * swapped
+   *
+   * \return True if the media is disc-based and can be ejected or swapped,
+   * false if the currently playing item isn't disc-based or disc control isn't
+   * supported
+   */
+  virtual bool SupportsDiscControl() const { return false; }
+
+  /*!
+   * \brief Check if disc for the currently playing item is ejected
+   *
+   * \return True if the disc is ejected (tray is open), false if the currently
+   * playing item isn't disc-based or the tray is closed
+   */
+  virtual bool IsDiscEjected() const { return false; }
+
+  /*!
+   * \brief Get the human-readable label of the currently playing disc, if the
+   * media is disc-based
+   *
+   * \return The disc label, or an empty string if the currently playing item
+   * isn't disc-based or the label isn't available
+   */
+  virtual std::string DiscLabel() const { return ""; }
+
+  /*!
+   * \brief Check if the virtual disc tray for the currently playing item is
+   * empty
+   *
+   * \return True if no disc is selected in the tray, false if a disc is
+   * selected or the currently playing item isn't disc-based
+   */
+  virtual bool IsTrayEmpty() const { return false; }
 
   std::string m_name;
   std::string m_type;

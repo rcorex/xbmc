@@ -1949,6 +1949,7 @@
         "userrating",
         "ratings",
         "runtime",
+        "status",
         "uniqueid",
         "trailer"
       ]
@@ -5113,5 +5114,17 @@
         "description": "Chapter position in seconds from start"
       }
     }
+  },
+  "Database.Type": {
+    "type": "string",
+    "enum": [
+      "addons",
+      "epg",
+      "music",
+      "tv",
+      "textures",
+      "videos",
+      "viewmodes"
+    ]
   }
 }

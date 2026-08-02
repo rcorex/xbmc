@@ -18,6 +18,7 @@ CMAKE_OPTIONS=-DCMAKE_INSTALL_PREFIX=$(PREFIX) \
               -DUSE_NGHTTP2=ON \
               -DUSE_LIBIDN2=OFF \
               -DCURL_USE_LIBSSH2=OFF \
+              -DCURL_USE_LIBPSL=OFF \
               -DCURL_USE_GSSAPI=OFF \
               -DCURL_CA_FALLBACK=ON
 

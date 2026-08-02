@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2005-2018 Team Kodi
+ *  Copyright (C) 2005-2026 Team Kodi
  *  This file is part of Kodi - https://kodi.tv
  *
  *  SPDX-License-Identifier: GPL-2.0-or-later
@@ -11,11 +11,14 @@
 #include "InfoScanner.h"
 #include "VideoDatabase.h"
 #include "addons/Scraper.h"
-#include "guilib/GUIListItem.h"
+#include "settings/VideoVersionsSettings.h"
 #include "utils/Artwork.h"
+#include "utils/RegExp.h"
 
+#include <functional>
 #include <set>
 #include <string>
+#include <string_view>
 #include <vector>
 
 class CAdvancedSettings;
@@ -49,14 +52,13 @@ namespace KODI::VIDEO
 
   class CVideoInfoScanner : public CInfoScanner
   {
-
+  public:
     enum class UseRemoteArtWithLocalScraper : bool
     {
       NO,
       YES
     };
 
-  public:
     CVideoInfoScanner();
     ~CVideoInfoScanner() override;
 
@@ -136,24 +138,26 @@ namespace KODI::VIDEO
 
     /*! \brief Get season thumbs for a tvshow.
      All seasons (regardless of whether the user has episodes) are added to the art map.
-     \param show     tvshow info tag
-     \param art      artwork map to which season thumbs are added.
-     \param useLocal whether to use local thumbs, defaults to true
-     \param useRemoteArt use remote art if also using local scraper. Defaults to yes.
+     \param[in] show     tvshow info tag
+     \param[in] art      artwork map to which season thumbs are added.
+     \param[in] useLocal whether to use local thumbs, defaults to true
+     \param[in] useRemoteArt use remote art if also using local scraper. Defaults to yes.
+     \param[in] cache regexp cache to avoid repeated compilations
      */
     static void GetSeasonThumbs(
         const CVideoInfoTag& show,
         KODI::ART::SeasonsArtwork& art,
         const std::vector<std::string>& artTypes,
         bool useLocal = true,
-        UseRemoteArtWithLocalScraper useRemoteArt = UseRemoteArtWithLocalScraper::YES);
+        UseRemoteArtWithLocalScraper useRemoteArt = UseRemoteArtWithLocalScraper::YES,
+        KODI::REGEXP::RegExpCache* cache = nullptr);
     static std::string GetImage(const CScraperUrl::SUrlEntry &image, const std::string& itemPath);
 
     static std::string GetMovieSetInfoFolder(const std::string& setTitle);
 
   protected:
     virtual void Process();
-    bool DoScan(const std::string& strDirectory) override;
+    std::pair<ScanComplete, ContentFound> DoScan(const std::string& strDirectory) override;
 
     InfoRet RetrieveInfoForTvShow(CFileItem* pItem,
                                   bool bDirNames,
@@ -312,7 +316,16 @@ namespace KODI::VIDEO
                                   const CVideoInfoTag& showInfo,
                                   CGUIDialogProgress* pDlgProgress = nullptr);
 
-    bool EnumerateSeriesFolder(CFileItem* item, EPISODELIST& episodeList);
+    enum class EpisodeResult
+    {
+      NO_MEDIA, //!< .nomedia file is present
+      NO_FILES, //!< No episode candidate files found
+      NO_EPISODES, //!< Episode candidate files found, but none could be parsed
+      NOT_CHANGED, //!< No new episodes found (directory hash unchanged)
+      FOUND_EPISODES //!< Episodes found
+    };
+
+    EpisodeResult EnumerateSeriesFolder(CFileItem* item, EPISODELIST& episodeList);
     bool ProcessItemByVideoInfoTag(const CFileItem *item, EPISODELIST &episodeList);
 
     bool AddVideoExtras(CFileItemList& items, ADDON::ContentType content, const std::string& path);
@@ -323,11 +336,34 @@ namespace KODI::VIDEO
 
     bool m_bStop;
     bool m_scanAll;
-    bool m_ignoreVideoVersions{false};
+
+    SimilarVideoScanAction m_similarVideoAction{SimilarVideoScanAction::NONE};
     bool m_ignoreVideoExtras{false};
     CVideoDatabase m_database;
     std::set<int> m_pathsToClean;
     std::shared_ptr<CAdvancedSettings> m_advancedSettings;
     CVideoDatabase::ScraperCache m_scraperCache;
+
+  private:
+    /*!
+     * \brief Remove paths that share missing ancestors with \p directory from the list of paths
+     *        to scan
+     * \param[in] directory The non-existent directory
+     */
+    void SkipRelatedDirectories(std::string_view directory);
+
+    /*!
+     * \brief Removes the directory and sub directories of \p directory from the paths to be
+     *        scanned. Paths must end with a directory separator.
+     * \param[in] directories List of paths
+     * \param[in] directory Path of the directory to remove
+     * \param[in] f function to execute before the removal of a path
+     * \return number of elements removed
+     */
+    static size_t RemoveSubDirectories(std::set<std::string, std::less<>>& directories,
+                                       std::string_view directory,
+                                       std::function<void(const std::string&)> f);
+
+    mutable KODI::REGEXP::RegExpCache m_regexpCache;
   };
   } // namespace KODI::VIDEO

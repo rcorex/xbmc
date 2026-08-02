@@ -46,9 +46,11 @@ if(NOT TARGET ${APP_NAME_LC}::${CMAKE_FIND_PACKAGE_NAME})
                    -DCURL_USE_OPENSSL=ON
                    -DOPENSSL_ROOT_DIR=${DEPENDS_PATH}
                    -DCURL_BROTLI=ON
+                   -DCURL_ZSTD=OFF
                    -DUSE_NGHTTP2=ON
                    -DUSE_LIBIDN2=OFF
                    -DCURL_USE_LIBSSH2=OFF
+                   -DCURL_USE_LIBPSL=OFF
                    -DCURL_USE_GSSAPI=OFF
                    -DCURL_CA_FALLBACK=ON
                    ${OPTIONAL_ARGS})

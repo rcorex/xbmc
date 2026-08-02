@@ -241,32 +241,47 @@ std::string CStackDirectory::GetParentPath(const std::string& stackPath)
 
 std::string CStackDirectory::GetBasePath(const std::string& stackPath)
 {
-  static constexpr int MAX_ITERATIONS{5};
   std::vector<std::string> paths;
   if (!GetPaths(stackPath, paths))
     return {};
 
-  // Loop until we have found a common parent path
-  bool first{true};
-  int i = 0; // Maximum of 5 iterations
-  do
+  // First pass -  normalise disc file paths to their containing folder so that
+  // BDMV/index.bdmv  → <disc root>/
+  // VIDEO_TS.IFO     → <disc root>/
+  // plain file       → parent directory/
+  for (auto& path : paths)
+  {
+    URIUtils::RemoveSlashAtEnd(path);
+    if (URIUtils::IsBDFile(path) || URIUtils::IsDVDFile(path))
+      path = URIUtils::GetDiscBasePath(path);
+    else
+      path = URIUtils::GetParentPath(path);
+  }
+
+  static constexpr int MAX_ITERATIONS{10};
+  int i{0};
+  while (i < MAX_ITERATIONS &&
+         std::ranges::adjacent_find(paths, std::not_equal_to<>()) != paths.end())
   {
     for (auto& path : paths)
     {
-      URIUtils::RemoveSlashAtEnd(path);
-      if (first && (URIUtils::IsBDFile(path) || URIUtils::IsDVDFile(path)))
-        path = URIUtils::GetDiscBasePath(path);
-      else
+      // A path that is already a parent of every other path must not be processed
+      if (const bool isAlreadyParent{
+              std::ranges::all_of(paths, [&path](const std::string& other)
+                                  { return StringUtils::StartsWith(other, path); })};
+          !isAlreadyParent)
+      {
+        URIUtils::RemoveSlashAtEnd(path);
         path = URIUtils::GetParentPath(path);
+      }
     }
-    first = false;
     ++i;
-  } while (std::ranges::adjacent_find(paths, std::not_equal_to<>()) != paths.end() &&
-           i <= MAX_ITERATIONS);
+  }
 
-  if (i > MAX_ITERATIONS && std::ranges::adjacent_find(paths, std::not_equal_to<>()) != paths.end())
+  if (i >= MAX_ITERATIONS &&
+      std::ranges::adjacent_find(paths, std::not_equal_to<>()) != paths.end())
   {
-    CLog::LogF(LOGWARNING, "Failed to find common parent path after 5 iterations. Paths: [{}]",
+    CLog::LogF(LOGWARNING, "Failed to find common parent path after 10 iterations. Paths: [{}]",
                StringUtils::Join(paths, ", "));
     return "/";
   }

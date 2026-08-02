@@ -8,36 +8,38 @@
 
 #include "FileDirectoryFactory.h"
 
-#include "music/MusicFileItemClassify.h"
-
+#include "AudioBookFileDirectory.h"
+#include "Directory.h"
+#include "EpisodesDirectory.h"
+#include "FileItem.h"
 #if defined(HAS_ISO9660PP)
 #include "ISO9660Directory.h"
 #endif
+#include "PlaylistFileDirectory.h"
+#include "RSSDirectory.h"
+#include "ServiceBroker.h"
+#include "SmartPlaylistDirectory.h"
 #if defined(HAS_UDFREAD)
 #include "UDFDirectory.h"
 #endif
-#include "RSSDirectory.h"
-#include "UDFDirectory.h"
-#include "utils/URIUtils.h"
-#if defined(TARGET_ANDROID)
-#include "platform/android/filesystem/APKDirectory.h"
-#endif
-#include "AudioBookFileDirectory.h"
-#include "Directory.h"
-#include "FileItem.h"
-#include "PlaylistFileDirectory.h"
-#include "ServiceBroker.h"
-#include "SmartPlaylistDirectory.h"
 #include "URL.h"
+#include "Util.h"
 #include "XbtDirectory.h"
 #include "ZipDirectory.h"
 #include "addons/AudioDecoder.h"
 #include "addons/ExtsMimeSupportList.h"
 #include "addons/VFSEntry.h"
 #include "addons/addoninfo/AddonInfo.h"
+#include "music/MusicDatabase.h"
+#include "music/MusicFileItemClassify.h"
+#if defined(TARGET_ANDROID)
+#include "platform/android/filesystem/APKDirectory.h"
+#endif
 #include "playlists/PlayListFactory.h"
 #include "playlists/SmartPlayList.h"
+#include "settings/MediaSourceSettings.h"
 #include "utils/StringUtils.h"
+#include "utils/URIUtils.h"
 #include "utils/log.h"
 
 using namespace ADDON;
@@ -45,6 +47,46 @@ using namespace KODI;
 using namespace KODI::ADDONS;
 using namespace XFILE;
 using namespace PLAYLIST;
+
+namespace
+{
+bool IsUnderMusicSource(const std::string& path)
+{
+  auto* sources = CMediaSourceSettings::GetInstance().GetSources("music");
+  if (!sources)
+    return false;
+  bool isSourceName = false;
+  return CUtil::GetMatchingSource(path, *sources, isSourceName) > -1;
+}
+
+/*!
+ * Return true if the file already has multiple chapter/song rows in the music DB
+ * (i.e. has been scanned by CAudioBookFileDirectory previously). Used to skip the
+ * FFmpeg probe in ContainsFiles() that otherwise stalls Play() for several seconds,
+ * especially over SMB/NFS.
+ */
+bool HasChaptersInMusicDb(const CURL& url)
+{
+  CMusicDatabase db;
+  if (!db.Open())
+    return false;
+
+  const std::string strPath = URIUtils::GetDirectory(url.Get());
+  const std::string strFileName = URIUtils::GetFileName(url.Get());
+
+  // PrepareSQL uses mprintf-style %s substitution that escapes single quotes
+  // (and other SQL metacharacters) safely, so apostrophes in paths or filenames
+  // are handled and there is no SQL injection surface here.
+  const std::string sql = db.PrepareSQL("SELECT COUNT(*) FROM song "
+                                        "JOIN path ON song.idPath = path.idPath "
+                                        "WHERE path.strPath = '%s' AND song.strFileName = '%s'",
+                                        strPath.c_str(), strFileName.c_str());
+
+  const int count = db.GetSingleValueInt(sql);
+  db.Close();
+  return count > 1;
+}
+} // namespace
 
 CFileDirectoryFactory::CFileDirectoryFactory(void) = default;
 
@@ -153,6 +195,8 @@ IFileDirectory* CFileDirectoryFactory::Create(const CURL& url, CFileItem* pItem,
   if (pItem->IsRSS())
     return new CRSSDirectory();
 
+  if (url.IsProtocol("episodes"))
+    return new CEpisodesDirectory();
 
   if (pItem->IsDiscImage())
   {
@@ -250,13 +294,25 @@ IFileDirectory* CFileDirectoryFactory::Create(const CURL& url, CFileItem* pItem,
 
   if (MUSIC::IsAudioBook(*pItem))
   {
+    // .mkv doubles as a video container — only treat a chaptered .mkv as an
+    // audiobook when browsed from a Music source, or a chaptered movie in a
+    // Video source would be expanded into chapter items.
+    if (strExtension == ".mkv" && !IsUnderMusicSource(url.Get()))
+      return nullptr;
+
+    // Already-expanded chapter rows (have a music tag and a positive end offset)
+    // are going to return nullptr regardless, so skip the music-DB open for them
+    // and only consult the DB on the not-yet-expanded path where it gates the
+    // expensive FFmpeg ContainsFiles() probe.
     if (!pItem->HasMusicInfoTag() || pItem->GetEndOffset() <= 0)
     {
+      if (HasChaptersInMusicDb(url))
+        return nullptr;
       auto pDir = std::make_unique<CAudioBookFileDirectory>();
       if (pDir->ContainsFiles(url))
         return pDir.release();
     }
-    return NULL;
+    return nullptr;
   }
   return NULL;
 }

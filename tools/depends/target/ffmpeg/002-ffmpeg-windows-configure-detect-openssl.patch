@@ -15,7 +15,7 @@ index 9d8db691a4..176ffac998 100755
                                 check_pkg_config openssl "openssl >= 1.1.1" openssl/ssl.h DTLS_get_data_mtu ||
                                 check_lib openssl openssl/ssl.h DTLS_get_data_mtu -lssl -lcrypto ||
                                 check_lib openssl openssl/ssl.h DTLS_get_data_mtu -lssl -lcrypto -lws2_32 -lgdi32 ||
-+                               check_lib openssl openssl/ssl.h OPENSSL_init_ssl -llibssl -llibcrypto -lws2_32 -lgdi32 -ladvapi32 -luser32 ||
++                               check_lib openssl openssl/ssl.h OPENSSL_init_ssl -llibssl -llibcrypto -lws2_32 -lgdi32 -ladvapi32 -luser32 -lcrypt32 ||
 +                               check_lib openssl openssl/ssl.h SSL_library_init -llibeay32 -lssleay32 ||
                                 die "ERROR: openssl (>= 1.1.1) not found"; }
  enabled pocketsphinx      && require_pkg_config pocketsphinx pocketsphinx pocketsphinx/pocketsphinx.h ps_init

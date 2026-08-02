@@ -13,6 +13,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -27,8 +28,11 @@ class CAdvancedSettings;
 class CFileExtensionProvider
 {
 public:
-  CFileExtensionProvider(ADDON::CAddonMgr& addonManager);
-  ~CFileExtensionProvider();
+  CFileExtensionProvider() = default;
+  ~CFileExtensionProvider() = default;
+
+  void Initialize(ADDON::CAddonMgr& addonManager);
+  void Deinitialize();
 
   /*!
    * @brief Returns a list of picture extensions
@@ -82,6 +86,21 @@ public:
    */
   static bool CanOperateExtension(const std::string& path);
 
+  /*!
+   * @brief Register game extensions
+   */
+  void RegisterGameExtensions(const std::set<std::string>& extensions);
+
+  /*!
+   * @brief Unregister game extensions
+   */
+  void UnregisterGameExtensions(const std::set<std::string>& extensions);
+
+  /*!
+   * @brief Returns a pipe-separated list of game extensions
+   */
+  std::string GetGameExtensions() const;
+
 private:
   std::string GetAddonExtensions(ADDON::AddonType type) const;
   std::string GetAddonFileFolderExtensions(ADDON::AddonType type) const;
@@ -92,7 +111,7 @@ private:
 
   // Construction properties
   std::shared_ptr<CAdvancedSettings> m_advancedSettings;
-  ADDON::CAddonMgr &m_addonManager;
+  ADDON::CAddonMgr* m_addonManager{nullptr};
   std::optional<int> m_callbackId;
 
   mutable CCriticalSection m_critSection;
@@ -100,6 +119,9 @@ private:
   // File extension properties
   std::map<ADDON::AddonType, std::string> m_addonExtensions;
   std::map<ADDON::AddonType, std::string> m_addonFileFolderExtensions;
+
+  // Game extension registry
+  std::set<std::string> m_gameExtensions;
 
   // Protocols from add-ons with encoded host names
   std::vector<std::string> m_encoded;

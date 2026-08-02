@@ -12,7 +12,6 @@
 #include "OptionalsReg.h"
 #include "ServiceBroker.h"
 #include "VideoSyncGbm.h"
-#include "cores/VideoPlayer/Buffers/VideoBufferDRMPRIME.h"
 #include "cores/VideoPlayer/VideoReferenceClock.h"
 #include "drm/DRMAtomic.h"
 #include "drm/DRMLegacy.h"
@@ -22,7 +21,9 @@
 #include "settings/Settings.h"
 #include "settings/SettingsComponent.h"
 #include "settings/lib/Setting.h"
+#include "utils/DRMHelpers.h"
 #include "utils/DisplayInfo.h"
+#include "utils/HDRUtils.h"
 #include "utils/Map.h"
 #include "utils/StringUtils.h"
 #include "utils/log.h"
@@ -72,14 +73,21 @@ namespace
 
 constexpr auto ColorimetryMap = make_map<KODI::UTILS::Colorimetry, std::string_view>({
     {KODI::UTILS::Colorimetry::DEFAULT, "Default"},
+    {KODI::UTILS::Colorimetry::SMPTE_170M_YCC, "SMPTE_170M_YCC"},
+    {KODI::UTILS::Colorimetry::BT709_YCC, "BT709_YCC"},
     {KODI::UTILS::Colorimetry::XVYCC_601, "XVYCC_601"},
     {KODI::UTILS::Colorimetry::XVYCC_709, "XVYCC_709"},
     {KODI::UTILS::Colorimetry::SYCC_601, "SYCC_601"},
     {KODI::UTILS::Colorimetry::OPYCC_601, "opYCC_601"},
     {KODI::UTILS::Colorimetry::OPRGB, "opRGB"},
     {KODI::UTILS::Colorimetry::BT2020_CYCC, "BT2020_CYCC"},
-    {KODI::UTILS::Colorimetry::BT2020_YCC, "BT2020_YCC"},
     {KODI::UTILS::Colorimetry::BT2020_RGB, "BT2020_RGB"},
+    {KODI::UTILS::Colorimetry::BT2020_YCC, "BT2020_YCC"},
+    {KODI::UTILS::Colorimetry::DCI_P3_RGB_D65, "DCI-P3_RGB_D65"},
+    {KODI::UTILS::Colorimetry::DCI_P3_RGB_THEATER, "DCI-P3_RGB_Theater"},
+    {KODI::UTILS::Colorimetry::RGB_WIDE_FIXED, "RGB_WIDE_FIXED"},
+    {KODI::UTILS::Colorimetry::RGB_WIDE_FLOAT, "RGB_WIDE_FLOAT"},
+    {KODI::UTILS::Colorimetry::BT601_YCC, "BT601_YCC"},
     {KODI::UTILS::Colorimetry::ST2113_RGB, "Default"},
     {KODI::UTILS::Colorimetry::ICTCP, "Default"},
 });
@@ -95,6 +103,22 @@ CWinSystemGbm::CWinSystemGbm()
 }
 
 CWinSystemGbm::~CWinSystemGbm() = default;
+
+const std::string CWinSystemGbm::GetName()
+{
+  const auto* gui = m_DRM->GetGuiPlane();
+  const auto* video = m_DRM->GetVideoPlane();
+
+  std::string name = "gbm (";
+  if (gui)
+    name += DRMHELPERS::FourCCToString(gui->GetFormat());
+  if (gui && video)
+    name += " / ";
+  if (video)
+    name += DRMHELPERS::FourCCToString(video->GetFormat());
+  name += ")";
+  return name;
+}
 
 bool CWinSystemGbm::InitWindowSystem()
 {
@@ -114,13 +138,21 @@ bool CWinSystemGbm::InitWindowSystem()
     CLog::Log(LOGERROR, "CWinSystemGbm::{} - failed to initialize Atomic DRM", __FUNCTION__);
     m_DRM.reset();
 
-    m_DRM = std::make_shared<CDRMLegacy>();
-
-    if (!m_DRM->InitDrm())
+    // Legacy DRM is only for drivers with no atomic modesetting support. An
+    // atomic-capable driver that failed to init (e.g. no connector ready yet
+    // at cold boot) must never be demoted to legacy; go headless instead.
+    if (!CDRMAtomic::SupportsAtomicModesetting())
     {
-      CLog::Log(LOGERROR, "CWinSystemGbm::{} - failed to initialize Legacy DRM", __FUNCTION__);
-      m_DRM.reset();
+      m_DRM = std::make_shared<CDRMLegacy>();
+      if (!m_DRM->InitDrm())
+      {
+        CLog::Log(LOGERROR, "CWinSystemGbm::{} - failed to initialize Legacy DRM", __FUNCTION__);
+        m_DRM.reset();
+      }
+    }
 
+    if (!m_DRM)
+    {
       m_DRM = std::make_shared<COffScreenModeSetting>();
       if (!m_DRM->InitDrm())
       {
@@ -145,8 +177,12 @@ bool CWinSystemGbm::InitWindowSystem()
   if (!m_GBM->CreateDevice(m_DRM->GetFileDescriptor()))
   {
     m_GBM.reset();
+    m_DRM.reset();
     return false;
   }
+
+  SetColorimetry(nullptr);
+  SetHDR(nullptr);
 
   auto settingsComponent = CServiceBroker::GetSettingsComponent();
   if (!settingsComponent)
@@ -156,11 +192,7 @@ bool CWinSystemGbm::InitWindowSystem()
   if (!settings)
     return false;
 
-  auto setting = settings->GetSetting(CSettings::SETTING_VIDEOSCREEN_LIMITEDRANGE);
-  if (setting)
-    setting->SetVisible(true);
-
-  setting = settings->GetSetting("videoscreen.limitguisize");
+  auto setting = settings->GetSetting("videoscreen.limitguisize");
   if (setting)
     setting->SetVisible(true);
 
@@ -219,6 +251,9 @@ void CWinSystemGbm::UpdateResolutions()
   }
 
   CDisplaySettings::GetInstance().ApplyCalibrations();
+
+  // Ensure that scrubbed calibrations are always saved, otherwise would depend on calibration GUI
+  CDisplaySettings::GetInstance().UpdateCalibrations();
 }
 
 bool CWinSystemGbm::ResizeWindow(int newWidth, int newHeight, int newLeft, int newTop)
@@ -242,9 +277,22 @@ bool CWinSystemGbm::SetFullScreen(bool fullScreen, RESOLUTION_INFO& res, bool bl
   if (!std::dynamic_pointer_cast<CDRMAtomic>(m_DRM))
   {
     bo = m_GBM->GetDevice().GetSurface().LockFrontBuffer().Get();
+    if (!bo)
+    {
+      CLog::Log(LOGERROR, "CWinSystemGbm::{} - failed to lock front buffer", __FUNCTION__);
+      return false;
+    }
   }
 
   auto result = m_DRM->SetVideoMode(res, bo);
+
+  // For atomic DRM, SetVideoMode only queues the modeset (m_need_modeset).
+  // Commit it now so the kernel CRTC matches the new surface before any
+  // subsequent eglSwapBuffers; otherwise mesa logs a spurious
+  // EGL_BAD_SURFACE on the next frame while userspace surface and kernel
+  // CRTC are out of sync. Legacy DRM already committed in SetVideoMode.
+  if (result && std::dynamic_pointer_cast<CDRMAtomic>(m_DRM))
+    FlipPage(true, false, false);
 
   auto delay =
       std::chrono::milliseconds(CServiceBroker::GetSettingsComponent()->GetSettings()->GetInt(
@@ -336,6 +384,82 @@ std::vector<std::string> CWinSystemGbm::GetConnectedOutputs()
   return m_DRM->GetConnectedConnectorNames();
 }
 
+bool CWinSystemGbm::SetVideoOutput(const VideoPicture* videoPicture)
+{
+  // Base: flip the gui/video plane role for the single shared output
+  // plane on GBM. videoPicture set means a video is starting and the
+  // output plane should be tracked as the video plane; nullptr means
+  // playback ended and the plane reverts to the gui role.
+  //
+  // Format and modifier come from whichever plane is currently active.
+  // EGL backends override this and rebuild the GBM/EGL output surface
+  // at the target bit depth before chaining here, so by the time we
+  // run the active plane's cached format reflects the post-rebuild
+  // surface (e.g. AR30 for 10-bit content).
+  CDRMPlane* current = m_DRM->GetGuiPlane() ? m_DRM->GetGuiPlane() : m_DRM->GetVideoPlane();
+  if (!current)
+    return false;
+
+  return videoPicture ? m_DRM->FindVideoPlane(current->GetFormat(), current->GetModifier())
+                      : m_DRM->FindGuiPlane(current->GetFormat(), current->GetModifier());
+}
+
+void CWinSystemGbm::SetColorimetry(const VideoPicture* videoPicture)
+{
+  auto drm = std::dynamic_pointer_cast<CDRMAtomic>(m_DRM);
+  if (!drm)
+    return;
+
+  auto connector = drm->GetConnector();
+  if (!connector || !connector->SupportsProperty("Colorspace"))
+    return;
+
+  KODI::UTILS::Colorimetry colorimetry = KODI::UTILS::Colorimetry::DEFAULT;
+
+  if (videoPicture)
+    colorimetry = KODI::UTILS::GetColorimetry(*videoPicture);
+
+  m_colorimetry = colorimetry;
+
+  // The DRM Colorspace connector property controls what colorimetry tag the
+  // driver transmits in the HDMI AVI InfoFrame (or DisplayPort VSC SDP). The
+  // transmitted tag must match the pixel encoding actually on the wire.
+  // Kodi scans out to an RGB primary plane (XR24/XR30/AB4H), so we must pick
+  // an RGB-variant Colorspace. Signaling YCC while sending RGB causes most
+  // DP-to-HDMI bridges (incl. LSPCON) to misinterpret the signal.
+  //
+  // The CTA-861 standard (used by both HDMI and DisplayPort for colorimetry
+  // signaling) defines explicit RGB variants only for wide-gamut spaces
+  // (BT.2020_RGB, DCI-P3_RGB). BT.709 RGB and BT.601 RGB are signaled via
+  // "Default", with the sink inferring primaries from the transmitted mode
+  // (HD resolution -> BT.709, SD resolution -> BT.601).
+  KODI::UTILS::Colorimetry scanoutColorimetry;
+  switch (colorimetry)
+  {
+    case KODI::UTILS::Colorimetry::BT2020_YCC:
+    case KODI::UTILS::Colorimetry::BT2020_CYCC:
+      scanoutColorimetry = KODI::UTILS::Colorimetry::BT2020_RGB;
+      break;
+    default:
+      // BT709_YCC, SMPTE_170M_YCC, and all other YCC variants map to Default,
+      // which signals sRGB/BT.709 RGB (HD) or BT.601 RGB (SD) based on the
+      // transmitted resolution.
+      scanoutColorimetry = KODI::UTILS::Colorimetry::DEFAULT;
+      break;
+  }
+
+  std::optional<uint64_t> colorspace =
+      connector->GetPropertyEnumValue("Colorspace", ColorimetryMap.at(scanoutColorimetry));
+  if (colorspace)
+  {
+    CLog::LogF(LOGDEBUG, "setting connector colorspace to {} (source {})",
+               KODI::UTILS::ColorimetryToString(scanoutColorimetry),
+               KODI::UTILS::ColorimetryToString(colorimetry));
+    drm->AddProperty(connector, "Colorspace", colorspace.value());
+    drm->SetActive(true);
+  }
+}
+
 bool CWinSystemGbm::SetHDR(const VideoPicture* videoPicture)
 {
   auto settingsComponent = CServiceBroker::GetSettingsComponent();
@@ -359,63 +483,45 @@ bool CWinSystemGbm::SetHDR(const VideoPicture* videoPicture)
 
   if (!videoPicture)
   {
-    if (connector->SupportsProperty("Colorspace"))
-    {
-      std::optional<uint64_t> colorspace = connector->GetPropertyValue("Colorspace", "Default");
-      if (colorspace)
-      {
-        CLog::LogF(LOGDEBUG, "setting connector colorspace to Default");
-        drm->AddProperty(connector, "Colorspace", colorspace.value());
-        drm->SetActive(true);
-      }
-    }
-
     if (connector->SupportsProperty("HDR_OUTPUT_METADATA"))
     {
+      CLog::LogF(LOGDEBUG, "clearing HDR_OUTPUT_METADATA");
       drm->AddProperty(connector, "HDR_OUTPUT_METADATA", 0);
       drm->SetActive(true);
 
-      if (m_hdr_blob_id)
-        drmModeDestroyPropertyBlob(drm->GetFileDescriptor(), m_hdr_blob_id);
-      m_hdr_blob_id = 0;
+      m_hdrBlob.Reset();
     }
 
+    m_eotf = KODI::UTILS::Eotf::TRADITIONAL_SDR;
     return false;
   }
 
-  KODI::UTILS::Colorimetry colorimetry = DRMPRIME::GetColorimetry(*videoPicture);
-
-  if (connector->SupportsProperty("Colorspace") && m_info &&
-      m_info->SupportsColorimetry(colorimetry))
+  // Only enable HDR for PQ (HDR10/HDR10+/DV) or HLG transfer functions
+  if (videoPicture->color_transfer != AVCOL_TRC_SMPTE2084 &&
+      videoPicture->color_transfer != AVCOL_TRC_ARIB_STD_B67)
   {
-    std::optional<uint64_t> colorspace =
-        connector->GetPropertyValue("Colorspace", ColorimetryMap.at(colorimetry));
-    if (colorspace)
-    {
-      CLog::LogF(LOGDEBUG, "setting connector colorspace to {}", ColorimetryMap.at(colorimetry));
-      drm->AddProperty(connector, "Colorspace", colorspace.value());
-      drm->SetActive(true);
-    }
+    m_eotf = KODI::UTILS::Eotf::TRADITIONAL_SDR;
+    return false;
   }
 
-  KODI::UTILS::Eotf eotf = DRMPRIME::GetEOTF(*videoPicture);
+  KODI::UTILS::Eotf eotf = KODI::UTILS::GetEOTF(*videoPicture);
+  m_eotf = eotf;
 
   if (connector->SupportsProperty("HDR_OUTPUT_METADATA") && m_info &&
       m_info->SupportsHDRStaticMetadataType1() && m_info->SupportsEOTF(eotf))
   {
     hdr_output_metadata hdr_metadata = {};
 
-    hdr_metadata.metadata_type = DRMPRIME::HDMI_STATIC_METADATA_TYPE1;
+    hdr_metadata.metadata_type = KODI::UTILS::HDMI_STATIC_METADATA_TYPE1;
     hdr_metadata.hdmi_metadata_type1.eotf = static_cast<uint8_t>(eotf);
-    hdr_metadata.hdmi_metadata_type1.metadata_type = DRMPRIME::HDMI_STATIC_METADATA_TYPE1;
+    hdr_metadata.hdmi_metadata_type1.metadata_type = KODI::UTILS::HDMI_STATIC_METADATA_TYPE1;
 
-    if (m_hdr_blob_id)
-      drmModeDestroyPropertyBlob(drm->GetFileDescriptor(), m_hdr_blob_id);
-    m_hdr_blob_id = 0;
+    m_hdrBlob.Reset();
 
     if (hdr_metadata.hdmi_metadata_type1.eotf)
     {
-      const AVMasteringDisplayMetadata* mdmd = DRMPRIME::GetMasteringDisplayMetadata(*videoPicture);
+      const AVMasteringDisplayMetadata* mdmd =
+          KODI::UTILS::GetMasteringDisplayMetadata(*videoPicture);
       if (mdmd && mdmd->has_primaries)
       {
         // Convert to unsigned 16-bit values in units of 0.00002,
@@ -460,7 +566,7 @@ bool CWinSystemGbm::SetHDR(const VideoPicture* videoPicture)
                   __FUNCTION__, hdr_metadata.hdmi_metadata_type1.min_display_mastering_luminance);
       }
 
-      const AVContentLightMetadata* clmd = DRMPRIME::GetContentLightMetadata(*videoPicture);
+      const AVContentLightMetadata* clmd = KODI::UTILS::GetContentLightMetadata(*videoPicture);
       if (clmd)
       {
         hdr_metadata.hdmi_metadata_type1.max_cll = clmd->MaxCLL;
@@ -472,15 +578,14 @@ bool CWinSystemGbm::SetHDR(const VideoPicture* videoPicture)
                   hdr_metadata.hdmi_metadata_type1.max_fall);
       }
 
-      drmModeCreatePropertyBlob(drm->GetFileDescriptor(), &hdr_metadata, sizeof(hdr_metadata),
-                                &m_hdr_blob_id);
+      m_hdrBlob = CDRMPropertyBlob(drm->GetFileDescriptor(), &hdr_metadata, sizeof(hdr_metadata));
     }
 
-    drm->AddProperty(connector, "HDR_OUTPUT_METADATA", m_hdr_blob_id);
+    drm->AddProperty(connector, "HDR_OUTPUT_METADATA", m_hdrBlob.Get());
     drm->SetActive(true);
   }
 
-  return m_hdr_blob_id != 0;
+  return m_hdrBlob.IsValid();
 }
 
 bool CWinSystemGbm::IsHDRDisplay()

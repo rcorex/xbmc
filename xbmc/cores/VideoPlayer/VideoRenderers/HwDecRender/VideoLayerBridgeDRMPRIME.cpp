@@ -32,17 +32,13 @@ CVideoLayerBridgeDRMPRIME::~CVideoLayerBridgeDRMPRIME()
 
 void CVideoLayerBridgeDRMPRIME::Disable()
 {
-  // disable video plane
   auto plane = m_DRM->GetVideoPlane();
-  m_DRM->AddProperty(plane, "FB_ID", 0);
-  m_DRM->AddProperty(plane, "CRTC_ID", 0);
-
-  auto winSystem = CServiceBroker::GetWinSystem();
-  if (!winSystem)
+  if (!plane)
     return;
 
-  // disable HDR metadata
-  winSystem->SetHDR(nullptr);
+  // disable video plane
+  m_DRM->AddProperty(plane, "FB_ID", 0);
+  m_DRM->AddProperty(plane, "CRTC_ID", 0);
 }
 
 void CVideoLayerBridgeDRMPRIME::Acquire(CVideoBufferDRMPRIME* buffer)
@@ -156,36 +152,35 @@ void CVideoLayerBridgeDRMPRIME::Unmap(CVideoBufferDRMPRIME* buffer)
 
 void CVideoLayerBridgeDRMPRIME::Configure(CVideoBufferDRMPRIME* buffer)
 {
-  auto winSystem = CServiceBroker::GetWinSystem();
-  if (!winSystem)
+  auto plane = m_DRM->GetVideoPlane();
+  if (!plane)
     return;
 
   const VideoPicture& picture = buffer->GetPicture();
 
-  winSystem->SetHDR(&picture);
-
-  auto plane = m_DRM->GetVideoPlane();
-
   std::optional<uint64_t> colorEncoding =
-      plane->GetPropertyValue("COLOR_ENCODING", GetColorEncoding(picture));
+      plane->GetPropertyEnumValue("COLOR_ENCODING", GetColorEncoding(picture));
   if (colorEncoding)
     m_DRM->AddProperty(plane, "COLOR_ENCODING", colorEncoding.value());
 
   std::optional<uint64_t> colorRange =
-      plane->GetPropertyValue("COLOR_RANGE", GetColorRange(picture));
+      plane->GetPropertyEnumValue("COLOR_RANGE", GetColorRange(picture));
   if (colorRange)
     m_DRM->AddProperty(plane, "COLOR_RANGE", colorRange.value());
 }
 
 void CVideoLayerBridgeDRMPRIME::SetVideoPlane(CVideoBufferDRMPRIME* buffer, const CRect& destRect)
 {
+  auto plane = m_DRM->GetVideoPlane();
+  if (!plane)
+    return;
+
   if (!Map(buffer))
   {
     Unmap(buffer);
     return;
   }
 
-  auto plane = m_DRM->GetVideoPlane();
   m_DRM->AddProperty(plane, "FB_ID", buffer->m_fb_id);
   m_DRM->AddProperty(plane, "CRTC_ID", m_DRM->GetCrtc()->GetCrtcId());
   m_DRM->AddProperty(plane, "SRC_X", 0);
@@ -204,6 +199,9 @@ void CVideoLayerBridgeDRMPRIME::UpdateVideoPlane()
     return;
 
   auto plane = m_DRM->GetVideoPlane();
+  if (!plane)
+    return;
+
   m_DRM->AddProperty(plane, "FB_ID", m_buffer->m_fb_id);
   m_DRM->AddProperty(plane, "CRTC_ID", m_DRM->GetCrtc()->GetCrtcId());
 }

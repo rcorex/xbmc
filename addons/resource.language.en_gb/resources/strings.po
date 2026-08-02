@@ -1215,6 +1215,7 @@ msgstr ""
 
 #: xbmc/dialogs/GUIDialogFileBrowser.cpp
 #: xbmc/games/dialogs/GUIDialogSelectGameClient.cpp
+#: xbmc/games/dialogs/osd/DiscManagerMenu.cpp
 #: xbmc/network/NetworkServices.cpp
 #: xbmc/pvr/guilib/PVRGUIActionsChannels.cpp
 #: xbmc/pvr/guilib/PVRGUIActionsRecordings.cpp
@@ -4049,6 +4050,7 @@ msgid "No"
 msgstr ""
 
 #. Value for setting 'Delete after watching'. Confirm delete.
+#. Value for setting 'Create versions for similar videos'
 #: system/settings/settings.xml
 msgctxt "#863"
 msgid "Ask"
@@ -4972,7 +4974,12 @@ msgctxt "#1450"
 msgid "Put display to sleep when idle"
 msgstr ""
 
-#empty strings from id 1451 to 2049
+#: system/settings/settings.xml
+msgctxt "#1451"
+msgid "Restart playback after waking up"
+msgstr ""
+
+#empty strings from id 1452 to 2049
 #strings through to 1470 reserved for power-saving
 
 msgctxt "#2050"
@@ -7074,6 +7081,8 @@ msgctxt "#13328"
 msgid "{0:s} not found"
 msgstr ""
 
+#. Label in the notification dialog for when a file or add-on fails to open
+#: xbmc/guilib/GUIVisualisationControl.cpp
 msgctxt "#13329"
 msgid "Error opening {0:s}"
 msgstr ""
@@ -7759,7 +7768,49 @@ msgctxt "#13476"
 msgid "16 bit per channel"
 msgstr ""
 
-#empty strings from id 13477 to 13504
+#. Value of setting with label #36100 "Dither depth"
+#: system/settings/settings.xml
+msgctxt "#13477"
+msgid "2 bit"
+msgstr ""
+
+#. Value of setting with label #36100 "Dither depth"
+#: system/settings/settings.xml
+msgctxt "#13478"
+msgid "3 bit"
+msgstr ""
+
+#. Value of setting with label #36100 "Dither depth"
+#: system/settings/settings.xml
+msgctxt "#13479"
+msgid "4 bit"
+msgstr ""
+
+#. Value of setting with label #36100 "Dither depth"
+#: system/settings/settings.xml
+msgctxt "#13480"
+msgid "5 bit"
+msgstr ""
+
+#. Value of setting with label #36100 "Dither depth"
+#: system/settings/settings.xml
+msgctxt "#13481"
+msgid "6 bit"
+msgstr ""
+
+#. Value of setting with label #36100 "Dither depth"
+#: system/settings/settings.xml
+msgctxt "#13482"
+msgid "7 bit"
+msgstr ""
+
+#. Value of setting with label #36100 "Dither depth"
+#: system/settings/settings.xml
+msgctxt "#13483"
+msgid "8 bit"
+msgstr ""
+
+#empty strings from id 13484 to 13504
 
 #: system/settings/settings.xml
 msgctxt "#13505"
@@ -7885,6 +7936,9 @@ msgctxt "#13550"
 msgid "Delay after change of refresh rate"
 msgstr ""
 
+#. value for setting 'Create versions for similar videos'
+#: system/settings/settings.xml
+#: xbmc/settings/DisplaySettings.cpp
 msgctxt "#13551"
 msgid "Off"
 msgstr ""
@@ -7917,7 +7971,19 @@ msgctxt "#13557"
 msgid "Skip delay"
 msgstr ""
 
-#empty strings from id 13558 to 13600
+#. Name of a setting to configure the maximum fast-forward speed with smooth/continuous playback
+#: system/settings/settings.xml
+msgctxt "#13558"
+msgid "Maximum smooth fast-forward speed"
+msgstr ""
+
+#. Playback speed unit used to format speeds for display ex. 2x, 4x, ...
+#: xbmc/settings/PlayerSettings.cpp
+msgctxt "#13559"
+msgid "{0:d}x"
+msgstr ""
+
+#empty strings id 13600
 
 #: system/settings/darwin_tvos.xml
 msgctxt "#13601"
@@ -9530,11 +9596,13 @@ msgstr ""
 
 #: xbmc/video/dialogs/GUIDialogVideoSettings.cpp
 msgctxt "#16315"
-msgid "Lanczos3 - Optimised"
+msgid "Lanczos3 - Fast"
 msgstr ""
 
+#. value for setting 'Create versions for similar videos'
 #: xbmc/games/dialogs/osd/DialogGameVideoFilter.cpp
 #: xbmc/video/dialogs/GUIDialogVideoSettings.cpp
+#: system/settings/settings.xml
 msgctxt "#16316"
 msgid "Auto"
 msgstr ""
@@ -9571,7 +9639,7 @@ msgstr ""
 
 #: xbmc/video/dialogs/GUIDialogVideoSettings.cpp
 msgctxt "#16323"
-msgid "Spline36 - Optimised"
+msgid "Spline36 - Fast"
 msgstr ""
 
 #: xbmc/video/dialogs/GUIDialogVideoSettings.cpp
@@ -14390,7 +14458,7 @@ msgstr ""
 #: xbmc/playlists/SmartPlayList.cpp
 msgctxt "#20475"
 msgid "Has multiple versions"
-msgstr ""	
+msgstr ""
 
 #. Used in smart playlists as rule field name to select items that have video extras
 #: xbmc/playlists/SmartPlayList.cpp
@@ -15167,7 +15235,37 @@ msgctxt "#21485"
 msgid "Supported file extensions and media types"
 msgstr ""
 
-#empty strings from id 21486 to 21601
+#. Used to show Episodes in Video->Files (eg. Episode n)
+#: xbmc/FileItem.cpp
+msgctxt "#21486"
+msgid "Episode {0:d}"
+msgstr ""
+
+#. Used to show Episodes in Video->Files (eg. Episodes m-n)
+#: xbmc/FileItem.cpp
+msgctxt "#21487"
+msgid "Episodes {0:d}-{1:d}"
+msgstr ""
+
+#. Used to show Episodes in Video->Files (eg. Season x Episode n)
+#: xbmc/FileItem.cpp
+msgctxt "#21488"
+msgid "Season {0:d} Episode {1:d}"
+msgstr ""
+
+#. Used to show Episodes in Video->Files (eg. Season x Episodes m-n)
+#: xbmc/FileItem.cpp
+msgctxt "#21489"
+msgid "Season {0:d} Episodes {1:d}-{2:d}"
+msgstr ""
+
+#. Used to show Specials in Video->Files (when there are no episodes) (eg. Specials)
+#: xbmc/FileItem.cpp
+msgctxt "#21490"
+msgid "Specials"
+msgstr ""
+
+#empty strings from id 21491 to 21601
 
 #: xbmc/Util.cpp
 msgctxt "#21602"
@@ -15919,6 +16017,7 @@ msgid "Script"
 msgstr ""
 
 #: xbmc/addons/Addon.cpp
+#: xbmc/guilib/GUIVisualisationControl.cpp
 msgctxt "#24010"
 msgid "Visualisation"
 msgstr ""
@@ -16997,7 +17096,19 @@ msgctxt "#25018"
 msgid "Automatic menu selection"
 msgstr ""
 
-#empty strings from id 25019 to 29800
+#. Bit rate unit of measure for the audio live bit rate info label (bits per second  / 1024)
+#: xbmc/guilib/guiinfo/PlayerGUIInfo.cpp
+msgctxt "#25019"
+msgid "Kb/s"
+msgstr ""
+
+#. Bit rate unit of measure for the video live bit rate info label (bits per second  / (1024 * 1024))
+#: xbmc/guilib/guiinfo/PlayerGUIInfo.cpp
+msgctxt "#25020"
+msgid "Mb/s"
+msgstr ""
+
+#empty strings from id 25021 to 29800
 
 #: unused
 msgctxt "#29801"
@@ -19084,10 +19195,10 @@ msgctxt "#35236"
 msgid "In this release, only controllers can be used to play games."
 msgstr ""
 
-#. Label of thumbnail in the in-game menu for normal size with 1:1 pixel aspect ratio (PAR)
+#. Label of thumbnail in the in-game menu for normal size with square pixels
 #: xbmc/games/dialogs/osd/DialogGameStretchMode.cpp
 msgctxt "#35237"
-msgid "Normal (1:1 PAR)"
+msgid "Square pixels"
 msgstr ""
 
 #. Label of thumbnail in the in-game menu for integer underscaling
@@ -19096,10 +19207,10 @@ msgctxt "#35238"
 msgid "Integer"
 msgstr ""
 
-#. Label of thumbnail in the in-game menu for integer underscaling with 1:1 pixel aspect ratio (PAR)
+#. Label of thumbnail in the in-game menu for integer underscaling with square pixels
 #: xbmc/games/dialogs/osd/DialogGameStretchMode.cpp
 msgctxt "#35239"
-msgid "Integer (1:1 PAR)"
+msgid "Integer (square pixels)"
 msgstr ""
 
 #empty strings from id 35240 to 35248
@@ -19236,7 +19347,67 @@ msgctxt "#35271"
 msgid "This game requires OpenGL support for 3D rendering. OpenGL support is still under development."
 msgstr ""
 
-#empty strings from id 35272 to 35504
+#. Label for the "Disc menu" button to open the Disc Manager when playing a game
+#: addons/skin.estuary/xml/GameOSD.xml
+#: addons/skin.estuary/xml/Includes_Games.xml
+msgctxt "#35272"
+msgid "Disc menu"
+msgstr ""
+
+#. Label for showing the disc that is inserted in the game's virtual CD drive
+#: addons/skin.estuary/xml/Includes_Games.xml
+msgctxt "#35273"
+msgid "Disc selection"
+msgstr ""
+
+#. Text shown when a disc is removed from the game's virtual CD drive
+#: addons/skin.estuary/xml/Includes_Games.xml
+#: xbmc/games/dialogs/osd/DiscManagerGame.cpp
+msgctxt "#35274"
+msgid "No disc"
+msgstr ""
+
+#. Label for the button that ejects the disc for a game's virtual CD drive
+#: addons/skin.estuary/xml/Includes_Games.xml
+#: xbmc/games/dialogs/osd/DiscManagerButtons.cpp
+#: xbmc/games/dialogs/osd/DiscManagerMenu.cpp
+msgctxt "#35275"
+msgid "Eject"
+msgstr ""
+
+#. Label for the button that inserts the disc (closes the disc tray) for a game's virtual CD drive
+#: addons/skin.estuary/xml/Includes_Games.xml
+#: xbmc/games/dialogs/osd/DiscManagerButtons.cpp
+#: xbmc/games/dialogs/osd/DiscManagerMenu.cpp
+msgctxt "#35276"
+msgid "Insert"
+msgstr ""
+
+#. Label for the button that resumes playing the current game. Called from the in-game menu.
+#: addons/skin.estuary/xml/Includes_Games.xml
+msgctxt "#35277"
+msgid "Resume game"
+msgstr ""
+
+#. Error message shown when the disc can't be ejected for a game's virtual CD drive
+#: xbmc/games/dialogs/osd/DiscManagerActions.cpp
+msgctxt "#35278"
+msgid "The disc can't be ejected right now."
+msgstr ""
+
+#. Error message shown when the disc can't be inserted (closing the disc tray) for a game's virtual CD drive
+#: xbmc/games/dialogs/osd/DiscManagerActions.cpp
+msgctxt "#35279"
+msgid "The disc can't be inserted right now."
+msgstr ""
+
+#. Title of the dialog to select a new disc image for a game's virtual CD drive
+#: xbmc/games/dialogs/osd/DiscManagerActions.cpp
+msgctxt "#35280"
+msgid "Select disc"
+msgstr ""
+
+#empty strings from id 35281 to 35504
 
 #. connection state "host unreachable"
 #: xbmc/pvr/addons/PVRClients.cpp
@@ -19555,7 +19726,13 @@ msgctxt "#36053"
 msgid "Tuner Device"
 msgstr ""
 
-#empty strings from id 36054 to 36095
+#. Label of CEC setting double_tap_timeout_ms: a repeated identical button press within this many ms is treated as a duplicate and dropped (double-tap dedup). 0 disables it.
+#: system/peripherals.xml
+msgctxt "#36054"
+msgid "Remote button double press timeout (ms) (0 = off)"
+msgstr ""
+
+#empty strings from id 36055 to 36095
 
 #. Label of setting "System / Display / Use system HDR/SDR brightness balance"
 #: system/settings/settings.xml
@@ -21383,7 +21560,13 @@ msgctxt "#36415"
 msgid "No info available yet."
 msgstr ""
 
-#empty strings from id 36416 to 36417
+#. Description of setting with label #1451 "Restart playback after waking up"
+#: system/settings/settings.xml
+msgctxt "#36416"
+msgid "Restarts playback of the last played file when woken up."
+msgstr ""
+
+#empty strings from id 36417 to 36417
 
 #. Description of setting with label #295 "Low latency mode"
 #: system/settings/settings.xml
@@ -22055,7 +22238,7 @@ msgstr ""
 #. Description of setting with label #36100 "Dither depth"
 #: system/settings/settings.xml
 msgctxt "#36599"
-msgid "Video dithering output precision in bits. Use the highest setting that doesn't show banding. The default of 8 is recommended for most systems. If your GPU is set to scale the output RGB levels or you use a laptop screen, a 7 or 6 bit setting may eliminate more banding. Lower settings are available for testing purposes only to make it easy to see whether dithering is applied and that the dither noise pixel size matches the display resolution."
+msgid "Video dithering output precision in bits. Auto enables dithering only when beneficial (limited- / full-range mismatch, bit depth reduction, downscaling, or HDR tone mapping) and uses 8- or 10-bit depth based on what the display supports. Lower settings are available for testing purposes only."
 msgstr ""
 
 #reserved strings 365XX
@@ -22783,7 +22966,13 @@ msgctxt "#37116"
 msgid "Adaptive"
 msgstr ""
 
-#empty strings from id 37117 to 37119
+#. Description of setting #13558 Maximum smooth fast-forward speed
+#: system/settings/settings.xml
+msgctxt "#37117"
+msgid "Cutoff of the analog fast-forward mode that shows every picture. Some hardware may not be able to keep up with the higher demand of the higher speeds."
+msgstr ""
+
+#empty strings from id 37118 to 37119
 
 #. Value of setting - Byte
 #: xbmc/settings/SevicesSettings.cpp
@@ -24329,7 +24518,58 @@ msgctxt "#39210"
 msgid "If enabled, Dolby Vision files will have level 5 (active area) metadata overridden to zero offsets. Enable if your display has issues with incorrectly cropped image in Dolby Vision playback."
 msgstr ""
 
-#empty strings from id 39211 to 39999
+#empty strings from id 39211 to 39899
+
+#. List formatting: pattern used to join a list of exactly two items, e.g. "A and B"
+#. STR_LIST_AND_TWO
+#: xbmc/utils/i18n/ListFormatter.h
+msgctxt "#39900"
+msgid "{0} and {1}"
+msgstr ""
+
+#. List formatting: pattern used to join the first item to the rest of a list of three or more items, e.g. "A" + "B, and C" -> "A, B, and C"
+#. Note the "B, and C" is used here as an example - the actual formatting of the last two item(s) of a list of three of more is determined by STR_LIST_AND_END
+#. STR_LIST_AND_START
+#: xbmc/utils/i18n/ListFormatter.h
+msgctxt "#39901"
+msgid "{0}, {1}"
+msgstr ""
+
+#. List formatting: pattern used to join an already-combined partial list to the next item, for the interior items of a list of four or more, e.g. "A, B" + "C" -> "A, B, C"
+#. STR_LIST_AND_MIDDLE
+#: xbmc/utils/i18n/ListFormatter.h
+msgctxt "#39902"
+msgid "{0}, {1}"
+msgstr ""
+
+#. List formatting: pattern used to join the already-combined partial list to the final item in a list of three or more items, e.g. "A, B" + "C" -> "A, B, and C"
+#. STR_LIST_AND_END
+#: xbmc/utils/i18n/ListFormatter.h
+msgctxt "#39903"
+msgid "{0}, and {1}"
+msgstr ""
+
+# 39904 to 39909 are reserved for language formatting
+
+#. List formatting: pattern used to join a list of exactly two items, e.g. "A or B"
+#. STR_LIST_OR_TWO
+#: xbmc/utils/i18n/ListFormatter.h
+msgctxt "#39910"
+msgid "{0} or {1}"
+msgstr ""
+
+#. List formatting: pattern used to join the already-combined partial list to the final item in a list of three or more items, e.g. "A, B" + "C" -> "A, B, or C"
+#. Note: the "or"-type list uses only TWO and END patterns; the START and MIDDLE joins for lists of three or more still use the AND-type comma pattern 
+#. (STR_LIST_AND_START / STR_LIST_AND_MIDDLE), with only the very last join switching to "or"
+#. STR_LIST_OR_END
+#: xbmc/utils/i18n/ListFormatter.h
+msgctxt "#39911"
+msgid "{0}, or {1}"
+msgstr ""
+
+# 39912 to 39949 are reserved for language formatting
+
+#empty strings from id 39950 to 39999
 
 # 40000 to 40800 are reserved for Video Versions feature
 
@@ -24603,7 +24843,7 @@ msgstr ""
 #. Help for Ignore different video versions settting
 #: system/settings/settings.xml
 msgctxt "#40203"
-msgid "Select scanner action for different video versions.[CR][Enabled] Add different video versions to library seperately without confirmation.[CR][Disabled] Prompt for converting different video versions into additional versions of the original."
+msgid "Select the scanner action for different versions of a video.[CR][Off] Add versions of a video to the library as separate entries.[CR][Ask] Prompt if different versions should be added separately or grouped with the original.[CR][Auto] Automatically create and group the additional versions with the original."
 msgstr ""
 
 #. Ignore video extras settting
@@ -24618,7 +24858,7 @@ msgctxt "#40205"
 msgid "Select scanner action for video extras in \"extras\" folder.[CR][Enabled] Scan video extras like regular videos.[CR][Disabled] Add video extras to library for associated video."
 msgstr ""
 
-#empty strings from id 40206 to 40208
+#empty strings from id 40206 to 40208 freed in v22
 
 #. Button label for video assets
 #: xbmc/filesystem/VideoDatabaseDirectory.cpp
@@ -24638,6 +24878,7 @@ msgstr ""
 #. Button label for video extras
 #: addons/skin.estuary/xml/DialogVideoInfo.xml
 #: xbmc/filesystem/VideoDatabaseDirectory.cpp
+#: xbmc/video/windows/GUIWindowVideoNav.cpp
 #: addons/skin.estuary/xml/Variables.xml
 msgctxt "#40211"
 msgid "Extras"
@@ -24655,7 +24896,7 @@ msgctxt "#40213"
 msgid "If selected the remote player volume level will be synchronized with the volume of this application.[CR]Warning: Global system volume level may be different than the application volume level - they are controlled independently.[CR]This may lead the remote player to be set to 100% volume level if the application has 100% volume level but the overall system volume level is smaller."
 msgstr ""
 
-#empty string id 40214
+#empty string id 40214 freed in v22
 
 #. Title of the dialog for version rename action from Versions Manager
 #: xbmc/video/dialogs/GUIDialogVideoManager.cpp
@@ -24693,7 +24934,27 @@ msgctxt "#40220"
 msgid "New extra name"
 msgstr ""
 
-#empty strings from id 40221 to 40399
+#empty string id 40221 freed in v22
+
+#. "Create separate versions of the same movie" setting
+#: system/settings/settings.xml
+msgctxt "#40222"
+msgid "Group the different versions of videos"
+msgstr ""
+
+#. "The newly scanned versions replace the default versions of movies" setting
+#: system/settings/settings.xml
+msgctxt "#40223"
+msgid "Make the most recent version the default version"
+msgstr ""
+
+#. Help for setting New versions replace the default versions
+#: system/settings/settings.xml
+msgctxt "#40224"
+msgid "Make the most recently scanned version of a movie the movie's default version.[CR]Helps identify new movie versions as recently added and locate them when the \"Unwatched\" filter of the library is turned on."
+msgstr ""
+
+#empty strings from id 40225 to 40399
 
 # Video versions
 

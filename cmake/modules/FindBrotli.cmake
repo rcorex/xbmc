@@ -15,15 +15,14 @@ if(NOT TARGET LIBRARY::${CMAKE_FIND_PACKAGE_NAME})
 
   macro(buildmacroBrotli)
 
-    set(patches "${CORE_SOURCE_DIR}/tools/depends/target/${${CMAKE_FIND_PACKAGE_NAME}_MODULE_LC}/01-all-disable-exe.patch"
-                "${CORE_SOURCE_DIR}/tools/depends/target/${${CMAKE_FIND_PACKAGE_NAME}_MODULE_LC}/02-all-cmake-install-config.patch")
+    set(patches "${CORE_SOURCE_DIR}/tools/depends/target/${${CMAKE_FIND_PACKAGE_NAME}_MODULE_LC}/01-all-cmake-install-config.patch")
 
     generate_patchcommand("${patches}")
     unset(patches)
 
     set(CMAKE_ARGS -DBUILD_SHARED_LIBS=OFF
                    -DBROTLI_DISABLE_TESTS=ON
-                   -DBROTLI_DISABLE_EXE=ON)
+                   -DBROTLI_BUILD_TOOLS=OFF)
 
     # Retrieve suffix of platform byproduct to apply to second brotli library
     string(REGEX REPLACE "^.*\\." "" _LIBEXT ${${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_BYPRODUCT})
@@ -130,6 +129,10 @@ if(NOT TARGET LIBRARY::${CMAKE_FIND_PACKAGE_NAME})
     endif()
 
     ADD_MULTICONFIG_BUILDMACRO()
+
+    # Required for external searches. Not used internally
+    set(Brotli_FOUND ON CACHE BOOL "Brotli found")
+    mark_as_advanced(Brotli_FOUND)
   else()
     if(Brotli_FIND_REQUIRED)
       message(FATAL_ERROR "Brotli libraries were not found.")

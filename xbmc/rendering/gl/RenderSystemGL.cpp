@@ -262,7 +262,10 @@ bool CRenderSystemGL::BeginRender()
   if (!m_bRenderCreated)
     return false;
 
-  bool useLimited = CServiceBroker::GetWinSystem()->UseLimitedColor();
+  m_GUIElementCount = 0;
+
+  bool useLimited = CServiceBroker::GetWinSystem()->UseLimitedColor() &&
+                    !CServiceBroker::GetWinSystem()->IsHdrComposite();
 
   if (m_limitedColorRange != useLimited)
   {
@@ -710,7 +713,8 @@ bool CRenderSystemGL::SupportsStereo(RenderStereoMode mode) const
 void CRenderSystemGL::InitialiseShaders()
 {
   std::string defines;
-  m_limitedColorRange = CServiceBroker::GetWinSystem()->UseLimitedColor();
+  m_limitedColorRange = CServiceBroker::GetWinSystem()->UseLimitedColor() &&
+                        !CServiceBroker::GetWinSystem()->IsHdrComposite();
   if (m_limitedColorRange)
   {
     defines += "#define KODI_LIMITED_RANGE 1\n";

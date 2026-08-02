@@ -1,6 +1,6 @@
 --- a/Makefile.pre.in
 +++ b/Makefile.pre.in
-@@ -3396,3 +3396,12 @@
+@@ -3420,3 +3420,12 @@
  # Local Variables:
  # mode: makefile
  # End:
@@ -10,6 +10,6 @@
 +LIBHACL_SHA3_LIB_SHARED=
 +LIBHACL_MD5_LIB_SHARED=
 +
-+$(LIBRARY): $(LIBRARY_OBJS)
++$(LIBRARY): $(LIBRARY_OBJS) $(LIBHACL_HMAC_OBJS)
 +		-rm -f $@
 +		$(AR) $(ARFLAGS) $@ $(LIBRARY_OBJS) $(LIBHACL_HMAC_OBJS)

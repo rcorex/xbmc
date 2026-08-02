@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2005-2018 Team Kodi
+ *  Copyright (C) 2005-2026 Team Kodi
  *  This file is part of Kodi - https://kodi.tv
  *
  *  SPDX-License-Identifier: GPL-2.0-or-later
@@ -167,6 +167,48 @@ int CDataCacheCore::GetVideoHeight()
   return m_playerVideoInfo.height;
 }
 
+void CDataCacheCore::SetVideoLiveBitRate(int bitRate)
+{
+  std::unique_lock lock(m_videoPlayerSection);
+
+  m_playerVideoInfo.liveBitRate = bitRate;
+}
+
+int CDataCacheCore::GetVideoLiveBitRate()
+{
+  std::unique_lock lock(m_videoPlayerSection);
+
+  return m_playerVideoInfo.liveBitRate;
+}
+
+void CDataCacheCore::SetVideoQueueLevel(int level)
+{
+  std::unique_lock lock(m_videoPlayerSection);
+
+  m_playerVideoInfo.queueLevel = level;
+}
+
+int CDataCacheCore::GetVideoQueueLevel()
+{
+  std::unique_lock lock(m_videoPlayerSection);
+
+  return m_playerVideoInfo.queueLevel;
+}
+
+void CDataCacheCore::SetVideoQueueDataLevel(int level)
+{
+  std::unique_lock lock(m_videoPlayerSection);
+
+  m_playerVideoInfo.queueDataLevel = level;
+}
+
+int CDataCacheCore::GetVideoQueueDataLevel()
+{
+  std::unique_lock lock(m_videoPlayerSection);
+
+  return m_playerVideoInfo.queueDataLevel;
+}
+
 void CDataCacheCore::SetVideoFps(float fps)
 {
   std::unique_lock lock(m_videoPlayerSection);
@@ -264,6 +306,63 @@ int CDataCacheCore::GetAudioBitsPerSample()
   return m_playerAudioInfo.bitsPerSample;
 }
 
+// player subtitle info
+void CDataCacheCore::SetSubtitleDecoderName(std::string name)
+{
+  std::unique_lock lock(m_subtitlePlayerSection);
+
+  m_playerSubtitleInfo.m_decoderName = std::move(name);
+}
+
+std::string CDataCacheCore::GetSubtitleDecoderName()
+{
+  std::unique_lock lock(m_subtitlePlayerSection);
+
+  return m_playerSubtitleInfo.m_decoderName;
+}
+
+void CDataCacheCore::SetAudioLiveBitRate(int bitRate)
+{
+  std::unique_lock lock(m_audioPlayerSection);
+
+  m_playerAudioInfo.liveBitRate = bitRate;
+}
+
+int CDataCacheCore::GetAudioLiveBitRate()
+{
+  std::unique_lock lock(m_audioPlayerSection);
+
+  return m_playerAudioInfo.liveBitRate;
+}
+
+void CDataCacheCore::SetAudioQueueLevel(int level)
+{
+  std::unique_lock lock(m_audioPlayerSection);
+
+  m_playerAudioInfo.queueLevel = level;
+}
+
+int CDataCacheCore::GetAudioQueueLevel()
+{
+  std::unique_lock lock(m_audioPlayerSection);
+
+  return m_playerAudioInfo.queueLevel;
+}
+
+void CDataCacheCore::SetAudioQueueDataLevel(int level)
+{
+  std::unique_lock lock(m_audioPlayerSection);
+
+  m_playerAudioInfo.queueDataLevel = level;
+}
+
+int CDataCacheCore::GetAudioQueueDataLevel()
+{
+  std::unique_lock lock(m_audioPlayerSection);
+
+  return m_playerAudioInfo.queueDataLevel;
+}
+
 void CDataCacheCore::SetEditList(const std::vector<EDL::Edit>& editList)
 {
   std::unique_lock lock(m_contentSection);
@@ -312,6 +411,18 @@ const std::vector<std::pair<std::string, int64_t>>& CDataCacheCore::GetChapters(
   return m_contentInfo.GetChapters();
 }
 
+void CDataCacheCore::SetBookmarks(const std::vector<std::chrono::milliseconds>& bookmarks)
+{
+  std::unique_lock lock(m_contentSection);
+  m_contentInfo.SetBookmarks(bookmarks);
+}
+
+const std::vector<std::chrono::milliseconds>& CDataCacheCore::GetBookmarks() const
+{
+  std::unique_lock lock(m_contentSection);
+  return m_contentInfo.GetBookmarks();
+}
+
 void CDataCacheCore::SetRenderClockSync(bool enable)
 {
   std::unique_lock lock(m_renderSection);
@@ -355,6 +466,9 @@ bool CDataCacheCore::HasPerformedSeek(int64_t lastSecondInterval) const
 void CDataCacheCore::SetStateSeeking(bool active)
 {
   std::unique_lock lock(m_stateSection);
+
+  if (m_stateInfo.m_stateSeeking == active)
+    return;
 
   m_stateInfo.m_stateSeeking = active;
   m_playerStateChanged = true;

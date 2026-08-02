@@ -13,6 +13,8 @@
 #include "utils/XBMCTinyXML2.h"
 #include "utils/log.h"
 
+#include <chrono>
+
 using namespace EDL;
 
 std::string CBeyondTVParser::GetEdlFilePath(const CFileItem& item) const
@@ -22,7 +24,9 @@ std::string CBeyondTVParser::GetEdlFilePath(const CFileItem& item) const
                                     URIUtils::GetExtension(mediaFilePath) + ".chapters.xml");
 }
 
-CEdlParserResult CBeyondTVParser::Parse(const CFileItem& item, float fps)
+CEdlParserResult CBeyondTVParser::Parse(const CFileItem& item,
+                                        float fps,
+                                        std::chrono::milliseconds duration)
 {
   CEdlParserResult result;
 

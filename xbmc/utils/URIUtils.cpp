@@ -13,6 +13,7 @@
 #include "ServiceBroker.h"
 #include "StringUtils.h"
 #include "URL.h"
+#include "Util.h"
 #ifdef HAVE_LIBBLURAY
 #include "filesystem/BlurayDirectory.h"
 #endif
@@ -21,20 +22,18 @@
 #include "filesystem/StackDirectory.h"
 #include "network/DNSNameCache.h"
 #include "network/Network.h"
+#if defined(TARGET_WINDOWS)
+#include "platform/win32/CharsetConverter.h"
+#endif
 #include "pvr/channels/PVRChannelsPath.h"
 #include "settings/AdvancedSettings.h"
 #include "utils/FileExtensionProvider.h"
 #include "utils/log.h"
 
-#if defined(TARGET_WINDOWS)
-#include "platform/win32/CharsetConverter.h"
-#endif
-
-#include "application/Application.h"
-
 #include <algorithm>
 #include <array>
 #include <cassert>
+#include <cctype>
 #include <charconv>
 #include <cstdint>
 #include <optional>
@@ -291,16 +290,19 @@ void URIUtils::RemoveExtension(std::string& path)
 
   // Extensions to remove
   const std::string extensions{
-      CServiceBroker::GetFileExtensionProvider().GetPictureExtensions() +
-      CServiceBroker::GetFileExtensionProvider().GetMusicExtensions() +
-      CServiceBroker::GetFileExtensionProvider().GetVideoExtensions() +
-      CServiceBroker::GetFileExtensionProvider().GetSubtitleExtensions() +
-      CServiceBroker::GetFileExtensionProvider().GetCompoundArchiveExtensions() +
-      CServiceBroker::GetFileExtensionProvider().GetArchiveExtensions() +
+      // clang-format off
+      CServiceBroker::GetFileExtensionProvider().GetPictureExtensions() + "|" +
+      CServiceBroker::GetFileExtensionProvider().GetMusicExtensions() + "|" +
+      CServiceBroker::GetFileExtensionProvider().GetVideoExtensions() + "|" +
+      CServiceBroker::GetFileExtensionProvider().GetSubtitleExtensions() + "|" +
+      CServiceBroker::GetFileExtensionProvider().GetCompoundArchiveExtensions() + "|" +
+      CServiceBroker::GetFileExtensionProvider().GetArchiveExtensions() + "|" +
+      CServiceBroker::GetFileExtensionProvider().GetGameExtensions() +
       "|.py|.xml|.milk|.xbt|.cdg"
 #ifdef TARGET_DARWIN
       + "|.app|.applescript|.workflow"
 #endif
+      // clang-format on
   };
 
   if (const int extension{FindExtension(path, extensions, FindExtensions::ONLY_IN_LIST,
@@ -601,27 +603,30 @@ bool URIUtils::GetParentPath(const std::string& strPath, std::string& strParent)
 
 std::string URIUtils::GetBasePath(const std::string& strPath)
 {
-  std::string strCheck{strPath};
   if (IsStack(strPath))
     return CStackDirectory::GetBasePath(strPath);
 
-  if (IsBDFile(strCheck) || IsDVDFile(strCheck))
-    return GetDiscBasePath(strCheck);
+  std::string basepath{strPath};
+  if (IsBDFile(strPath) || IsDVDFile(strPath))
+    basepath = GetDiscBasePath(strPath);
 
 #ifdef HAVE_LIBBLURAY
-  if (IsBlurayPath(strCheck))
-    return CBlurayDirectory::GetBasePath(CURL(strCheck));
+  if (IsBlurayPath(strPath))
+    basepath = CBlurayDirectory::GetBasePath(CURL(strPath));
 #endif
 
   if (const CURL url(strPath); IsArchive(url))
   {
     if (const std::string & hostname{url.GetHostName()}; !hostname.empty())
-      strCheck = hostname;
+      basepath = hostname;
   }
 
-  std::string strDirectory = GetDirectory(strCheck);
+  basepath = GetDirectory(basepath);
 
-  return strDirectory;
+  basepath =
+      CUtil::RemoveTrailingPartNumberSegmentFromPath(basepath, CUtil::PreserveFileName::REMOVE);
+
+  return basepath;
 }
 
 bool URIUtils::IsDiscPath(const std::string& path)
@@ -696,14 +701,16 @@ std::string URIUtils::GetBlurayMenuPath(const std::string& path)
   return AddFileToFolder(GetBlurayPath(path), "menu");
 }
 
-std::string URIUtils::GetBlurayRootPath(const std::string& path)
+std::string URIUtils::GetBlurayTitlesPath(const std::string& path,
+                                          GetAllTitles getAllTitles,
+                                          AllTitlesOptions options)
 {
-  return AddFileToFolder(GetBlurayPath(path), "root");
-}
-
-std::string URIUtils::GetBlurayTitlesPath(const std::string& path)
-{
-  return AddFileToFolder(GetBlurayPath(path), "root", "titles");
+  std::string newPath{AddFileToFolder(GetBlurayPath(path), "root", "titles")};
+  if (options == AllTitlesOptions::EPISODES)
+    newPath = AddFileToFolder(newPath, "episodes");
+  if (getAllTitles == GetAllTitles::ALL)
+    newPath = AddFileToFolder(newPath, "all");
+  return newPath;
 }
 
 std::string URIUtils::GetBlurayMainTitlePath(const std::string& path)
@@ -1065,6 +1072,12 @@ bool URIUtils::IsHostOnLAN(const std::string& host, LanCheckMode lanCheckMode)
   return false;
 }
 
+bool URIUtils::IsLocalOrLAN(const std::string& path)
+{
+  // Check if item is on local drive or network share
+  return (IsHD(path) || IsOnLAN(path, LanCheckMode::ANY_PRIVATE_SUBNET)) && !IsInternetStream(path);
+}
+
 bool URIUtils::IsMultiPath(const std::string& strPath)
 {
   return IsProtocol(strPath, "multipath");
@@ -1274,9 +1287,9 @@ bool URIUtils::IsSmb(const std::string& strFile)
   return IsProtocol(strFile, "smb");
 }
 
-bool URIUtils::IsURL(const std::string& strFile)
+bool URIUtils::IsURL(std::string_view file)
 {
-  return strFile.find("://") != std::string::npos;
+  return file.find("://") != std::string::npos;
 }
 
 bool URIUtils::IsFTP(const std::string& strFile)
@@ -1627,17 +1640,19 @@ void URIUtils::AddSlashAtEnd(std::string& strFolder)
   }
 }
 
-bool URIUtils::HasSlashAtEnd(const std::string& strFile, bool checkURL /* = false */)
+bool URIUtils::HasSlashAtEnd(std::string_view file, bool checkURL /* = false */)
 {
-  if (strFile.empty()) return false;
-  if (checkURL && IsURL(strFile))
-  {
-    CURL url(strFile);
-    const std::string& file = url.GetFileName();
-    return file.empty() || HasSlashAtEnd(file, false);
-  }
-  char kar = strFile.c_str()[strFile.size() - 1];
+  if (file.empty())
+    return false;
 
+  if (checkURL && IsURL(file))
+  {
+    CURL url(std::string{file});
+    const std::string& filename = url.GetFileName();
+    return filename.empty() || HasSlashAtEnd(filename, false);
+  }
+
+  const char kar = file.back();
   if (kar == '/' || kar == '\\')
     return true;
 
@@ -1771,6 +1786,15 @@ std::string URIUtils::AddFileToFolder(const std::string& strFolder,
     StringUtils::Replace(strResult, '/', '\\');
 
   return strResult;
+}
+
+std::string URIUtils::AddFileToFolderMatchingEncoding(const std::string& strFolder,
+                                                      const std::string& strFile)
+{
+  if (HasEncodedFilename(CURL(strFolder)))
+    return AddFileToFolder(strFolder, CURL::Encode(strFile));
+
+  return AddFileToFolder(strFolder, strFile);
 }
 
 std::string URIUtils::GetDirectory(const std::string &strFilePath)
@@ -1915,4 +1939,65 @@ CURL URIUtils::AddCredentials(CURL url)
   if (CPasswordManager::GetInstance().IsURLSupported(url) && url.GetUserName().empty())
     CPasswordManager::GetInstance().AuthenticateURL(url);
   return url;
+}
+
+std::string URIUtils::SanitiseUrlEncoding(std::string_view path)
+{
+  // Firstly look at encoded character capitalization.
+  // Some providers (eg. vfs rar) return paths with %2F instead of %2f,
+  // which causes problems when comparing paths.
+  // This only applies to the hostname element of the url
+  constexpr std::string_view PROTOCOL_SEP = "://";
+  auto protocolEnd{path.find(PROTOCOL_SEP)};
+  if (protocolEnd == std::string::npos)
+    return std::string(path);
+
+  protocolEnd += PROTOCOL_SEP.size();
+  if (protocolEnd >= path.size())
+    return std::string(path);
+
+  auto hostEnd{path.find('/', protocolEnd)};
+  if (hostEnd == std::string::npos)
+    hostEnd = path.size();
+
+  constexpr auto is_hex = [](char c) noexcept
+  { return ('0' <= c && c <= '9') || ('a' <= c && c <= 'f') || ('A' <= c && c <= 'F'); };
+
+  std::string out{path.substr(0, protocolEnd)};
+  for (auto it = path.begin() + static_cast<long long>(protocolEnd);
+       it != path.begin() + static_cast<long long>(hostEnd); ++it)
+  {
+    if (*it == '%' && std::ranges::distance(it, path.end()) > 2)
+    {
+      if (is_hex(it[1]) && is_hex(it[2]))
+      {
+        out += '%';
+        out += StringUtils::ToLowerAscii(it[1]);
+        out += StringUtils::ToLowerAscii(it[2]);
+        std::ranges::advance(it, 2);
+      }
+      else
+      {
+        CLog::LogF(LOGDEBUG, "Invalid encoding in path {}", CURL::GetRedacted(std::string(path)));
+        out += *it;
+      }
+    }
+    else
+      out += *it;
+  }
+
+  // In case addon (eg. vfs rar) returns malformed DOS paths (eg. c:/ and not c:\)
+  // m_basePath is used to populate the VIDEODB_ID_BASEPATH column which in turn is used
+  // by GetItemsByPath() to find items when browsing Video -> Files
+  // Pattern for DOS drive letter path: "D:/" encoded as "D%3a%2f"
+  constexpr std::string_view DOS_DRIVE_PATTERN = "%3a%2f";
+  constexpr size_t DOS_DRIVE_PATTERN_LENGTH =
+      DOS_DRIVE_PATTERN.length() + 1; // +1 for the drive letter
+  if (out.size() >= DOS_DRIVE_PATTERN_LENGTH &&
+      std::isalpha(static_cast<unsigned char>(out[protocolEnd])) &&
+      out.compare(protocolEnd + 1, DOS_DRIVE_PATTERN.length(), DOS_DRIVE_PATTERN) == 0)
+    StringUtils::Replace(out, "%2f", "%5c");
+
+  out += path.substr(hostEnd);
+  return out;
 }

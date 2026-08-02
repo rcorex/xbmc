@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2005-2018 Team Kodi
+ *  Copyright (C) 2005-2026 Team Kodi
  *  This file is part of Kodi - https://kodi.tv
  *
  *  SPDX-License-Identifier: GPL-2.0-or-later
@@ -96,14 +96,17 @@ public:
     std::string where;
   };
 
-  CDatabase();
-  virtual ~CDatabase(void);
+  explicit CDatabase(const std::string& dbType);
+  virtual ~CDatabase();
+
   bool IsOpen() const;
+  bool Open(const DatabaseSettings& db);
   virtual void Close();
+
+  const std::string& GetType() const { return m_type; }
+
   bool Compress(bool bForce = true);
   void Interrupt();
-
-  bool Open(const DatabaseSettings& db);
 
   void BeginTransaction();
   virtual bool CommitTransaction();
@@ -117,7 +120,7 @@ public:
   /*!
    * @brief Get a single value from a table.
    * @remarks The values of the strWhereClause and strOrderBy parameters have to be FormatSQL'ed when used.
-   * @param strTable The table to get the value from.
+   * @param strTable The table to get the value from. Cannot be a complex expression with joins for example.
    * @param strColumn The column to get.
    * @param strWhereClause If set, use this WHERE clause.
    * @param strOrderBy If set, use this ORDER BY clause.
@@ -139,7 +142,7 @@ public:
   /*!
  * @brief Get a single integer value from a table.
  * @remarks The values of the strWhereClause and strOrderBy parameters have to be FormatSQL'ed when used.
- * @param strTable The table to get the value from.
+ * @param strTable The table to get the value from. Cannot be a complex expression with joins for example.
  * @param strColumn The column to get.
  * @param strWhereClause If set, use this WHERE clause.
  * @param strOrderBy If set, use this ORDER BY clause.
@@ -317,8 +320,12 @@ protected:
   const CProfileManager& m_profileManager;
 
 private:
+  CDatabase() = delete;
+
   void InitSettings(DatabaseSettings& dbSettings);
   void UpdateVersionNumber();
+
+  const std::string m_type;
 
   bool m_bMultiInsert{
       false}; /*!< True if there are any queries in the insert queue, false otherwise */

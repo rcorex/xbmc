@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2005-2018 Team Kodi
+ *  Copyright (C) 2005-2026 Team Kodi
  *  This file is part of Kodi - https://kodi.tv
  *
  *  SPDX-License-Identifier: GPL-2.0-or-later
@@ -9,6 +9,7 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 #include <vector>
 
 class CURL;
@@ -97,7 +98,7 @@ public:
 
   /*! \brief Given a bluray:// path or disc file path (index.bdmv/video_ts.ifo), return the base .ISO or folder
    containing the disc file structure.
-   \param path source path.
+   \param file source path.
    \return the base .ISO or folder containing the disc file structure.
    \note Used to determine file/folder to delete
    */
@@ -105,7 +106,7 @@ public:
 
   /*! \brief Given a bluray:// path or disc file path (index.bdmv/video_ts.ifo), return the folder
    containing the disc file structure or ISO.
-   \param path source path.
+   \param file source path.
    \return the folder containing the .ISO or disc file structure.
    */
   static std::string GetDiscBasePath(const std::string& file);
@@ -135,17 +136,27 @@ public:
    */
   static std::string GetBlurayMenuPath(const std::string& path);
 
-  /*! \brief Given a path to an .ISO or index.BDMV, returns a bluray:// path to root.
-   \param path the ISO/index.BDMV path.
-   \return the bluray:// root path.
-   */
-  static std::string GetBlurayRootPath(const std::string& path);
+  enum class GetAllTitles : bool
+  {
+    LONG,
+    ALL
+  };
 
-  /*! \brief Given a path to an .ISO or index.BDMV, returns a bluray:// path to titles.
+  enum class AllTitlesOptions : bool
+  {
+    MOVIES,
+    EPISODES
+  };
+
+  /*! \brief Given a path to an .ISO or index.BDMV, returns a bluray:// path to select titles.
    \param path the ISO/index.BDMV path.
-   \return the bluray:// root/titles path.
+   \param getAllTitles whether to get all titles or just those within 70% of longest (most likely to be movies/episodes)
+   \param options movies or episodes - later dictates how to sort the titles - by length (movies) or by playlist (episodes)
+   \return the bluray:// titles path.
    */
-  static std::string GetBlurayTitlesPath(const std::string& path);
+  static std::string GetBlurayTitlesPath(const std::string& path,
+                                         GetAllTitles getAllTitles = GetAllTitles::LONG,
+                                         AllTitlesOptions options = AllTitlesOptions::MOVIES);
 
   /*! \brief Given a path to an .ISO or index.BDMV, returns a bluray:// path to main title.
    \param path the ISO/index.BDMV path.
@@ -271,6 +282,7 @@ public:
                       LanCheckMode lanCheckMode = LanCheckMode::ONLY_LOCAL_SUBNET);
   static bool IsHostOnLAN(const std::string& hostName,
                           LanCheckMode lanCheckMode = LanCheckMode::ONLY_LOCAL_SUBNET);
+  static bool IsLocalOrLAN(const std::string& path);
   static bool IsPlugin(const std::string& strFile);
   static bool IsScript(const std::string& strFile);
   static bool IsRAR(const std::string& strFile);
@@ -280,7 +292,7 @@ public:
   static bool IsStack(const std::string& strFile);
   static bool IsFavourite(const std::string& strFile);
   static bool IsUPnP(const std::string& strFile);
-  static bool IsURL(const std::string& strFile);
+  static bool IsURL(std::string_view file);
   static bool IsVideoDb(const std::string& strFile);
   static bool IsAPK(const std::string& strFile);
   static bool IsZIP(const std::string& strFile);
@@ -310,7 +322,7 @@ public:
 
   static std::string AppendSlash(std::string strFolder);
   static void AddSlashAtEnd(std::string& strFolder);
-  static bool HasSlashAtEnd(const std::string& strFile, bool checkURL = false);
+  static bool HasSlashAtEnd(std::string_view file, bool checkURL = false);
   static void RemoveSlashAtEnd(std::string& strFolder);
   static bool CompareWithoutSlashAtEnd(const std::string& strPath1, const std::string& strPath2);
   static std::string FixSlashesAndDups(const std::string& path, const char slashCharacter = '/', const size_t startFrom = 0);
@@ -341,6 +353,21 @@ public:
     auto newPath = AddFileToFolder(strFolder, strFile);
     return AddFileToFolder(newPath, args...);
   }
+
+  /*!
+   \brief Append a segment to a folder, matching the folder's filename encoding.
+
+   Sources whose paths keep the filename portion percent-encoded (WebDAV, http, ...)
+   cannot resolve a path built by appending a raw, human readable segment, because the
+   result ends up with mixed encoding. This helper percent-encodes \p strFile when
+   \p strFolder reports an encoded filename and appends it verbatim otherwise.
+
+   \param strFolder base folder, either a local path or a URL
+   \param strFile raw (unencoded) segment to append
+   \return the combined path, consistently encoded
+   */
+  static std::string AddFileToFolderMatchingEncoding(const std::string& strFolder,
+                                                     const std::string& strFile);
 
   static bool HasParentInHostname(const CURL& url);
   static bool HasEncodedHostname(const CURL& url);
@@ -373,6 +400,19 @@ public:
   static bool UpdateUrlEncoding(std::string &strFilename);
 
   static CURL AddCredentials(CURL url);
+
+  /*!
+   \brief Updates the URL encoding (if needed) of the hostname element of the given url path 
+   and returns the updated path.
+
+   Ensures that the hex encoded characters are lower case
+   Ensures that DOS paths use '\' as path separator and not '/'
+   as this can cause unintentional path mismatches
+
+   \param path Path to update
+   \return Updated path
+   */
+  static std::string SanitiseUrlEncoding(std::string_view path);
 
 private:
   static std::string resolvePath(const std::string &path);

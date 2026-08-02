@@ -80,8 +80,12 @@ bool GetEpisodeBookmark(const CFileItem& item, CPlayerOptions& options, CVideoDa
     {
       CBookmark bookmark;
       db.GetBookMarkForEpisode(*tag, bookmark);
-      options.starttime = bookmark.timeInSeconds;
       options.state = bookmark.playerState;
+
+      // Only apply starttime for non-local/LAN items where EDL parser won't run
+      if (!URIUtils::IsLocalOrLAN(item.GetDynPath()))
+        options.starttime = bookmark.timeInSeconds;
+
       return true;
     }
   }
@@ -153,7 +157,7 @@ void CApplicationPlay::GetOptionsAndUpdateItem()
           m_options.starttime = bookmark.timeInSeconds;
           m_options.state = bookmark.playerState;
         }
-        else if (m_options.starttime == 0.0 && m_item.HasVideoInfoTag())
+        else if (m_options.starttime == 0.0)
           GetEpisodeBookmark(m_item, m_options, db);
       }
 
@@ -163,7 +167,7 @@ void CApplicationPlay::GetOptionsAndUpdateItem()
       if (m_options.starttime == 0.0)
         m_item.SetStartOffset(0);
     }
-    else if (m_item.HasVideoInfoTag())
+    else
       GetEpisodeBookmark(m_item, m_options, db);
 
     db.Close();
@@ -199,6 +203,13 @@ MenuDecision GetMenuDecisions(const CFileItem& item,
       CSettings::SETTING_DISC_PLAYBACK)};
   const bool atStart{options.startpercent == 0.0 && options.starttime == 0.0};
 
+  // See if choose (new) playlist has been selected from context menu
+  const bool forceSelectionAlways{item.GetProperty("force_playlist_selection").asBoolean(false)};
+
+  // If we already have a playlist but Choose Playlist has been selected on the context menu
+  if (forceSelectionAlways && isBlurayPath)
+    return SHOW_SIMPLE_MENU;
+
   // Show Disc menu
   // This takes priority over the simple menu
   const bool useDiscMenuSetting{playbackSetting == BD_PLAYBACK_DISC_MENU};
@@ -210,8 +221,6 @@ MenuDecision GetMenuDecisions(const CFileItem& item,
   if ((isBluray || isBlurayPath) && atStart && useMainTitleSetting)
     return GET_MAIN_TITLE;
 
-  // See if choose (new) playlist has been selected from context menu of if simple menu should always be used
-  const bool forceSelectionAlways{item.GetProperty("force_playlist_selection").asBoolean(false)};
   const bool forceSelectionAtStart{playbackSetting == BD_PLAYBACK_SIMPLE_MENU};
   const bool mainTitle{playbackSetting == BD_PLAYBACK_MAIN_TITLE};
 
@@ -220,9 +229,6 @@ MenuDecision GetMenuDecisions(const CFileItem& item,
   if (isBluray && atStart && !mainTitle)
     return SHOW_SIMPLE_MENU;
 
-  // If we already have a playlist but Choose Playlist has been selected on the context menu
-  if (forceSelectionAlways && isBlurayPath)
-    return SHOW_SIMPLE_MENU;
   // If we already have a playlist but we're at the start and simple menu is enabled in settings
   if (forceSelectionAtStart && isBlurayPath && atStart)
     return SHOW_SIMPLE_MENU;

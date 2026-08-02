@@ -9,71 +9,123 @@
 #include "DRMAtomic.h"
 
 #include "ServiceBroker.h"
+#include "application/ApplicationComponents.h"
+#include "application/ApplicationPlayer.h"
 #include "guilib/GUIComponent.h"
 #include "guilib/GUIWindowManager.h"
 #include "settings/Settings.h"
 #include "utils/log.h"
 
+#include <chrono>
 #include <errno.h>
 #include <string.h>
+#include <thread>
 
 #include <drm_fourcc.h>
 #include <drm_mode.h>
+#include <fcntl.h>
 #include <unistd.h>
 
 using namespace KODI::WINDOWING::GBM;
 
 void CDRMAtomic::DrmAtomicCommit(int fb_id, int flags, bool rendered, bool videoLayer)
 {
-  uint32_t blob_id;
+  // Declared at function scope so the blob outlives drmModeAtomicCommit.
+  // DRM requires the blob to remain alive for the duration of the commit;
+  // destroying it before the commit returns leaves the atomic request
+  // referencing an invalid id and the kernel rejects with EINVAL.
+  CDRMPropertyBlob modeBlob;
+
+  if (m_old_crtc != nullptr)
+  {
+    if (m_old_crtc->GetId() != m_crtc->GetId())
+    {
+      AddProperty(m_old_crtc, "ACTIVE", 0);
+      AddProperty(m_old_crtc, "MODE_ID", 0);
+      flags |= DRM_MODE_ATOMIC_ALLOW_MODESET;
+    }
+
+    for (const auto& plane : m_planes)
+    {
+      if (m_gui_plane != nullptr && m_gui_plane->GetId() == plane->GetId())
+        continue;
+      if (m_video_plane != nullptr && m_video_plane->GetId() == plane->GetId())
+        continue;
+
+      uint64_t planeid = plane->GetPropertyValue("CRTC_ID").value_or(0);
+      if (planeid == m_crtc->GetId() || planeid == m_old_crtc->GetId())
+      {
+        AddProperty(plane.get(), "CRTC_ID", 0);
+        AddProperty(plane.get(), "FB_ID", 0);
+      }
+
+      // below disables the planes which are not in our crtcs, in other words
+      // crts attached to other connectors (ie: 2nd monitor), amdgpu requires at least
+      // one primary plane to enable crtcs, if we disable rest of the planes in amdgpu
+      // atomic commit will fail
+      if (!(HasQuirk(QUIRK_NEEDSPRIMARY)))
+      {
+        AddProperty(plane.get(), "CRTC_ID", 0);
+        AddProperty(plane.get(), "FB_ID", 0);
+      }
+    }
+    m_old_crtc = nullptr;
+  }
 
   if (flags & DRM_MODE_ATOMIC_ALLOW_MODESET)
   {
     if (!AddProperty(m_connector, "CRTC_ID", m_crtc->GetCrtcId()))
       return;
 
-    if (drmModeCreatePropertyBlob(m_fd, m_mode, sizeof(*m_mode), &blob_id) != 0)
+    modeBlob = CDRMPropertyBlob(m_fd, m_mode, sizeof(*m_mode));
+    if (!modeBlob.IsValid())
       return;
 
-    if (m_active && m_orig_crtc && m_orig_crtc->GetCrtcId() != m_crtc->GetCrtcId())
-    {
-      // if using a different CRTC than the original, disable original to avoid EINVAL
-      if (!AddProperty(m_orig_crtc, "MODE_ID", 0))
-        return;
-
-      if (!AddProperty(m_orig_crtc, "ACTIVE", 0))
-        return;
-    }
-
-    if (!AddProperty(m_crtc, "MODE_ID", blob_id))
+    if (!AddProperty(m_crtc, "MODE_ID", modeBlob.Get()))
       return;
 
     if (!AddProperty(m_crtc, "ACTIVE", m_active ? 1 : 0))
       return;
   }
 
+  // In Direct-To-Plane (dual plane) mode m_gui_plane is the output
+  // (gui overlay on top of m_video_plane). In single-plane flip-flop mode
+  // FindVideoPlane has made m_video_plane the output and nulled m_gui_plane.
+  // Pick whichever is live.
+  CDRMPlane* outputPlane = m_gui_plane ? m_gui_plane : m_video_plane;
+
   if (rendered)
   {
-    AddProperty(m_gui_plane, "FB_ID", fb_id);
-    AddProperty(m_gui_plane, "CRTC_ID", m_crtc->GetCrtcId());
-    AddProperty(m_gui_plane, "SRC_X", 0);
-    AddProperty(m_gui_plane, "SRC_Y", 0);
-    AddProperty(m_gui_plane, "SRC_W", m_width << 16);
-    AddProperty(m_gui_plane, "SRC_H", m_height << 16);
-    AddProperty(m_gui_plane, "CRTC_X", 0);
-    AddProperty(m_gui_plane, "CRTC_Y", 0);
-    AddProperty(m_gui_plane, "CRTC_W", m_mode->hdisplay);
-    AddProperty(m_gui_plane, "CRTC_H", m_mode->vdisplay);
+    AddProperty(outputPlane, "FB_ID", fb_id);
+    AddProperty(outputPlane, "CRTC_ID", m_crtc->GetCrtcId());
+    AddProperty(outputPlane, "SRC_X", 0);
+    AddProperty(outputPlane, "SRC_Y", 0);
+    AddProperty(outputPlane, "SRC_W", m_width << 16);
+    AddProperty(outputPlane, "SRC_H", m_height << 16);
+    AddProperty(outputPlane, "CRTC_X", 0);
+    AddProperty(outputPlane, "CRTC_Y", 0);
+    AddProperty(outputPlane, "CRTC_W", m_mode->hdisplay);
+    AddProperty(outputPlane, "CRTC_H", m_mode->vdisplay);
 
     if (m_inFenceFd != -1)
     {
       AddProperty(m_crtc, "OUT_FENCE_PTR", reinterpret_cast<uint64_t>(&m_outFenceFd));
-      AddProperty(m_gui_plane, "IN_FENCE_FD", m_inFenceFd);
+      AddProperty(outputPlane, "IN_FENCE_FD", m_inFenceFd);
     }
   }
-  else if (videoLayer && !CServiceBroker::GetGUI()->GetWindowManager().HasVisibleControls())
+  //! @todo Reaching out to the window manager and application player
+  //! singletons from inside the DRM layer is a layering violation. The
+  //! "should the GUI plane be attached this frame" decision is GUI/player
+  //! policy and should be computed at the WinSystem caller and passed in
+  //! as a parameter on FlipPage. Until that refactor lands, do the lookups
+  //! in place to match the surrounding master code pattern.
+  else if (m_gui_plane && m_video_plane &&
+           !CServiceBroker::GetGUI()->GetWindowManager().HasVisibleControls() &&
+           !CServiceBroker::GetAppComponents()
+                .GetComponent<CApplicationPlayer>()
+                ->HasVisibleOverlay() &&
+           !HasQuirk(QUIRK_NEEDSPRIMARY))
   {
-    // disable gui plane when video layer is active and gui has no visible controls
     AddProperty(m_gui_plane, "FB_ID", 0);
     AddProperty(m_gui_plane, "CRTC_ID", 0);
   }
@@ -84,10 +136,10 @@ void CDRMAtomic::DrmAtomicCommit(int fb_id, int flags, bool rendered, bool video
   auto ret = drmModeAtomicCommit(m_fd, m_req->Get(), flags | DRM_MODE_ATOMIC_TEST_ONLY, nullptr);
   if (ret < 0)
   {
-    CLog::Log(LOGERROR,
-              "CDRMAtomic::{} - test commit failed: ({}) - falling back to last successful atomic "
-              "request",
-              __FUNCTION__, strerror(errno));
+    CLog::LogF(LOGERROR,
+               "test commit failed: ({}) - falling back to last successful atomic "
+               "request",
+               strerror(errno));
 
     auto oldRequest = m_atomicRequestQueue.front().get();
     CDRMAtomicRequest::LogAtomicDiff(m_req, oldRequest);
@@ -95,31 +147,32 @@ void CDRMAtomic::DrmAtomicCommit(int fb_id, int flags, bool rendered, bool video
 
     // update the old atomic request with the new fb id to avoid tearing
     if (rendered)
-      AddProperty(m_gui_plane, "FB_ID", fb_id);
+      AddProperty(outputPlane, "FB_ID", fb_id);
   }
 
   ret = drmModeAtomicCommit(m_fd, m_req->Get(), flags, nullptr);
   if (ret < 0)
   {
-    CLog::Log(LOGERROR, "CDRMAtomic::{} - atomic commit failed: {}", __FUNCTION__, strerror(errno));
+    CLog::LogF(LOGERROR, "atomic commit failed: {}", strerror(errno));
     m_atomicRequestQueue.pop_back();
   }
-  else if (m_atomicRequestQueue.size() > 1)
+  else
   {
-    m_atomicRequestQueue.pop_front();
+    // Sync the property cache with values the kernel accepted.
+    // This must happen after a successful commit so that
+    // GetPropertyValue() returns current state (e.g. CRTC_ID=0
+    // after Disable()). Without this, stale cached values cause
+    // incorrect plane cleanup on subsequent video playback.
+    m_req->CacheProperties();
+
+    if (m_atomicRequestQueue.size() > 1)
+      m_atomicRequestQueue.pop_front();
   }
 
   if (m_inFenceFd != -1)
   {
     close(m_inFenceFd);
     m_inFenceFd = -1;
-  }
-
-  if (flags & DRM_MODE_ATOMIC_ALLOW_MODESET)
-  {
-    if (drmModeDestroyPropertyBlob(m_fd, blob_id) != 0)
-      CLog::Log(LOGERROR, "CDRMAtomic::{} - failed to destroy property blob: {}", __FUNCTION__,
-                strerror(errno));
   }
 
   m_atomicRequestQueue.emplace_back(std::make_unique<CDRMAtomicRequest>());
@@ -133,15 +186,10 @@ void CDRMAtomic::FlipPage(struct gbm_bo* bo, bool rendered, bool videoLayer, boo
 
   if (rendered)
   {
-    if (videoLayer)
-      m_gui_plane->SetFormat(CDRMUtils::FourCCWithAlpha(m_gui_plane->GetFormat()));
-    else
-      m_gui_plane->SetFormat(CDRMUtils::FourCCWithoutAlpha(m_gui_plane->GetFormat()));
-
     drm_fb = CDRMUtils::DrmFbGetFromBo(bo);
     if (!drm_fb)
     {
-      CLog::Log(LOGERROR, "CDRMAtomic::{} - Failed to get a new FBO", __FUNCTION__);
+      CLog::LogF(LOGERROR, "Failed to get a new FBO");
       return;
     }
 
@@ -153,7 +201,7 @@ void CDRMAtomic::FlipPage(struct gbm_bo* bo, bool rendered, bool videoLayer, boo
   {
     flags |= DRM_MODE_ATOMIC_ALLOW_MODESET;
     m_need_modeset = false;
-    CLog::Log(LOGDEBUG, "CDRMAtomic::{} - Execute modeset at next commit", __FUNCTION__);
+    CLog::LogF(LOGDEBUG, "Execute modeset at next commit");
   }
 
   DrmAtomicCommit(!drm_fb ? 0 : drm_fb->fb_id, flags, rendered, videoLayer);
@@ -161,14 +209,36 @@ void CDRMAtomic::FlipPage(struct gbm_bo* bo, bool rendered, bool videoLayer, boo
 
 bool CDRMAtomic::InitDrm()
 {
-  if (!CDRMUtils::OpenDrm(true))
+  bool opened = CDRMUtils::OpenDrm(true);
+
+  // At cold boot a connector's EDID/HPD probe may not have completed, so
+  // OpenDrm(true) transiently fails with no connector even though an
+  // atomic-capable display is attached. Retry a few times with a short delay,
+  // but only when the hardware is atomic capable so a not-yet-ready display is
+  // given time to appear. Genuinely non-atomic hardware skips the retry and
+  // returns immediately, so a legacy fall-through is never delayed.
+  if (!opened && SupportsAtomicModesetting())
+  {
+    constexpr int maxPasses = 3;
+    constexpr auto retryDelay = std::chrono::milliseconds(500);
+
+    for (int pass = 1; !opened && pass < maxPasses; ++pass)
+    {
+      CLog::LogF(LOGWARNING,
+                 "atomic-capable device present but no connector ready, re-scanning ({}/{})", pass,
+                 maxPasses);
+      std::this_thread::sleep_for(retryDelay);
+      opened = CDRMUtils::OpenDrm(true);
+    }
+  }
+
+  if (!opened)
     return false;
 
   auto ret = drmSetClientCap(m_fd, DRM_CLIENT_CAP_ATOMIC, 1);
   if (ret)
   {
-    CLog::Log(LOGERROR, "CDRMAtomic::{} - no atomic modesetting support: {}", __FUNCTION__,
-              strerror(errno));
+    CLog::LogF(LOGERROR, "no atomic modesetting support: {}", strerror(errno));
     return false;
   }
 
@@ -178,13 +248,7 @@ bool CDRMAtomic::InitDrm()
   if (!CDRMUtils::InitDrm())
     return false;
 
-  for (auto& plane : m_planes)
-  {
-    AddProperty(plane.get(), "FB_ID", 0);
-    AddProperty(plane.get(), "CRTC_ID", 0);
-  }
-
-  CLog::Log(LOGDEBUG, "CDRMAtomic::{} - initialized atomic DRM", __FUNCTION__);
+  CLog::LogF(LOGDEBUG, "initialized atomic DRM");
 
   return true;
 }
@@ -192,6 +256,41 @@ bool CDRMAtomic::InitDrm()
 void CDRMAtomic::DestroyDrm()
 {
   CDRMUtils::DestroyDrm();
+}
+
+bool CDRMAtomic::SupportsAtomicModesetting()
+{
+  int numDevices = drmGetDevices2(0, nullptr, 0);
+  if (numDevices <= 0)
+    return false;
+
+  std::vector<drmDevicePtr> devices(numDevices);
+  if (drmGetDevices2(0, devices.data(), devices.size()) < 0)
+    return false;
+
+  bool atomic = false;
+  for (const auto device : devices)
+  {
+    if (!(device->available_nodes & 1 << DRM_NODE_PRIMARY))
+      continue;
+
+    int fd = open(device->nodes[DRM_NODE_PRIMARY], O_RDWR | O_CLOEXEC);
+    if (fd < 0)
+      continue;
+
+    // The atomic client cap is a device property gated on the driver's atomic
+    // support, not on any connector, so testing it needs only the fd.
+    if (drmSetClientCap(fd, DRM_CLIENT_CAP_ATOMIC, 1) == 0)
+      atomic = true;
+
+    close(fd);
+
+    if (atomic)
+      break;
+  }
+
+  drmFreeDevices(devices.data(), devices.size());
+  return atomic;
 }
 
 bool CDRMAtomic::SetVideoMode(const RESOLUTION_INFO& res, struct gbm_bo* bo)
@@ -211,6 +310,8 @@ bool CDRMAtomic::SetActive(bool active)
 
 bool CDRMAtomic::AddProperty(CDRMObject* object, const char* name, uint64_t value)
 {
+  if (!object)
+    return false;
   return m_req->AddProperty(object, name, value);
 }
 
@@ -232,6 +333,17 @@ bool CDRMAtomic::CDRMAtomicRequest::AddProperty(CDRMObject* object,
 
   m_atomicRequestItems[object][propertyId] = value;
   return true;
+}
+
+void CDRMAtomic::CDRMAtomicRequest::CacheProperties()
+{
+  for (const auto& [object, properties] : m_atomicRequestItems)
+  {
+    for (const auto& [propertyId, value] : properties)
+    {
+      object->CachePropertyValue(propertyId, value);
+    }
+  }
 }
 
 void CDRMAtomic::CDRMAtomicRequest::LogAtomicDiff(CDRMAtomicRequest* current,
@@ -258,14 +370,14 @@ void CDRMAtomic::CDRMAtomicRequest::LogAtomicDiff(CDRMAtomicRequest* current,
     }
   }
 
-  CLog::Log(LOGDEBUG, "CDRMAtomicRequest::{} - DRM Atomic Request Diff:", __FUNCTION__);
+  CLog::LogF(LOGDEBUG, "DRM Atomic Request Diff:");
 
   LogAtomicRequest(LOGERROR, atomicDiff);
 }
 
 void CDRMAtomic::CDRMAtomicRequest::LogAtomicRequest()
 {
-  CLog::Log(LOGDEBUG, "CDRMAtomicRequest::{} - DRM Atomic Request:", __FUNCTION__);
+  CLog::LogF(LOGDEBUG, "DRM Atomic Request:");
   LogAtomicRequest(LOGDEBUG, m_atomicRequestItems);
 }
 
@@ -283,7 +395,7 @@ void CDRMAtomic::CDRMAtomicRequest::LogAtomicRequest(
                      "\tValue: " + std::to_string(property.second));
   }
 
-  CLog::Log(logLevel, "{}", message);
+  CLog::LogF(logLevel, "{}", message);
 }
 
 void CDRMAtomic::CDRMAtomicRequest::DrmModeAtomicReqDeleter::operator()(drmModeAtomicReqPtr p) const

@@ -173,6 +173,19 @@ TEST_F(TestStacks, TestMovieFilesStackFolderFilesDiscPart)
   }
 }
 
+TEST_F(TestStacks, TestMovieFilesStackFolderFilesDiscNPart)
+{
+  const std::string movieFolder =
+      XBMC_REF_FILE_PATH("xbmc/video/test/testdata/moviestack_discn_parts/Movie_(2001)");
+  CFileItemList items;
+  CDirectory::GetDirectory(movieFolder, items, "", DIR_FLAG_DEFAULTS);
+  // make sure items has 2 items (the two movie parts)
+  EXPECT_EQ(items.Size(), 2);
+  // attempt to stack -> should fail as parts are 'Disc n'
+  items.Stack();
+  EXPECT_EQ(items.Size(), 2);
+}
+
 TEST_F(TestStacks, TestConstructStackPath)
 {
   CFileItemList items;
@@ -289,8 +302,23 @@ TEST_F(TestStacks, TestGetParentPath)
   parent = CStackDirectory::GetParentPath(path);
   EXPECT_EQ(parent, "smb://somepath/a/");
 
-  path = "stack://smb://somepath/a/b/c/d/e/f/g/movie_part_1.mkv , "
-         "smb://somepath/a/h/i/j/k/l/m/movie_part_2.mkv";
+  path = "stack://smb://somepath/a/b/c/d/e/movie_part_1.mkv , "
+         "smb://somepath/a/movie_part_2.mkv";
+  parent = CStackDirectory::GetParentPath(path);
+  EXPECT_EQ(parent, "smb://somepath/a/"); // Asymmetric levels
+
+  path = "stack://smb://somepath/a/b/movie_part_1.mkv , "
+         "smb://somepath/a/f/g/h/i/movie_part_2.mkv";
+  parent = CStackDirectory::GetParentPath(path);
+  EXPECT_EQ(parent, "smb://somepath/a/"); // Asymmetric levels
+
+  path = "stack://smb://somepath/a/b/c/d/e/f/g/h/i/j/k/movie_part_1.mkv , "
+         "smb://somepath/a/m/n/o/p/q/r/s/t/u/v/movie_part_2.mkv";
+  parent = CStackDirectory::GetParentPath(path);
+  EXPECT_EQ(parent, "smb://somepath/a/"); // 10 levels
+
+  path = "stack://smb://somepath/a/b/c/d/e/f/g/h/i/j/k/l/movie_part_1.mkv , "
+         "smb://somepath/a/m/n/o/p/q/r/s/t/u/v/w/movie_part_2.mkv";
   parent = CStackDirectory::GetParentPath(path);
   EXPECT_EQ(parent, "/"); // Too many levels
 }

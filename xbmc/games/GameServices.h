@@ -14,6 +14,7 @@
 #include <memory>
 #include <string>
 
+class CFileExtensionProvider;
 class CInputManager;
 class CProfileManager;
 
@@ -41,6 +42,7 @@ class CShaderPresetFactory;
 
 namespace GAME
 {
+class CAchievementRuntime;
 class CAgentInput;
 class CControllerManager;
 class CGameSettings;
@@ -56,8 +58,13 @@ public:
                 PERIPHERALS::CPeripherals& peripheralManager,
                 const CProfileManager& profileManager,
                 CInputManager& inputManager,
-                ADDON::CAddonMgr& addons);
+                ADDON::CAddonMgr& addons,
+                CFileExtensionProvider& fileExtensionProvider);
   ~CGameServices();
+
+  // Lifecycle functions
+  void Initialize();
+  void Deinitialize();
 
   ControllerPtr GetController(const std::string& controllerId);
   ControllerPtr GetDefaultController();
@@ -77,6 +84,8 @@ public:
   std::string TranslateFeature(const std::string& controllerId, const std::string& featureName);
 
   std::string GetSavestatesFolder() const;
+
+  CAchievementRuntime& AchievementRuntime() { return *m_achievementRuntime; }
 
   CGameSettings& GameSettings() { return *m_gameSettings; }
 
@@ -99,8 +108,10 @@ private:
   CControllerManager& m_controllerManager;
   RETRO::CGUIGameRenderManager& m_gameRenderManager;
   const CProfileManager& m_profileManager;
+  CFileExtensionProvider& m_fileExtensionProvider;
 
   // Game services
+  std::unique_ptr<CAchievementRuntime> m_achievementRuntime;
   std::unique_ptr<CGameSettings> m_gameSettings;
   std::unique_ptr<CAgentInput> m_agentInput;
   std::unique_ptr<SHADER::CShaderPresetFactory> m_videoShaders;
