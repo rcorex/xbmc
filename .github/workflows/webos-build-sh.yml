@@ -81,7 +81,7 @@ jobs:
         working-directory: tools/depends
         run: |
           ./bootstrap
-          ./configure --prefix=$HOME/kodi-deps --with-toolchain=$HOME/kodi-dev/arm-webos-linux-gnueabi_sdk-buildroot --host=arm-webos-linux-gnueabi --enable-debug=no
+          ./configure --prefix=$HOME/kodi-deps --with-toolchain=$HOME/kodi-dev/arm-webos-linux-gnueabi_sdk-buildroot --host=arm-webos-linux-gnueabi --enable-debug=no --with-target-cflags="-D_GNU_SOURCE"
           
       # ALWAYS compile dependencies to ensure linking paths are generated
       - name: Compile Kodi dependencies
