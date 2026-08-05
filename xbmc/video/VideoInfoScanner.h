@@ -15,6 +15,7 @@
 #include "utils/Artwork.h"
 #include "utils/RegExp.h"
 
+#include <cstdint>
 #include <functional>
 #include <set>
 #include <string>
@@ -277,6 +278,9 @@ namespace KODI::VIDEO
      */
     std::string GetFastHash(const std::string &directory, const std::vector<std::string> &excludes) const;
 
+    /*! \brief As above but from an already known raw modification time */
+    std::string GetFastHash(const std::vector<std::string>& excludes, int64_t time) const;
+
     /*! \brief Retrieve a "fast" hash of the given directory recursively (if available)
      Performs a stat() on the directory, and uses modified time to create a "fast"
      hash of each folder. If no modified time is available, the create time is used,
@@ -339,6 +343,14 @@ namespace KODI::VIDEO
 
     SimilarVideoScanAction m_similarVideoAction{SimilarVideoScanAction::NONE};
     bool m_ignoreVideoExtras{false};
+
+    enum class ArtRetrievalTiming : uint8_t
+    {
+      SYNCHRONOUS = 0, //!< retrieve art synchronously during scrape
+      BACKGROUND = 1 //!< retrieve art in background after scrape
+    };
+
+    ArtRetrievalTiming m_artRetrievalTiming{ArtRetrievalTiming::BACKGROUND};
     CVideoDatabase m_database;
     std::set<int> m_pathsToClean;
     std::shared_ptr<CAdvancedSettings> m_advancedSettings;

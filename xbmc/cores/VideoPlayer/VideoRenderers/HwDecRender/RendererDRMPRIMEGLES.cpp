@@ -9,8 +9,8 @@
 #include "RendererDRMPRIMEGLES.h"
 
 #include "ServiceBroker.h"
+#include "cores/VideoPlayer/Buffers/VideoBufferDRMPRIME.h"
 #include "cores/VideoPlayer/DVDCodecs/Video/DVDVideoCodec.h"
-#include "cores/VideoPlayer/VideoRenderers/RenderCapture.h"
 #include "cores/VideoPlayer/VideoRenderers/RenderFactory.h"
 #include "cores/VideoPlayer/VideoRenderers/RenderFlags.h"
 #include "cores/VideoPlayer/VideoRenderers/VideoShaders/YUV2RGBShaderGLES.h"
@@ -27,6 +27,7 @@
 #include "windowing/linux/WinSystemEGL.h"
 
 #include <memory>
+#include <typeinfo>
 
 using namespace KODI::UTILS::EGL;
 
@@ -280,6 +281,14 @@ void CRendererDRMPRIMEGLES::AddVideoPicture(const VideoPicture& picture, int ind
   }
   buf.videoBuffer = picture.videoBuffer;
   buf.videoBuffer->Acquire();
+
+  //! @todo skip only the exact CVideoBufferDRMPRIMEFFmpeg type, which
+  //! CDVDVideoCodecDRMPRIME always fills at decode; its subclass
+  //! CVideoBufferDMA also arrives from CAddonVideoCodec unfilled, so it is
+  //! set here (a duplicate set for the ffmpeg software path, accepted).
+  auto* drmBuffer = dynamic_cast<CVideoBufferDRMPRIME*>(picture.videoBuffer);
+  if (drmBuffer && typeid(*drmBuffer) != typeid(CVideoBufferDRMPRIMEFFmpeg))
+    drmBuffer->SetPictureParams(picture);
 }
 
 bool CRendererDRMPRIMEGLES::Flush(bool saveBuffers)
@@ -427,13 +436,6 @@ void CRendererDRMPRIMEGLES::RenderUpdate(
 
   VerifyGLState();
   glEnable(GL_BLEND);
-}
-
-bool CRendererDRMPRIMEGLES::RenderCapture(int index, CRenderCapture* capture)
-{
-  capture->BeginRender();
-  capture->EndRender();
-  return true;
 }
 
 bool CRendererDRMPRIMEGLES::ConfigChanged(const VideoPicture& picture)
