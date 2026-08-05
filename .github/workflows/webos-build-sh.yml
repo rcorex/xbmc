@@ -77,6 +77,11 @@ jobs:
 #      - name: Install LG webOS CLI
 #        run: sudo npm install -g @webos-tools/cli
 
+      - name: Install Perl dependencies for Samba PIDL
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libparse-yapp-perl
+
       - name: Configure Kodi dependencies
         working-directory: tools/depends
         run: |
