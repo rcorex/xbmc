@@ -157,6 +157,7 @@ class CAdvancedSettings : public ISettingCallback, public ISettingsHandler
     float m_videoAudioDelayRange;
     float m_videoAudioDelayStep;
     bool m_videoUseTimeSeeking;
+    bool m_videoSmoothPercentToTimeSeeking;
     int m_videoTimeSeekForward;
     int m_videoTimeSeekBackward;
     int m_videoTimeSeekForwardBig;
@@ -192,7 +193,6 @@ class CAdvancedSettings : public ISettingCallback, public ISettingsHandler
     std::vector<RefreshVideoLatency> m_videoRefreshLatency;
     float m_videoDefaultLatency;
     float m_videoDefaultHdrExtraLatency;
-    int  m_videoCaptureUseOcclusionQuery;
     bool m_DXVACheckCompatibility;
     bool m_DXVACheckCompatibilityPresent;
     int  m_videoFpsDetect;
