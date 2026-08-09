@@ -19,6 +19,7 @@
 #include "dialogs/GUIDialogSelect.h"
 #include "dialogs/GUIDialogYesNo.h"
 #include "filesystem/DiscDirectoryHelper.h"
+#include "filesystem/StackDirectory.h"
 #include "guilib/GUIComponent.h"
 #include "guilib/GUIWindowManager.h"
 #include "resources/LocalizeStrings.h"
@@ -36,6 +37,7 @@
 #include "video/VideoManagerTypes.h"
 #include "video/VideoThumbLoader.h"
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <utility>
@@ -602,10 +604,21 @@ std::pair<VersionConversionResult, int> CGUIDialogVideoManagerVersions::ConvertT
   // Must be retrieved before the conversion, which reassigns the file to the target movie.
   const int idFile{videoDb.GetFileIdByMovie(sourceDbId)};
 
-  // Preserve streamdetails if bluray playlist
+  // Preserve streamdetails if bluray playlist, or a stack containing them
   CFileItem sourceItem;
-  const bool isSourceBluray{videoDb.GetDetailsByTypeAndId(sourceItem, itemType, sourceDbId) &&
-                            sourceItem.IsBluray()};
+  bool isSourceBluray{false};
+  if (videoDb.GetDetailsByTypeAndId(sourceItem, itemType, sourceDbId))
+  {
+    if (URIUtils::IsStack(sourceItem.GetDynPath()))
+    {
+      std::vector<std::string> paths;
+      XFILE::CStackDirectory::GetPaths(sourceItem.GetDynPath(), paths);
+      isSourceBluray = std::ranges::any_of(paths, [](const std::string& path)
+                                           { return URIUtils::IsBlurayPath(path); });
+    }
+    else
+      isSourceBluray = sourceItem.IsBluray();
+  }
   const DeleteMovieCascadeAction cascadeAction{
       isSourceBluray ? DeleteMovieCascadeAction::ALL_ASSETS_NOT_STREAMDETAILS
                      : DeleteMovieCascadeAction::ALL_ASSETS};
@@ -663,7 +676,10 @@ bool CGUIDialogVideoManagerVersions::GetAllOtherMovies(const std::shared_ptr<CFi
 }
 
 std::pair<VersionConversionResult, int> CGUIDialogVideoManagerVersions::ProcessVideoVersion(
-    VideoDbContentType itemType, int dbId, int targetDbId /* = -1 */)
+    VideoDbContentType itemType,
+    int dbId,
+    int targetDbId /* = -1 */,
+    bool canBecomeDefault /* = true */)
 {
   if (itemType != VideoDbContentType::MOVIES)
     return {VersionConversionResult::FAILED, NO_VERSION};
@@ -750,7 +766,10 @@ std::pair<VersionConversionResult, int> CGUIDialogVideoManagerVersions::ProcessV
   const Mode mode{action == SimilarVideoScanAction::ASK ? Mode::INTERACTIVE
                                                         : Mode::NON_INTERACTIVE};
 
-  const bool isDefault{settings->GetBool(CSettings::SETTING_VIDEOLIBRARY_NEWVERSIONSAREDEFAULT)};
+  // The second and subsequent playlists of a bluray are added without displacing the default,
+  // which the first one returned
+  const bool isDefault{canBecomeDefault &&
+                       settings->GetBool(CSettings::SETTING_VIDEOLIBRARY_NEWVERSIONSAREDEFAULT)};
 
   if (targetItem)
     return ConvertToVideoVersion(targetItem, itemType, dbId, videodb, MediaRole::NewVersion, mode,
