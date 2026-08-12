@@ -496,6 +496,16 @@ macro(BUILD_DEP_TARGET)
     else()
       set(BUILD_BYPRODUCTS BUILD_BYPRODUCTS "${${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_LIBRARY}")
     endif()
+
+    # For a windows shared dep, LIBRARY is the dll but consumers link the import lib.
+    # Ninja rejects a graph containing a link input that no rule produces, so declare both.
+    if(${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_IMPLIB)
+      if(DEFINED ${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_IMPLIB_DEBUG)
+        list(APPEND BUILD_BYPRODUCTS "$<IF:$<CONFIG:Debug,RelWithDebInfo>,${${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_IMPLIB_DEBUG},${${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_IMPLIB_RELEASE}>")
+      else()
+        list(APPEND BUILD_BYPRODUCTS "${${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_IMPLIB}")
+      endif()
+    endif()
   endif()
 
   if(NOT INSTALL_DIR)
@@ -798,7 +808,10 @@ function(create_mesonbinaries)
   endif()
 
   if(PKG_CONFIG_EXECUTABLE)
-    list(APPEND binariespairs "pkg-config" "PKG_CONFIG_EXECUTABLE")
+    # Both names, because meson renamed this entry from "pkgconfig" to "pkg-config"
+    # in 1.2.0. Duplicates are accepted as long as the values match.
+    list(APPEND binariespairs "pkg-config" "PKG_CONFIG_EXECUTABLE"
+                              "pkgconfig" "PKG_CONFIG_EXECUTABLE")
   endif()
 
   # Get/set loop limit (Size - 1) from size of binariespairs list
