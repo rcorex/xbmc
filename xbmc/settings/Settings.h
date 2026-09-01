@@ -143,6 +143,8 @@ public:
   static constexpr auto SETTING_VIDEOPLAYER_CONVERTDOVI = "videoplayer.convertdovi";
   static constexpr auto SETTING_VIDEOPLAYER_ALLOWEDHDRFORMATS = "videoplayer.allowedhdrformats";
   static constexpr auto SETTING_VIDEOPLAYER_DOVIZEROLEVEL5 = "videoplayer.dovizerolevel5";
+  static constexpr auto SETTING_VIDEOPLAYER_FILESTREAMDISPLAYORDER =
+      "videoplayer.filestreamdisplayorder";
   static constexpr auto SETTING_VIDEOPLAYER_QUEUETIMESIZE = "videoplayer.queuetimesize";
   static constexpr auto SETTING_VIDEOPLAYER_QUEUEDATASIZE = "videoplayer.queuedatasize";
   static constexpr auto SETTING_MYVIDEOS_SELECTACTION = "myvideos.selectaction";
@@ -154,6 +156,7 @@ public:
   static constexpr auto SETTING_MYVIDEOS_EXTRACTTHUMB = "myvideos.extractthumb";
   static constexpr auto SETTING_MYVIDEOS_STACKVIDEOS = "myvideos.stackvideos";
   static constexpr auto SETTING_LOCALE_SUBTITLELANGUAGE = "locale.subtitlelanguage";
+  static constexpr auto SETTING_SUBTITLES_HIDESAMEAUDIOLANGUAGE = "subtitles.hidesameaudiolanguage";
   static constexpr auto SETTING_SUBTITLES_PARSECAPTIONS = "subtitles.parsecaptions";
   static constexpr auto SETTING_SUBTITLES_CAPTIONSALIGN = "subtitles.captionsalign";
   static constexpr auto SETTING_SUBTITLES_CAPTIONSIMPAIRED = "subtitles.captionsimpaired";
@@ -297,9 +300,9 @@ public:
   static constexpr auto SETTING_MUSICPLAYER_SEEKSTEPS = "musicplayer.seeksteps";
   static constexpr auto SETTING_MUSICPLAYER_SEEKDELAY = "musicplayer.seekdelay";
   static constexpr auto SETTING_MUSICPLAYER_REPLAYGAINTYPE = "musicplayer.replaygaintype";
-  static constexpr auto SETTING_MUSICPLAYER_REPLAYGAINPREAMP = "musicplayer.replaygainpreamp";
+  static constexpr auto SETTING_MUSICPLAYER_REPLAYGAINPREAMP = "musicplayer.replaygainpreampdb";
   static constexpr auto SETTING_MUSICPLAYER_REPLAYGAINNOGAINPREAMP =
-      "musicplayer.replaygainnogainpreamp";
+      "musicplayer.replaygainnogainpreampdb";
   static constexpr auto SETTING_MUSICPLAYER_REPLAYGAINAVOIDCLIPPING =
       "musicplayer.replaygainavoidclipping";
   static constexpr auto SETTING_MUSICPLAYER_CROSSFADE = "musicplayer.crossfade";

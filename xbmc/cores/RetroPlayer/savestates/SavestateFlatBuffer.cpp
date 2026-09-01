@@ -8,11 +8,14 @@
 
 #include "SavestateFlatBuffer.h"
 
+#include "SavestateBlob.h"
 #include "XBDateTime.h"
 #include "savestate_generated.h"
 #include "utils/log.h"
 #include "video_generated.h"
 
+#include <cmath>
+#include <limits>
 #include <memory>
 
 using namespace KODI;
@@ -20,8 +23,14 @@ using namespace RETRO;
 
 namespace
 {
-const uint8_t SCHEMA_VERSION = 3;
+const uint8_t SCHEMA_VERSION = 6;
 const uint8_t SCHEMA_MIN_VERSION = 1;
+
+constexpr const char* SCHEMA_VIDEO_DATA_FIELD_NAME = "video_data";
+constexpr const char* SCHEMA_MEMORY_DATA_FIELD_NAME = "memory_data";
+
+//! \brief The number of nanoseconds per second
+constexpr double NANOSECONDS_PER_SECOND = 1000.0 * 1000.0 * 1000.0;
 
 /*!
  * \brief The initial size of the FlatBuffer's memory buffer
@@ -30,6 +39,22 @@ const uint8_t SCHEMA_MIN_VERSION = 1;
  * this until our size requirements are more known.
  */
 const size_t INITIAL_FLATBUFFER_SIZE = 1024;
+
+/*!
+ * \brief Convert seconds to nanoseconds with overflow protection
+ *
+ * Fully slopped to immaculate perfection.
+ */
+uint64_t ConvertToNanoseconds(double seconds)
+{
+  const double maxSafeSeconds =
+      static_cast<double>(std::numeric_limits<uint64_t>::max()) / NANOSECONDS_PER_SECOND;
+
+  if (!std::isfinite(seconds) || seconds < 0.0 || seconds >= maxSafeSeconds)
+    return std::numeric_limits<uint64_t>::max();
+
+  return static_cast<uint64_t>(seconds * NANOSECONDS_PER_SECOND);
+}
 
 /*!
  * \brief Translate the save type (RetroPlayer to FlatBuffers)
@@ -197,6 +222,31 @@ void CSavestateFlatBuffer::Reset()
   m_builder = std::make_unique<flatbuffers::FlatBufferBuilder>(INITIAL_FLATBUFFER_SIZE);
   m_data.clear();
   m_savestate = nullptr;
+
+  m_type = SAVE_TYPE::UNKNOWN;
+  m_slot = 0;
+  m_labelOffset.reset();
+  m_captionOffset.reset();
+  m_createdOffset.reset();
+  m_gameFileNameOffset.reset();
+  m_timestampFrames = 0;
+  m_timestampWallClock = 0.0;
+  m_emulatorAddonIdOffset.reset();
+  m_emulatorVersionOffset.reset();
+  m_pixelFormat = AV_PIX_FMT_NONE;
+  m_nominalWidth = 0;
+  m_nominalHeight = 0;
+  m_nominalDisplayAspectRatio = 0.0f;
+  m_maxWidth = 0;
+  m_maxHeight = 0;
+  m_videoData.clear();
+  m_videoDataDecompressed.clear();
+  m_videoWidth = 0;
+  m_videoHeight = 0;
+  m_displayAspectRatio = 0.0f;
+  m_rotationCCW = 0;
+  m_memoryData.Clear();
+  m_memoryDataDecompressed.clear();
 }
 
 bool CSavestateFlatBuffer::Serialize(const uint8_t*& data, size_t& size) const
@@ -305,7 +355,10 @@ void CSavestateFlatBuffer::SetGameFileName(const std::string& gameFileName)
 
 uint64_t CSavestateFlatBuffer::TimestampFrames() const
 {
-  return m_savestate->timestamp_frames();
+  if (m_savestate != nullptr)
+    return m_savestate->timestamp_frames();
+
+  return 0;
 }
 
 void CSavestateFlatBuffer::SetTimestampFrames(uint64_t timestampFrames)
@@ -316,7 +369,7 @@ void CSavestateFlatBuffer::SetTimestampFrames(uint64_t timestampFrames)
 double CSavestateFlatBuffer::TimestampWallClock() const
 {
   if (m_savestate != nullptr)
-    return static_cast<double>(m_savestate->timestamp_wall_clock_ns()) / 1000.0 / 1000.0 / 1000.0;
+    return static_cast<double>(m_savestate->timestamp_wall_clock_ns()) / NANOSECONDS_PER_SECOND;
 
   return 0.0;
 }
@@ -437,14 +490,51 @@ void CSavestateFlatBuffer::SetMaxHeight(unsigned int maxHeight)
 
 const uint8_t* CSavestateFlatBuffer::GetVideoData() const
 {
+  if (!m_videoDataDecompressed.empty())
+    return m_videoDataDecompressed.data();
+
   if (m_savestate != nullptr && m_savestate->video_data())
     return m_savestate->video_data()->data();
 
   return nullptr;
 }
 
+bool CSavestateFlatBuffer::PrepareVideoData()
+{
+  m_videoDataDecompressed.clear();
+
+  if (m_savestate == nullptr)
+    return false;
+
+  //! @todo Add support for new compression types
+  switch (m_savestate->video_data_compression())
+  {
+    case SAVESTATE::CompressionType_None:
+    {
+      //! @todo Also validate the raw blob against untrusted video metadata
+      if (!CSavestateBlob::HasRawVideoData(*m_savestate))
+      {
+        CLog::Log(LOGERROR, "RetroPlayer[SAVE]: Invalid video data");
+        return false;
+      }
+      break;
+    }
+    default:
+    {
+      CLog::Log(LOGERROR, "RetroPlayer[SAVE]: Unsupported video compression type {}",
+                static_cast<unsigned int>(m_savestate->video_data_compression()));
+      return false;
+    }
+  }
+
+  return true;
+}
+
 size_t CSavestateFlatBuffer::GetVideoSize() const
 {
+  if (!m_videoDataDecompressed.empty())
+    return m_videoDataDecompressed.size();
+
   if (m_savestate != nullptr && m_savestate->video_data())
     return m_savestate->video_data()->size();
 
@@ -453,12 +543,9 @@ size_t CSavestateFlatBuffer::GetVideoSize() const
 
 uint8_t* CSavestateFlatBuffer::GetVideoBuffer(size_t size)
 {
-  uint8_t* videoBuffer = nullptr;
+  m_videoData.assign(size, 0);
 
-  m_videoDataOffset =
-      std::make_unique<VectorOffset>(m_builder->CreateUninitializedVector(size, &videoBuffer));
-
-  return videoBuffer;
+  return m_videoData.empty() ? nullptr : m_videoData.data();
 }
 
 unsigned int CSavestateFlatBuffer::GetVideoWidth() const
@@ -515,36 +602,171 @@ void CSavestateFlatBuffer::SetRotationDegCCW(unsigned int rotationCCW)
 
 const uint8_t* CSavestateFlatBuffer::GetMemoryData() const
 {
+  if (!m_memoryDataDecompressed.empty())
+    return m_memoryDataDecompressed.data();
+
   if (m_savestate != nullptr && m_savestate->memory_data())
     return m_savestate->memory_data()->data();
 
   return nullptr;
 }
 
+bool CSavestateFlatBuffer::IsCompressed() const
+{
+  if (m_savestate != nullptr)
+  {
+    if (m_savestate->memory_data_compression() != SAVESTATE::CompressionType_None)
+      return true;
+
+    if (m_savestate->video_data_compression() != SAVESTATE::CompressionType_None)
+      return true;
+  }
+
+  return false;
+}
+
+bool CSavestateFlatBuffer::PrepareMemoryData(size_t expectedSize)
+{
+  m_memoryDataDecompressed.clear();
+
+  if (m_savestate == nullptr)
+    return false;
+
+  //! @todo Add support for new compression types
+  switch (m_savestate->memory_data_compression())
+  {
+    case SAVESTATE::CompressionType_None:
+    {
+      if (!CSavestateBlob::IsValidRawMemoryData(*m_savestate, expectedSize))
+      {
+        CLog::Log(LOGERROR, "RetroPlayer[SAVE]: Invalid memory size {}", expectedSize);
+        return false;
+      }
+      break;
+    }
+    default:
+    {
+      CLog::Log(LOGERROR, "RetroPlayer[SAVE]: Unsupported memory compression type {}",
+                static_cast<unsigned int>(m_savestate->memory_data_compression()));
+      return false;
+    }
+  }
+
+  return true;
+}
+
 size_t CSavestateFlatBuffer::GetMemorySize() const
 {
+  if (!m_memoryDataDecompressed.empty())
+    return m_memoryDataDecompressed.size();
+
   if (m_savestate != nullptr && m_savestate->memory_data())
     return m_savestate->memory_data()->size();
 
   return 0;
 }
 
+bool CSavestateFlatBuffer::CopyMemoryDataTo(ISavestate& target) const
+{
+  auto* targetFlatBuffer = dynamic_cast<CSavestateFlatBuffer*>(&target);
+  if (targetFlatBuffer == nullptr || m_savestate == nullptr)
+    return false;
+
+  targetFlatBuffer->m_memoryData.Clear();
+  targetFlatBuffer->m_memoryDataDecompressed.clear();
+
+  //! @todo Add support for new compression types
+  switch (m_savestate->memory_data_compression())
+  {
+    case SAVESTATE::CompressionType_None:
+    {
+      const auto* memoryData = m_savestate->memory_data();
+      if (memoryData == nullptr)
+        return false;
+
+      if (!CSavestateBlob::IsValidMemoryDataSize(memoryData->size()))
+      {
+        CLog::Log(LOGERROR, "RetroPlayer[SAVE]: Invalid memory data size: {}", memoryData->size());
+        return false;
+      }
+
+      if (memoryData->size() > 0)
+      {
+        targetFlatBuffer->m_memoryData.raw.assign(memoryData->data(),
+                                                  memoryData->data() + memoryData->size());
+      }
+
+      break;
+    }
+    default:
+    {
+      CLog::Log(LOGERROR, "RetroPlayer[SAVE]: Unsupported memory compression type {}",
+                static_cast<unsigned int>(m_savestate->memory_data_compression()));
+      return false;
+    }
+  }
+
+  return true;
+}
+
 uint8_t* CSavestateFlatBuffer::GetMemoryBuffer(size_t size)
 {
-  uint8_t* memoryBuffer = nullptr;
+  m_memoryData.Clear();
+  m_memoryData.raw.assign(size, 0);
 
-  m_memoryDataOffset =
-      std::make_unique<VectorOffset>(m_builder->CreateUninitializedVector(size, &memoryBuffer));
+  return m_memoryData.raw.empty() ? nullptr : m_memoryData.raw.data();
+}
 
-  return memoryBuffer;
+const uint8_t* CSavestateFlatBuffer::GetAchievementData() const
+{
+  if (!m_achievementData.empty())
+    return m_achievementData.data();
+
+  if (m_savestate != nullptr && m_savestate->achievement_data())
+    return m_savestate->achievement_data()->data();
+
+  return nullptr;
+}
+
+size_t CSavestateFlatBuffer::GetAchievementSize() const
+{
+  if (!m_achievementData.empty())
+    return m_achievementData.size();
+
+  if (m_savestate != nullptr && m_savestate->achievement_data())
+    return m_savestate->achievement_data()->size();
+
+  return 0;
+}
+
+uint8_t* CSavestateFlatBuffer::GetAchievementBuffer(size_t size)
+{
+  m_achievementData.assign(size, 0);
+
+  return m_achievementData.empty() ? nullptr : m_achievementData.data();
 }
 
 void CSavestateFlatBuffer::Finalize()
 {
+  if (m_builder == nullptr)
+    return;
+
+  const SavestateBlobOffsets videoBlob =
+      CSavestateBlob::CreateWriteOffsets(*m_builder, m_videoData, SCHEMA_VIDEO_DATA_FIELD_NAME);
+  const SavestateBlobOffsets memoryBlob =
+      CSavestateBlob::CreateWriteOffsets(*m_builder, m_memoryData, SCHEMA_MEMORY_DATA_FIELD_NAME);
+
+  flatbuffers::Offset<flatbuffers::Vector<uint8_t>> achievementBlob = 0;
+  if (!m_achievementData.empty())
+    achievementBlob = m_builder->CreateVector(m_achievementData);
+
   // Helper class to build the nested Savestate table
   SAVESTATE::SavestateBuilder savestateBuilder(*m_builder);
 
   savestateBuilder.add_version(SCHEMA_VERSION);
+
+  if (!achievementBlob.IsNull())
+    savestateBuilder.add_achievement_data(achievementBlob);
 
   savestateBuilder.add_type(TranslateType(m_type));
 
@@ -575,10 +797,7 @@ void CSavestateFlatBuffer::Finalize()
   }
 
   savestateBuilder.add_timestamp_frames(m_timestampFrames);
-
-  const uint64_t wallClockNs =
-      static_cast<uint64_t>(m_timestampWallClock * 1000.0 * 1000.0 * 1000.0);
-  savestateBuilder.add_timestamp_wall_clock_ns(wallClockNs);
+  savestateBuilder.add_timestamp_wall_clock_ns(ConvertToNanoseconds(m_timestampWallClock));
 
   if (m_emulatorAddonIdOffset)
   {
@@ -604,11 +823,11 @@ void CSavestateFlatBuffer::Finalize()
 
   savestateBuilder.add_max_height(m_maxHeight);
 
-  if (m_videoDataOffset)
-  {
-    savestateBuilder.add_video_data(*m_videoDataOffset);
-    m_videoDataOffset.reset();
-  }
+  savestateBuilder.add_video_data(videoBlob.raw);
+  if (videoBlob.compressed.o != 0)
+    savestateBuilder.add_video_data_compressed(videoBlob.compressed);
+  savestateBuilder.add_video_data_compression(videoBlob.compressionType);
+  savestateBuilder.add_video_data_uncompressed_size(videoBlob.uncompressedSize);
 
   savestateBuilder.add_video_width(m_videoWidth);
 
@@ -618,11 +837,11 @@ void CSavestateFlatBuffer::Finalize()
 
   savestateBuilder.add_rotation_ccw(TranslateRotation(m_rotationCCW));
 
-  if (m_memoryDataOffset)
-  {
-    savestateBuilder.add_memory_data(*m_memoryDataOffset);
-    m_memoryDataOffset.reset();
-  }
+  savestateBuilder.add_memory_data(memoryBlob.raw);
+  if (memoryBlob.compressed.o != 0)
+    savestateBuilder.add_memory_data_compressed(memoryBlob.compressed);
+  savestateBuilder.add_memory_data_compression(memoryBlob.compressionType);
+  savestateBuilder.add_memory_data_uncompressed_size(memoryBlob.uncompressedSize);
 
   auto savestate = savestateBuilder.Finish();
   FinishSavestateBuffer(*m_builder, savestate);
@@ -640,7 +859,7 @@ bool CSavestateFlatBuffer::Deserialize(std::vector<uint8_t> data)
     if (savestate->version() < SCHEMA_MIN_VERSION)
     {
       CLog::Log(LOGERROR,
-                "RetroPlayer[SAVE): Schema version {} not supported, must be at least version {}",
+                "RetroPlayer[SAVE]: Schema version {} not supported, must be at least version {}",
                 savestate->version(), SCHEMA_MIN_VERSION);
     }
     else

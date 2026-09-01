@@ -7,15 +7,18 @@
  */
 
 #include "settings/lib/ISettingsMigrationStep.h"
+#include "settings/lib/SettingsManager.h"
 #include "settings/lib/SettingsMigration.h"
 #include "utils/XBMCTinyXML.h"
-#include "utils/XMLUtils.h"
 
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <vector>
 
 #include <gtest/gtest.h>
+
+using namespace KODI::SETTINGS;
 
 struct StepSpec
 {
@@ -99,7 +102,7 @@ TEST_P(TestSettingsMigrationUpdateXML, UpdateXMLSettings)
 
   std::vector<int> completed;
 
-  CSettingsMigration::StepList steps;
+  MigrationStepList steps;
   for (const auto& step : params.steps)
     steps.push_back(std::make_shared<StubStep>(step.version, step.returns, completed));
 
@@ -118,198 +121,68 @@ TEST(TestSettingsMigration, MultipleMigrationStepsSameTarget)
 {
   std::vector<int> completed;
 
-  CSettingsMigration::StepList steps;
+  MigrationStepList steps;
   steps.push_back(std::make_shared<StubStep>(3, true, completed));
   steps.push_back(std::make_shared<StubStep>(3, true, completed));
 
   EXPECT_THROW({ CSettingsMigration(std::move(steps)); }, std::invalid_argument);
 }
 
-class TestConversions : public ::testing::Test
+namespace
 {
-public:
-  // All tests will attempt this conversion
-  std::string_view m_oldSettingId = "a.b";
-  std::string_view m_newSettingId = "c.d";
-};
-
-struct ConvertSettingBoolToIntTest
+struct ReplayGainMigrationTest
 {
-  std::string m_originalSettings;
-  CSettingsMigration::SettingConversionResult m_result;
-  std::string_view m_serializedOutput;
+  std::string_view oldSettingId;
+  std::string_view newSettingId;
+  int oldValue;
+  double expectedValue;
 };
 
-class TestConvertSettingBoolToInt : public TestConversions,
-                                    public testing::WithParamInterface<ConvertSettingBoolToIntTest>
+constexpr ReplayGainMigrationTest ReplayGainMigrationTests[]{
+    {"musicplayer.replaygainpreamp", "musicplayer.replaygainpreampdb", 77, -12.0},
+    {"musicplayer.replaygainpreamp", "musicplayer.replaygainpreampdb", 89, 0.0},
+    {"musicplayer.replaygainpreamp", "musicplayer.replaygainpreampdb", 101, 12.0},
+    {"musicplayer.replaygainnogainpreamp", "musicplayer.replaygainnogainpreampdb", 77, -12.0},
+    {"musicplayer.replaygainnogainpreamp", "musicplayer.replaygainnogainpreampdb", 89, 0.0},
+    {"musicplayer.replaygainnogainpreamp", "musicplayer.replaygainnogainpreampdb", 101, 12.0},
+};
+} // namespace
+
+class TestSettingsMigrationToV4ReplayGain
+  : public testing::WithParamInterface<ReplayGainMigrationTest>,
+    public testing::Test
 {
 };
 
-ConvertSettingBoolToIntTest ConvertSettingBoolToIntTests[] = {
-    // Successful conversions
-    // V2 format
-    // Convert a true value
-    {R"(<settings version="2"><setting id="a.b">true</setting></settings>)",
-     CSettingsMigration::SettingConversionResult::CONVERTED,
-     R"(<settings version="2"><setting id="c.d">2</setting></settings>)"},
-    // Convert a false value
-    {R"(<settings version="2"><setting id="a.b">false</setting></settings>)",
-     CSettingsMigration::SettingConversionResult::CONVERTED,
-     R"(<settings version="2"><setting id="c.d" default="true">1</setting></settings>)"},
-    // Convert one of multiple settings
-    {R"(<settings version="2">
-          <setting id="a.b">false</setting>
-          <setting id="foo.bar">test</setting>
-        </settings>)",
-     CSettingsMigration::SettingConversionResult::CONVERTED,
-     R"(<settings version="2">)"
-     R"(<setting id="foo.bar">test</setting>)"
-     R"(<setting id="c.d" default="true">1</setting>)"
-     R"(</settings>)"},
-    // V1 format
-    // Convert a true value
-    {R"(<settings><a><b>true</b></a></settings>)",
-     CSettingsMigration::SettingConversionResult::CONVERTED,
-     R"(<settings><a /><setting id="c.d">2</setting></settings>)"},
-    // Convert a false value
-    {R"(<settings><a><b>false</b></a></settings>)",
-     CSettingsMigration::SettingConversionResult::CONVERTED,
-     R"(<settings><a /><setting id="c.d" default="true">1</setting></settings>)"},
-    // Convert one of multiple settings
-    {R"(<settings version="2">
-          <a><b>false</b></a>
-          <foo><bar>test</bar></foo>
-        </settings>)",
-     CSettingsMigration::SettingConversionResult::CONVERTED,
-     R"(<settings version="2">)"
-     R"(<a />)"
-     R"(<foo><bar>test</bar></foo>)"
-     R"(<setting id="c.d" default="true">1</setting>)"
-     R"(</settings>)"},
-
-    // Invalid old setting values
-    // V2 format
-    {R"(<settings version="2"><setting id="a.b">notbool</setting></settings>)",
-     CSettingsMigration::SettingConversionResult::INVALID,
-     R"(<settings version="2"><setting id="a.b">notbool</setting></settings>)"},
-    {R"(<settings version="2"><setting id="a.b"> true</setting></settings>)",
-     CSettingsMigration::SettingConversionResult::INVALID,
-     R"(<settings version="2"><setting id="a.b"> true</setting></settings>)"},
-    {R"(<settings version="2"><setting id="a.b"></setting></settings>)",
-     CSettingsMigration::SettingConversionResult::INVALID,
-     R"(<settings version="2"><setting id="a.b" /></settings>)"},
-    {R"(<settings version="2"><setting id="a.b" /></settings>)",
-     CSettingsMigration::SettingConversionResult::INVALID,
-     R"(<settings version="2"><setting id="a.b" /></settings>)"},
-    // V1 format
-    {R"(<settings><a><b>notbool</b></a></settings>)",
-     CSettingsMigration::SettingConversionResult::INVALID,
-     R"(<settings><a><b>notbool</b></a></settings>)"},
-    {R"(<settings><a><b></b></a></settings>)", CSettingsMigration::SettingConversionResult::INVALID,
-     R"(<settings><a><b /></a></settings>)"},
-    {R"(<settings><a><b /></a></settings>)", CSettingsMigration::SettingConversionResult::INVALID,
-     R"(<settings><a><b /></a></settings>)"},
-
-    // Old setting is not present
-    // V2 format
-    {R"(<settings version="2"><setting id="foo.bar">true</setting></settings>)",
-     CSettingsMigration::SettingConversionResult::NOT_PRESENT,
-     R"(<settings version="2"><setting id="foo.bar">true</setting></settings>)"},
-    {R"(<settings version="2"></settings>)",
-     CSettingsMigration::SettingConversionResult::NOT_PRESENT, R"(<settings version="2" />)"},
-    {R"(<settings version="2" />)", CSettingsMigration::SettingConversionResult::NOT_PRESENT,
-     R"(<settings version="2" />)"},
-    // V1 format
-    {R"(<settings><foo><bar>true</bar></foo></settings>)",
-     CSettingsMigration::SettingConversionResult::NOT_PRESENT,
-     R"(<settings><foo><bar>true</bar></foo></settings>)"},
-    {R"(<settings><a><bar>true</bar></a></settings>)",
-     CSettingsMigration::SettingConversionResult::NOT_PRESENT,
-     R"(<settings><a><bar>true</bar></a></settings>)"},
-    // the other V1 format tests are identical to the V2, except for the version attribute
-    // which is not actively used by code
-};
-
-TEST_P(TestConvertSettingBoolToInt, Convert)
+TEST_P(TestSettingsMigrationToV4ReplayGain, MigratesPreampSetting)
 {
   const auto& params = GetParam();
+  const std::string xml =
+      "<settings version=\"3\"><setting id=\"" + std::string{params.oldSettingId} + "\">" +
+      std::to_string(params.oldValue) +
+      "</setting><setting id=\"lookandfeel.skin\">skin.estuary</setting></settings>";
 
   CXBMCTinyXML doc;
-  ASSERT_TRUE(doc.Parse(params.m_originalSettings));
+  ASSERT_TRUE(doc.Parse(xml));
 
-  auto conversionResult =
-      CSettingsMigration::ConvertSettingBoolToInt(doc.RootElement(), m_oldSettingId, m_newSettingId,
-                                                  {.m_default = 1, .m_false = 1, .m_true = 2});
-  ASSERT_EQ(params.m_result, conversionResult);
+  CSettingsMigration migration;
+  ASSERT_TRUE(migration.UpdateXMLSettings(doc.RootElement(), 3, 4));
 
-  EXPECT_EQ(
-      params.m_serializedOutput,
-      XMLUtils::NodeStringSerialization(doc.RootElement(), XMLUtils::SerializationFormat::COMPACT));
+  EXPECT_EQ(nullptr, CSettingsManager::LocateSetting(doc.RootElement(), params.oldSettingId));
+
+  const TiXmlElement* migratedSetting =
+      CSettingsManager::LocateSetting(doc.RootElement(), params.newSettingId);
+  ASSERT_NE(nullptr, migratedSetting);
+  ASSERT_NE(nullptr, migratedSetting->FirstChild());
+  EXPECT_DOUBLE_EQ(params.expectedValue, std::stod(migratedSetting->FirstChild()->ValueStr()));
+
+  const TiXmlElement* unrelatedSetting =
+      CSettingsManager::LocateSetting(doc.RootElement(), "lookandfeel.skin");
+  ASSERT_NE(nullptr, unrelatedSetting);
+  ASSERT_NE(nullptr, unrelatedSetting->FirstChild());
+  EXPECT_EQ("skin.estuary", unrelatedSetting->FirstChild()->ValueStr());
 }
 
 INSTANTIATE_TEST_SUITE_P(TestSettingsMigration,
-                         TestConvertSettingBoolToInt,
-                         testing::ValuesIn(ConvertSettingBoolToIntTests));
-
-struct ConvertSettingBoolToIntMappingTest
-{
-  std::string m_originalSettings;
-  CSettingsMigration::SettingBoolToIntMapping m_mapping;
-  std::string_view m_serializedOutput;
-};
-
-class TestConvertSettingBoolToIntMapping
-  : public TestConversions,
-    public testing::WithParamInterface<ConvertSettingBoolToIntMappingTest>
-{
-};
-
-ConvertSettingBoolToIntMappingTest ConvertSettingBoolToIntMappingTests[] = {
-    // True value
-    {R"(<settings version="2"><setting id="a.b">true</setting></settings>)",
-     {.m_default = 1, .m_false = 1, .m_true = 2},
-     R"(<settings version="2"><setting id="c.d">2</setting></settings>)"},
-    {R"(<settings version="2"><setting id="a.b">true</setting></settings>)",
-     {.m_default = 2, .m_false = 1, .m_true = 2},
-     R"(<settings version="2"><setting id="c.d" default="true">2</setting></settings>)"},
-    {R"(<settings version="2"><setting id="a.b">true</setting></settings>)",
-     {.m_default = 1, .m_false = 2, .m_true = 2},
-     R"(<settings version="2"><setting id="c.d">2</setting></settings>)"},
-    {R"(<settings version="2"><setting id="a.b">true</setting></settings>)",
-     {.m_default = 2, .m_false = 2, .m_true = 2},
-     R"(<settings version="2"><setting id="c.d" default="true">2</setting></settings>)"},
-
-    // False value
-    {R"(<settings version="2"><setting id="a.b">false</setting></settings>)",
-     {.m_default = 1, .m_false = 1, .m_true = 2},
-     R"(<settings version="2"><setting id="c.d" default="true">1</setting></settings>)"},
-    {R"(<settings version="2"><setting id="a.b">false</setting></settings>)",
-     {.m_default = 2, .m_false = 1, .m_true = 2},
-     R"(<settings version="2"><setting id="c.d">1</setting></settings>)"},
-    {R"(<settings version="2"><setting id="a.b">false</setting></settings>)",
-     {.m_default = 2, .m_false = 1, .m_true = 1},
-     R"(<settings version="2"><setting id="c.d">1</setting></settings>)"},
-    {R"(<settings version="2"><setting id="a.b">false</setting></settings>)",
-     {.m_default = 1, .m_false = 1, .m_true = 1},
-     R"(<settings version="2"><setting id="c.d" default="true">1</setting></settings>)"},
-};
-
-TEST_P(TestConvertSettingBoolToIntMapping, Convert)
-{
-  const auto& params = GetParam();
-
-  CXBMCTinyXML doc;
-  ASSERT_TRUE(doc.Parse(params.m_originalSettings));
-
-  auto conversionResult = CSettingsMigration::ConvertSettingBoolToInt(
-      doc.RootElement(), m_oldSettingId, m_newSettingId, params.m_mapping);
-  ASSERT_EQ(CSettingsMigration::SettingConversionResult::CONVERTED, conversionResult);
-
-  EXPECT_EQ(
-      params.m_serializedOutput,
-      XMLUtils::NodeStringSerialization(doc.RootElement(), XMLUtils::SerializationFormat::COMPACT));
-}
-
-INSTANTIATE_TEST_SUITE_P(TestSettingsMigration,
-                         TestConvertSettingBoolToIntMapping,
-                         testing::ValuesIn(ConvertSettingBoolToIntMappingTests));
+                         TestSettingsMigrationToV4ReplayGain,
+                         testing::ValuesIn(ReplayGainMigrationTests));

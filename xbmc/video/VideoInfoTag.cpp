@@ -8,6 +8,7 @@
 
 #include "VideoInfoTag.h"
 
+#include "LangInfo.h"
 #include "ServiceBroker.h"
 #include "imagefiles/ImageFileURL.h"
 #include "resources/LocalizeStrings.h"
@@ -16,6 +17,7 @@
 #include "settings/SettingsComponent.h"
 #include "utils/Archive.h"
 #include "utils/LangCodeExpander.h"
+#include "utils/StreamUtils.h"
 #include "utils/StringUtils.h"
 #include "utils/URIUtils.h"
 #include "utils/Variant.h"
@@ -27,6 +29,32 @@
 #include <sstream>
 #include <string>
 #include <vector>
+
+namespace
+{
+/*!
+ * \brief Read the <flags> block of one <audio> or <subtitle> stream in an NFO.
+ * \param nodeDetail The stream element to read from.
+ * \return The flags named by its <flag> children. FLAG_NONE if there is no <flags> block.
+ */
+StreamFlags ParseStreamFlags(const TiXmlNode* nodeDetail)
+{
+  int flags{StreamFlags::FLAG_NONE};
+
+  const TiXmlNode* nodeFlags{nodeDetail->FirstChild("flags")};
+  if (nodeFlags)
+  {
+    const TiXmlNode* nodeFlag{nullptr};
+    while ((nodeFlag = nodeFlags->IterateChildren("flag", nodeFlag)))
+    {
+      if (nodeFlag->FirstChild())
+        flags |= CStreamDetails::StreamFlagFromName(nodeFlag->FirstChild()->ValueStr());
+    }
+  }
+
+  return static_cast<StreamFlags>(flags);
+}
+} // unnamed namespace
 
 void CVideoInfoTag::Reset()
 {
@@ -277,12 +305,30 @@ bool CVideoInfoTag::Save(TiXmlNode *node, const std::string &tag, bool savePathI
       XMLUtils::SetString(&stream, "codec", m_streamDetails.GetAudioCodec(iStream));
       XMLUtils::SetString(&stream, "language", m_streamDetails.GetAudioLanguage(iStream));
       XMLUtils::SetInt(&stream, "channels", m_streamDetails.GetAudioChannels(iStream));
+      if (m_streamDetails.GetVersion(CStreamDetail::AUDIO, iStream) >=
+          CStreamDetail::STREAM_DETAILS_VERSION_FLAGS)
+      {
+        TiXmlElement flags("flags");
+        XMLUtils::SetStringArray(
+            &flags, "flag",
+            CStreamDetails::StreamFlagsToNames(m_streamDetails.GetAudioFlags(iStream)));
+        stream.InsertEndChild(flags);
+      }
       streamdetails.InsertEndChild(stream);
     }
     for (int iStream=1; iStream<=m_streamDetails.GetSubtitleStreamCount(); iStream++)
     {
       TiXmlElement stream("subtitle");
       XMLUtils::SetString(&stream, "language", m_streamDetails.GetSubtitleLanguage(iStream));
+      if (m_streamDetails.GetVersion(CStreamDetail::SUBTITLE, iStream) >=
+          CStreamDetail::STREAM_DETAILS_VERSION_FLAGS)
+      {
+        TiXmlElement flags("flags");
+        XMLUtils::SetStringArray(
+            &flags, "flag",
+            CStreamDetails::StreamFlagsToNames(m_streamDetails.GetSubtitleFlags(iStream)));
+        stream.InsertEndChild(flags);
+      }
       streamdetails.InsertEndChild(stream);
     }
     fileinfo.InsertEndChild(streamdetails);
@@ -1001,14 +1047,21 @@ void CVideoInfoTag::ToSortable(SortItem& sortable, Field field) const
       break;
 
     case Field::AUDIO_CHANNELS:
-      sortable[Field::AUDIO_CHANNELS] = m_streamDetails.GetAudioChannels();
-      break;
     case Field::AUDIO_CODEC:
-      sortable[Field::AUDIO_CODEC] = m_streamDetails.GetAudioCodec();
-      break;
     case Field::AUDIO_LANGUAGE:
-      sortable[Field::AUDIO_LANGUAGE] = m_streamDetails.GetAudioLanguage();
+    {
+      // Order by the stream the GUI describes, which is the one playback will start with,
+      // rather than by the technically best stream the list does not show
+      const int idx{
+          m_streamDetails.GetPreferredAudioStreamIndex(g_langInfo.GetPreferredAudioLanguage())};
+      if (field == Field::AUDIO_CHANNELS)
+        sortable[Field::AUDIO_CHANNELS] = m_streamDetails.GetAudioChannels(idx);
+      else if (field == Field::AUDIO_CODEC)
+        sortable[Field::AUDIO_CODEC] = m_streamDetails.GetAudioCodec(idx);
+      else
+        sortable[Field::AUDIO_LANGUAGE] = m_streamDetails.GetAudioLanguage(idx);
       break;
+    }
 
     case Field::SUBTITLE_LANGUAGE:
       sortable[Field::SUBTITLE_LANGUAGE] = m_streamDetails.GetSubtitleLanguage();
@@ -1500,11 +1553,15 @@ void CVideoInfoTag::ParseNative(const TiXmlElement* movie, bool prioritise)
           p->m_strCodec = StringUtils::Trim(value);
 
         if (XMLUtils::GetString(nodeDetail, "language", value))
-          p->m_strLanguage = StringUtils::Trim(value);
+          p->m_strLanguage = CLangCodeExpander::AsISO6392B(StringUtils::Trim(value));
 
         XMLUtils::GetInt(nodeDetail, "channels", p->m_iChannels);
+
+        p->m_flags = ParseStreamFlags(nodeDetail);
+
         StringUtils::ToLower(p->m_strCodec);
         StringUtils::ToLower(p->m_strLanguage);
+        p->m_strCodec = StreamUtils::NormalizeAudioCodecName(p->m_strCodec);
         m_streamDetails.AddStream(p);
       }
       nodeDetail = nullptr;
@@ -1521,7 +1578,7 @@ void CVideoInfoTag::ParseNative(const TiXmlElement* movie, bool prioritise)
         if (XMLUtils::GetString(nodeDetail, "stereomode", value))
           p->m_strStereoMode = StringUtils::Trim(value);
         if (XMLUtils::GetString(nodeDetail, "language", value))
-          p->m_strLanguage = StringUtils::Trim(value);
+          p->m_strLanguage = CLangCodeExpander::AsISO6392B(StringUtils::Trim(value));
         if (XMLUtils::GetString(nodeDetail, "hdrtype", value))
           p->m_strHdrType = StringUtils::Trim(value);
         if (XMLUtils::GetString(nodeDetail, "hdrdetail", value))
@@ -1539,7 +1596,10 @@ void CVideoInfoTag::ParseNative(const TiXmlElement* movie, bool prioritise)
       {
         auto* p = new CStreamDetailSubtitle();
         if (XMLUtils::GetString(nodeDetail, "language", value))
-          p->m_strLanguage = StringUtils::Trim(value);
+          p->m_strLanguage = CLangCodeExpander::AsISO6392B(StringUtils::Trim(value));
+
+        p->m_flags = ParseStreamFlags(nodeDetail);
+
         StringUtils::ToLower(p->m_strLanguage);
         m_streamDetails.AddStream(p);
       }
@@ -1876,7 +1936,7 @@ bool CVideoInfoTag::SetOriginalLanguage(std::string language, LanguageTagSource 
   }
 
   StringUtils::Trim(language);
-  if (g_LangCodeExpander.ConvertToBcp47(language, language))
+  if (CLangCodeExpander::ConvertToBcp47(language, language))
   {
     m_originalLanguage = std::move(language);
     return true;

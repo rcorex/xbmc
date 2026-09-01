@@ -33,6 +33,7 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <iterator>
 #include <map>
 #include <memory>
@@ -601,6 +602,13 @@ EpisodeExtent GetEpisodeExtent(const EpisodeExtents& episodes,
   return {start, duration};
 }
 
+// Which stream a playlist starts on says nothing about what it offers, so FLAG_DEFAULT is not
+// part of comparing one stream with another. Everything else about a stream is.
+StreamFlags GetComparableFlags(StreamFlags flags)
+{
+  return static_cast<StreamFlags>(flags & ~StreamFlags::FLAG_DEFAULT);
+}
+
 // Whether candidateStream offers everything stream does.
 //
 // The two must have the same language, name and flags - and the candidate must then
@@ -608,7 +616,7 @@ EpisodeExtent GetEpisodeExtent(const EpisodeExtents& episodes,
 bool IsStreamCovered(const AudioStreamInfo& stream, const AudioStreamInfo& candidateStream)
 {
   if (stream.language != candidateStream.language || stream.name != candidateStream.name ||
-      stream.flags != candidateStream.flags)
+      GetComparableFlags(stream.flags) != GetComparableFlags(candidateStream.flags))
     return false;
 
   // A channel count of zero means unknown, so only compare them when both are known
@@ -616,14 +624,26 @@ bool IsStreamCovered(const AudioStreamInfo& stream, const AudioStreamInfo& candi
       stream.channels > candidateStream.channels)
     return false;
 
-  return StreamUtils::GetCodecPriority(stream.codecName) <=
-         StreamUtils::GetCodecPriority(candidateStream.codecName);
+  // Codecs of equal priority are equally good but not interchangeable
+  const int priority{StreamUtils::GetCodecPriority(stream.codecName)};
+  const int candidatePriority{StreamUtils::GetCodecPriority(candidateStream.codecName)};
+  if (priority == candidatePriority)
+    return stream.codecName == candidateStream.codecName;
+
+  return priority < candidatePriority;
 }
 
 // Subtitle streams have no comparable ordering of quality, so they have to match
 bool IsStreamCovered(const SubtitleStreamInfo& stream, const SubtitleStreamInfo& candidateStream)
 {
-  return stream == candidateStream;
+  // Compared as a whole rather than field by field, so a field added to SubtitleStreamInfo is
+  // taken into account here without having to be added here too
+  SubtitleStreamInfo comparable{stream};
+  SubtitleStreamInfo comparableCandidate{candidateStream};
+  comparable.flags = GetComparableFlags(comparable.flags);
+  comparableCandidate.flags = GetComparableFlags(comparableCandidate.flags);
+
+  return comparable == comparableCandidate;
 }
 
 // Whether every stream of subset has a distinct counterpart in superset that covers it. Streams are
@@ -2337,7 +2357,9 @@ void LogMoviePlaylist(std::string_view prefix, const PlaylistInformation& playli
       StringUtils::SecondsToTimeString(static_cast<int>(
           std::chrono::duration_cast<std::chrono::seconds>(playlist.duration).count())),
       playlist.chapters.size(), playlist.clips.size(), playlist.languages,
-      fmt::join(playlist.pgStreams | std::views::transform(&SubtitleStreamInfo::language), ","));
+      fmt::join(playlist.pgStreams | std::views::transform([](const auto& stream)
+                                                           { return stream.language.AsBcp47(); }),
+                ","));
 }
 
 void LogMoviePlaylists(std::string_view prefix, const std::vector<PlaylistInformation>& playlists)
@@ -2429,6 +2451,16 @@ bool IsSamePresentation(const PlaylistInformation& a,
 }
 
 /*!
+ * \brief Whether the playlist presents the content picture-in-picture.
+ *
+ * \note Kodi does not play the secondary video stream.
+ */
+bool IsPictureInPicturePresentation(const PlaylistInformation& playlist)
+{
+  return playlist.hasSecondaryVideo;
+}
+
+/*!
  * \brief The playlist presenting the movie most fully of those of (near) the longest length.
  *
  * Playlists within MOVIE_EQUAL_LENGTH_TOLERANCE of one another are the same movie presented
@@ -2446,9 +2478,16 @@ const PlaylistInformation& GetBestMoviePlaylist(const std::vector<PlaylistInform
                                  return a.pgStreams.size() > b.pgStreams.size();
                                }};
 
-  const auto longest{std::ranges::max_element(playlists, {}, &PlaylistInformation::duration)};
+  // A picture-in-picture presentation is only the best a disc offers when it is all it offers
+  const bool anyFeature{
+      std::ranges::any_of(playlists, std::not_fn(IsPictureInPicturePresentation))};
+  auto candidates{
+      std::views::filter(playlists, [anyFeature](const PlaylistInformation& playlist)
+                         { return !anyFeature || !IsPictureInPicturePresentation(playlist); })};
+
+  const auto longest{std::ranges::max_element(candidates, {}, &PlaylistInformation::duration)};
   const PlaylistInformation* best{&*longest};
-  for (const auto& playlist : playlists)
+  for (const auto& playlist : candidates)
   {
     if (std::chrono::abs(playlist.duration - longest->duration) <= MOVIE_EQUAL_LENGTH_TOLERANCE &&
         offersMoreStreams(playlist, *best))
@@ -2687,6 +2726,35 @@ void EndMoviePlaylistSearch(const std::vector<PlaylistInformation>& playlists)
   CLog::LogF(LOGDEBUG, "*** Movie Search End ***");
 }
 
+/*!
+ * \brief The languages of the streams the disc expects a player to start with.
+ *
+ * The audio and presentation graphic streams the playlist flags as its defaults - audio stream
+ * number 1 and presentation graphic stream number 1 of its longest play item - shown as
+ * "eng | jpn". A playlist that flags no default, or whose default names no language,
+ * contributes nothing.
+ *
+ * The flag is read rather than the first stream taken, so that this agrees with the stream
+ * VideoPlayer is told is the default even where the two would otherwise differ - a playlist
+ * described from its clip rather than its play item flags no default at all.
+ */
+std::string GetDefaultStreamLanguages(const PlaylistInformation& information)
+{
+  const auto isDefault{[](const auto& stream)
+                       { return (stream.flags & StreamFlags::FLAG_DEFAULT) != 0; }};
+
+  std::vector<std::string> languages;
+  if (const auto audio{std::ranges::find_if(information.audioStreams, isDefault)};
+      audio != information.audioStreams.cend() && !audio->language.IsEmpty())
+    languages.emplace_back(audio->language.AsIso6392B());
+
+  if (const auto pg{std::ranges::find_if(information.pgStreams, isDefault)};
+      pg != information.pgStreams.cend() && !pg->language.IsEmpty())
+    languages.emplace_back(pg->language.AsIso6392B());
+
+  return StringUtils::Join(languages, " | ");
+}
+
 std::shared_ptr<CFileItem> GenerateMovieItem(const CURL& url,
                                              unsigned int playlist,
                                              unsigned int mainPlaylist,
@@ -2700,9 +2768,6 @@ std::shared_ptr<CFileItem> GenerateMovieItem(const CURL& url,
   // Get clips
   const std::chrono::milliseconds duration{information.duration};
 
-  // Get languages
-  const std::string langs{information.languages};
-
   CVideoInfoTag* itemTag{item->GetVideoInfoTag()};
   itemTag->SetDuration(static_cast<int>(duration.count() / 1000));
   item->SetProperty("bluray_playlist", playlist);
@@ -2715,11 +2780,16 @@ std::shared_ptr<CFileItem> GenerateMovieItem(const CURL& url,
   item->SetTitle(buf);
   item->SetLabel(buf);
 
-  const std::string chap{StringUtils::Format(
+  std::string label2{StringUtils::Format(
       CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(25007),
       information.chapters.size(),
       StringUtils::SecondsToTimeString(static_cast<int>(duration.count() / 1000)))};
-  item->SetLabel2(chap);
+
+  // The streams a playlist starts on are what tells playlists offering the same content apart
+  if (const std::string languages{GetDefaultStreamLanguages(information)}; !languages.empty())
+    label2 += " | " + languages;
+
+  item->SetLabel2(label2);
 
   item->SetSize(0);
   item->SetArt("icon", "DefaultVideo.png");
@@ -2735,7 +2805,8 @@ void PopulateMovieFileItems(
     const std::vector<PlaylistInformation>& playlists,
     const StreamDetailsProvider& getStreamDetails)
 {
-  // Sort by duration (putting mainPlaylist first if present)
+  // Sort by duration (putting mainPlaylist first if present, and any picture-in-picture
+  // presentation last however long it runs)
   auto sortedPlaylists = playlists;
   std::ranges::sort(sortedPlaylists,
                     [mainPlaylist](const PlaylistInformation& a, const PlaylistInformation& b)
@@ -2745,6 +2816,11 @@ void PopulateMovieFileItems(
 
                       if (aIsMain || bIsMain)
                         return aIsMain && !bIsMain;
+
+                      const bool aIsPiP{IsPictureInPicturePresentation(a)};
+                      const bool bIsPiP{IsPictureInPicturePresentation(b)};
+                      if (aIsPiP != bIsPiP)
+                        return bIsPiP;
 
                       if (a.duration != b.duration)
                         return a.duration > b.duration;
@@ -2813,24 +2889,28 @@ bool CDiscDirectoryHelper::GetMoviePlaylists(const CURL& url,
 void CDiscDirectoryHelper::AddRootOptions(const CURL& url,
                                           CFileItemList& items,
                                           AllTitles allTitlesType,
-                                          AddMenuOption addMenuOption)
+                                          AddMenuAndAllTitlesOptions addMenuAndAllTitlesOptions)
 {
-  CURL path{url};
-  if (allTitlesType == AllTitles::MOVIES)
-    path.SetFileName(URIUtils::AddFileToFolder("root", "titles", "all"));
-  else if (allTitlesType == AllTitles::EPISODES)
-    path.SetFileName(URIUtils::AddFileToFolder("root", "titles", "episodes", "all"));
-
-  auto item{std::make_shared<CFileItem>(path.Get(), true)};
-  item->SetLabel(
-      CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(25002) /* All titles */);
-  item->SetArt("icon", "DefaultVideoPlaylists.png");
-  items.Add(item);
-
-  if (addMenuOption == AddMenuOption::ADD_MENU)
+  if (addMenuAndAllTitlesOptions & AddMenuAndAllTitlesOptions::ADD_ALL_TITLES)
   {
+    CURL path{url};
+    if (allTitlesType == AllTitles::MOVIES)
+      path.SetFileName(URIUtils::AddFileToFolder("root", "titles", "all"));
+    else if (allTitlesType == AllTitles::EPISODES)
+      path.SetFileName(URIUtils::AddFileToFolder("root", "titles", "episodes", "all"));
+
+    auto item{std::make_shared<CFileItem>(path.Get(), true)};
+    item->SetLabel(
+        CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(25002) /* All titles */);
+    item->SetArt("icon", "DefaultVideoPlaylists.png");
+    items.Add(item);
+  }
+
+  if (addMenuAndAllTitlesOptions & AddMenuAndAllTitlesOptions::ADD_MENU)
+  {
+    CURL path{url};
     path.SetFileName("menu");
-    item = {std::make_shared<CFileItem>(path.Get(), false)};
+    auto item{std::make_shared<CFileItem>(path.Get(), false)};
     item->SetLabel(
         CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(25003) /* Menu */);
     item->SetArt("icon", "DefaultProgram.png");

@@ -19,6 +19,22 @@ public:
   static int GetCodecPriority(const std::string& codec);
 
   /*!
+   * \brief Compare two audio streams on the technical quality of what they carry.
+   *
+   * \param codecA The codec name of the first stream, as GetCodecPriority() expects it
+   * \param channelsA The channel count of the first stream, zero or negative when unknown
+   * \param codecB The codec name of the second stream
+   * \param channelsB The channel count of the second stream
+   * \return A positive value when the first stream is better, a negative value when the second
+   *         is, and zero when the two are equally good (which is not the same as interchangeable,
+   *         as equally ranked codecs are different presentations)
+   */
+  static int CompareAudioQuality(const std::string& codecA,
+                                 int channelsA,
+                                 const std::string& codecB,
+                                 int channelsB);
+
+  /*!
    * \brief Make a FourCC code as unsigned integer value
    * \param c1 The first FourCC char
    * \param c2 The second FourCC char
@@ -39,6 +55,14 @@ public:
    * \return The codec name
    */
   static std::string GetCodecName(int codecId, int profile);
+
+  /*!
+   * \brief Normalise an externally supplied (eg. NFO) audio codec name to the name Kodi uses
+   *
+   * \param codec The audio codec name, lowercased
+   * \return The equivalent Kodi codec name, or the codec name unchanged if nothing maps
+   */
+  static std::string NormalizeAudioCodecName(const std::string& codec);
 
   /*!
    * \brief Return a default channel layout in x.y.z form for a channel count.

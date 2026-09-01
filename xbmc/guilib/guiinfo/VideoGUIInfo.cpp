@@ -9,6 +9,7 @@
 #include "guilib/guiinfo/VideoGUIInfo.h"
 
 #include "FileItem.h"
+#include "LangInfo.h"
 #include "PlayListPlayer.h"
 #include "ServiceBroker.h"
 #include "URL.h"
@@ -35,7 +36,7 @@
 #include "settings/Settings.h"
 #include "settings/SettingsComponent.h"
 #include "settings/lib/Setting.h"
-#include "utils/LangCodeExpander.h"
+#include "utils/StreamDetails.h"
 #include "utils/StringUtils.h"
 #include "utils/URIUtils.h"
 #include "utils/log.h"
@@ -49,6 +50,19 @@
 using namespace KODI::GUILIB;
 using namespace KODI::GUILIB::GUIINFO;
 using namespace KODI;
+
+namespace
+{
+/*!
+ * \brief Get the index of the audio stream
+ *
+ * Playback starts with the best stream in the preferred audio language
+ */
+int GetDescribedAudioStreamIndex(const CStreamDetails& details)
+{
+  return details.GetPreferredAudioStreamIndex(g_langInfo.GetPreferredAudioLanguage());
+}
+} // unnamed namespace
 
 CVideoGUIInfo::CVideoGUIInfo()
   : m_appPlayer(CServiceBroker::GetAppComponents().GetComponent<CApplicationPlayer>())
@@ -498,12 +512,14 @@ bool CVideoGUIInfo::GetLabel(std::string& value,
         return true;
       }
       case LISTITEM_AUDIO_CODEC:
-        value = tag->m_streamDetails.GetAudioCodec();
+        value =
+            tag->m_streamDetails.GetAudioCodec(GetDescribedAudioStreamIndex(tag->m_streamDetails));
         return true;
       case LISTITEM_AUDIO_CHANNELS:
       {
         const auto formatted{CGUIInfoUtils::FormatAudioChannels(
-            info.GetData3(), tag->m_streamDetails.GetAudioChannels())};
+            info.GetData3(), tag->m_streamDetails.GetAudioChannels(
+                                 GetDescribedAudioStreamIndex(tag->m_streamDetails)))};
 
         if (formatted.has_value())
         {
@@ -513,11 +529,33 @@ bool CVideoGUIInfo::GetLabel(std::string& value,
         break;
       }
       case LISTITEM_AUDIO_LANGUAGE:
-        value = tag->m_streamDetails.GetAudioLanguage();
+        value = tag->m_streamDetails.GetAudioLanguage(
+            GetDescribedAudioStreamIndex(tag->m_streamDetails));
         return true;
       case LISTITEM_SUBTITLE_LANGUAGE:
         value = tag->m_streamDetails.GetSubtitleLanguage();
         return true;
+      case LISTITEM_FIRST_AUDIO_LANGUAGE:
+        value = tag->m_streamDetails.GetFirstAudioLanguage();
+        return true;
+      case LISTITEM_FIRST_SUBTITLE_LANGUAGE:
+        value = tag->m_streamDetails.GetFirstSubtitleLanguage();
+        return true;
+      case LISTITEM_FIRST_AUDIO_CODEC:
+        value = tag->m_streamDetails.GetFirstAudioCodec();
+        return true;
+      case LISTITEM_FIRST_AUDIO_CHANNELS:
+      {
+        const auto formatted{CGUIInfoUtils::FormatAudioChannels(
+            info.GetData3(), tag->m_streamDetails.GetFirstAudioChannels())};
+
+        if (formatted.has_value())
+        {
+          value = formatted.value();
+          return true;
+        }
+        break;
+      }
       case LISTITEM_FILENAME:
       case LISTITEM_FILE_EXTENSION:
       case LISTITEM_FILENAME_NO_EXTENSION:
@@ -632,15 +670,14 @@ bool CVideoGUIInfo::GetLabel(std::string& value,
       value = CServiceBroker::GetDataCacheCore().GetVideoStereoMode();
       return true;
     case VIDEOPLAYER_SUBTITLES_LANG:
-      value = m_subtitleInfo.language;
+      value = m_subtitleInfo.language.AsIso6392B();
       return true;
     case VIDEOPLAYER_SUBTITLE_CODEC:
       value = m_subtitleInfo.codecName;
       return true;
     case VIDEOPLAYER_SUBTITLE_LANG_EX:
     {
-      if (!g_LangCodeExpander.Lookup(m_subtitleInfo.language, value))
-        value = CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(13205); // Unknown
+      value = CGUIInfoUtils::FormatLanguage(m_subtitleInfo.language);
       return true;
     }
     case VIDEOPLAYER_SUBTITLE_NAME:
@@ -718,12 +755,11 @@ bool CVideoGUIInfo::GetLabel(std::string& value,
       break;
     }
     case VIDEOPLAYER_AUDIO_LANG:
-      value = m_audioInfo.language;
+      value = m_audioInfo.language.AsIso6392B();
       return true;
     case VIDEOPLAYER_AUDIO_LANG_EX:
     {
-      if (!g_LangCodeExpander.Lookup(m_audioInfo.language, value))
-        value = CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(13205); // Unknown
+      value = CGUIInfoUtils::FormatLanguage(m_audioInfo.language);
       return true;
     }
     case VIDEOPLAYER_AUDIO_NAME:

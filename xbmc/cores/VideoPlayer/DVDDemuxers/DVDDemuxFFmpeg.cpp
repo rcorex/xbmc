@@ -29,19 +29,21 @@
 #include "settings/SettingsComponent.h"
 #include "threads/SystemClock.h"
 #include "utils/FontUtils.h"
-#include "utils/LangCodeExpander.h"
+#include "utils/LanguageTag.h"
 #include "utils/StreamUtils.h"
 #include "utils/StringUtils.h"
 #include "utils/URIUtils.h"
 #include "utils/XTimeUtils.h"
 #include "utils/log.h"
 
+#include <algorithm>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <sstream>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 #ifndef __STDC_CONSTANT_MACROS
 #define __STDC_CONSTANT_MACROS
@@ -63,6 +65,7 @@ extern "C"
 #include <libavutil/pixdesc.h>
 }
 
+using namespace KODI::UTILS;
 using namespace std::chrono_literals;
 
 struct StereoModeConversionMap
@@ -427,6 +430,14 @@ bool CDVDDemuxFFmpeg::Open(const std::shared_ptr<CDVDInputStream>& pInput, bool 
     m_pFormatContext->pb = m_ioContext;
 
     AVDictionary* options = NULL;
+    // ffmpeg's mpegts demuxer stops after the first PMT by default; force a full scan
+    // so the requested program is available to the scoping loop below.
+    CVariant earlyProgramProp(pInput->GetProperty("program"));
+    if (!earlyProgramProp.isNull())
+    {
+      av_dict_set(&options, "scan_all_pmts", "1", 0);
+    }
+
     if (iformat->name && (strcmp(iformat->name, "mp3") == 0 || strcmp(iformat->name, "mp2") == 0))
     {
       CLog::Log(LOGDEBUG, "{} - setting usetoc to 0 for accurate VBR MP3 seek", __FUNCTION__);
@@ -481,34 +492,78 @@ bool CDVDDemuxFFmpeg::Open(const std::shared_ptr<CDVDInputStream>& pInput, bool 
                          "empty. Please report this bug.");
   }
 
-  // Don't apply the mpegts analyzeduration optimization if any stream needs full analysis:
-  // HEVC params break on reopen; DTS and TrueHD need full analyzeduration for extensions and channels
-  // (DTS channel/sample-rate detection is unreliable at a truncated analyzeduration even for core DTS).
+  // These codecs need full analysis: HEVC/VVC params break on reopen or a truncated
+  // probe; DTS/TrueHD channel and extension detection is unreliable at a short probe.
   bool skipTsOptimization = false;
-  bool isMpegTsWithStreams = iformat && (strcmp(iformat->name, "mpegts") == 0) &&
-                             m_pFormatContext->nb_streams > 0 &&
-                             m_pFormatContext->streams != nullptr;
+  bool isMpegTs = iformat && strcmp(iformat->name, "mpegts") == 0;
+  bool isMpegTsWithStreams =
+      isMpegTs && m_pFormatContext->nb_streams > 0 && m_pFormatContext->streams != nullptr;
   if (isMpegTsWithStreams)
   {
-    for (unsigned int i = 0; i < m_pFormatContext->nb_streams; i++)
+    std::vector<unsigned int> streamIndexesToCheck;
+    bool requestedProgramUnresolved = false;
+    CVariant programProp(pInput->GetProperty("program"));
+    if (!programProp.isNull())
     {
-      AVCodecID codec = m_pFormatContext->streams[i]->codecpar->codec_id;
-      if (codec == AV_CODEC_ID_HEVC || codec == AV_CODEC_ID_DTS || codec == AV_CODEC_ID_TRUEHD)
+      int wantedProgramNum = static_cast<int>(programProp.asInteger());
+      bool foundProgram = false;
+      for (unsigned int p = 0; p < m_pFormatContext->nb_programs; p++)
       {
-        skipTsOptimization = true;
-        break;
+        if (m_pFormatContext->programs[p]->program_num == wantedProgramNum)
+        {
+          foundProgram = true;
+          for (unsigned int j = 0; j < m_pFormatContext->programs[p]->nb_stream_indexes; j++)
+            streamIndexesToCheck.push_back(m_pFormatContext->programs[p]->stream_index[j]);
+          break;
+        }
+      }
+      // Requested PMT not parsed yet: don't substitute another program's streams.
+      if (!foundProgram || streamIndexesToCheck.empty())
+        requestedProgramUnresolved = true;
+    }
+    else
+    {
+      for (unsigned int i = 0; i < m_pFormatContext->nb_streams; i++)
+        streamIndexesToCheck.push_back(i);
+    }
+
+    if (requestedProgramUnresolved)
+    {
+      skipTsOptimization = true;
+    }
+    else
+    {
+      static constexpr int kHdAudioStreamTypes[] = {0x82, 0x83, 0x85, 0x86, 0xA2};
+      for (unsigned int idx : streamIndexesToCheck)
+      {
+        const AVCodecParameters* codecpar = m_pFormatContext->streams[idx]->codecpar;
+        if (codecpar->codec_id == AV_CODEC_ID_HEVC || codecpar->codec_id == AV_CODEC_ID_VVC ||
+            codecpar->codec_id == AV_CODEC_ID_DTS || codecpar->codec_id == AV_CODEC_ID_TRUEHD)
+        {
+          skipTsOptimization = true;
+          break;
+        }
+        if (codecpar->codec_id == AV_CODEC_ID_NONE && codecpar->codec_type != AVMEDIA_TYPE_VIDEO &&
+            std::find(std::begin(kHdAudioStreamTypes), std::end(kHdAudioStreamTypes),
+                      static_cast<int>(codecpar->codec_tag)) != std::end(kHdAudioStreamTypes))
+        {
+          skipTsOptimization = true;
+          break;
+        }
       }
     }
   }
 
-  if (isMpegTsWithStreams && !url.IsProtocol("tcp") && !fileinfo && !isBluray &&
-      !skipTsOptimization)
+  // Live/realtime excluded: the full probe would stall playback start by seconds.
+  bool forceFullAnalysis = skipTsOptimization && !pInput->IsRealtime();
+
+  if (isMpegTsWithStreams && !url.IsProtocol("tcp") && !fileinfo && !isBluray && !forceFullAnalysis)
   {
     av_opt_set_int(m_pFormatContext, "analyzeduration", 500000, 0);
     m_checkTransportStream = true;
     skipCreateStreams = true;
   }
-  else if (!iformat || strcmp(iformat->name, "mpegts") != 0 || skipTsOptimization)
+  else if (!isMpegTs || forceFullAnalysis)
   {
     m_streaminfo = true;
   }
@@ -1921,20 +1976,18 @@ CDemuxStream* CDVDDemuxFFmpeg::AddStream(int streamIdx)
     }
     if (langTag)
     {
-      stream->language = std::string(langTag->value, 3);
-      //! @FIXME: Matroska v4 support BCP-47 language code with LanguageIETF element
-      //! that have the priority over the Language element, but this is not currently
-      //! implemented in to ffmpeg library. Since ffmpeg read only the Language element
-      //! all tracks will be identified with same language (of Language element).
-      //! As workaround to allow set the right language code we provide the possibility
-      //! to set the language code in the title field, this allow to kodi to recognize
-      //! the right language and select the right track to be played at playback starts.
+      // A transport stream can carry several ISO 639 language descriptors for one track, which
+      // ffmpeg joins with commas ("deu,eng" for dual mono, or one entry per DVB subtitle page)
+      const std::string_view language{langTag->value};
+      stream->language = CLanguageTag::Parse(std::string{language.substr(0, language.find(','))});
+      //! @todo ffmpeg does not read the Matroska v4 LanguageBCP47 element, which takes priority
+      //! over Language when present, so every track is reported with the value of Language. The
+      //! curly-brace tag in the title field is the interim way to state a track's real language.
       AVDictionaryEntry* title = av_dict_get(pStream->metadata, "title", NULL, 0);
       if (title && title->value)
       {
-        const std::string langCode = g_LangCodeExpander.FindLanguageCodeWithSubtag(title->value);
-        if (!langCode.empty())
-          stream->language = langCode;
+        if (const auto tag = CLanguageTag::FindInText(title->value); tag.has_value())
+          stream->language = *tag;
       }
     }
 
@@ -1975,7 +2028,16 @@ CDemuxStream* CDVDDemuxFFmpeg::AddStream(int streamIdx)
         delete stream;
         return nullptr;
       }
-      std::static_pointer_cast<CDVDInputStreamBluray>(m_pInput)->GetStreamInfo(pStream->id, stream->language);
+      const auto bluray{std::static_pointer_cast<CDVDInputStreamBluray>(m_pInput)};
+      std::string blurayLanguage;
+      bluray->GetStreamInfo(pStream->id, blurayLanguage);
+      stream->language = CLanguageTag::Parse(blurayLanguage);
+
+      // The transport stream of a bluray carries no disposition, so the default audio and subtitle
+      // streams have to be flagged from the clip information (see IsDefaultStream)
+      if (bluray->IsDefaultStream(pStream->id))
+        stream->flags =
+            static_cast<StreamFlags>(static_cast<int>(stream->flags) | StreamFlags::FLAG_DEFAULT);
     }
 #endif
     if (m_pInput->IsStreamType(DVDSTREAM_TYPE_DVD))
