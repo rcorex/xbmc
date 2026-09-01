@@ -15,6 +15,7 @@
 #include "ServiceBroker.h"
 #include "SetInfoTag.h"
 #include "TextureCache.h"
+#include "TextureCacheJob.h"
 #include "URL.h"
 #include "Util.h"
 #include "VideoInfoDownloader.h"
@@ -224,7 +225,9 @@ void OnDirectoryScanned(const std::string& strDirectory)
   CServiceBroker::GetGUI()->GetWindowManager().SendThreadMessage(msg);
 }
 
-void CacheArtwork(const std::string& url, bool retrieveArtDuringScrape)
+void CacheArtwork(const std::string& url,
+                  bool retrieveArtDuringScrape,
+                  const std::string& knownHash = "")
 {
   if (url.empty())
     return;
@@ -232,7 +235,7 @@ void CacheArtwork(const std::string& url, bool retrieveArtDuringScrape)
   const auto& textureCache = CServiceBroker::GetTextureCache();
   if (!retrieveArtDuringScrape)
   {
-    textureCache->BackgroundCacheImage(url);
+    textureCache->BackgroundCacheImage(url, knownHash);
     return;
   }
 
@@ -245,15 +248,16 @@ void CacheArtwork(const std::string& url, bool retrieveArtDuringScrape)
   constexpr int MAX_SYNC_CACHE_ATTEMPTS = 3;
   for (int attempt = 1; attempt <= MAX_SYNC_CACHE_ATTEMPTS; ++attempt)
   {
-    if (!textureCache->CacheImage(url).empty())
+    if (!textureCache->CacheImage(url, knownHash).empty())
       return; // succeeded
   }
 
   // Synchronous fetch failed after several attempts (network timeout, etc.)
   // Fall back to the resilient background path.
-  textureCache->BackgroundCacheImage(url);
+  textureCache->BackgroundCacheImage(url, knownHash);
   CLog::LogF(LOGDEBUG, "Synchronous art caching for {} failed", url);
 }
+
 } // namespace
 
 namespace KODI::VIDEO
@@ -1562,27 +1566,42 @@ CVideoInfoScanner::~CVideoInfoScanner()
         defaultVersionFileId = tag->m_iFileId; // Updated in AddMovie()
 
       // Look for versions (ie. subsequent <movie> entries in the .nfo file)
-      // These must be versions
+      // These must be versions. Reuse the loader.
       int index{1};
-      do
+      while (true)
       {
-        index++;
-        item.SetProperty("nfo_index", index); // Attempt to read next movie version
-        std::tie(result, loader) = ReadInfoTag(item, info2, bDirNames, true);
-        if (result == InfoType::FULL)
-        {
-          // Add the version entry
-          tag->m_iDbId = movieId;
-          const int versionId{static_cast<int>(AddVideo(&item, nullptr, bDirNames, true, nullptr,
-                                                        false, ContentType::MOVIE_VERSIONS))};
-          if (versionId < 0)
-            return InfoRet::INFO_ERROR;
+        tag->Reset();
+        const InfoType versionResult{loader->LoadVersion(++index, *tag)};
+        if (versionResult == InfoType::NONE)
+          break; // No further <movie> entries
+        if (versionResult != InfoType::FULL)
+          continue; // Entry cannot stand alone as a version - skip it, but keep looking
 
-          // Look for default version
-          if (tag->IsDefaultVideoVersion())
-            defaultVersionFileId = tag->m_iFileId; // Updated in AddVideoAsset()
-        }
-      } while (result == InfoType::FULL);
+        // A <playlist> nfo element identifies the disc playlist the info belongs to.
+        // The item is reused for every entry, so a version without one must not inherit the
+        // playlist of the entry before it
+        if (const int playlist{loader->GetBlurayPlaylist()}; playlist > -1)
+          item.SetProperty("bluray_playlist", playlist);
+        else
+          item.ClearProperty("bluray_playlist");
+
+        // Keep properties only if advancedsettings.xml says so
+        if (!m_advancedSettings->m_bVideoLibraryImportWatchedState)
+          tag->ResetPlayCount();
+        if (!m_advancedSettings->m_bVideoLibraryImportResumePoint)
+          tag->SetResumePoint(CBookmark());
+
+        // Add the version entry
+        tag->m_iDbId = movieId;
+        const int versionId{static_cast<int>(AddVideo(&item, nullptr, bDirNames, true, nullptr,
+                                                      false, ContentType::MOVIE_VERSIONS))};
+        if (versionId < 0)
+          return InfoRet::INFO_ERROR;
+
+        // Look for default version
+        if (tag->IsDefaultVideoVersion())
+          defaultVersionFileId = tag->m_iFileId; // Updated in AddVideoAsset()
+      }
 
       // Set default version
       if (defaultVersionFileId > -1)
@@ -2950,17 +2969,27 @@ CVideoInfoScanner::~CVideoInfoScanner()
       }
       else
       {
-        const int64_t size{pItem->GetSize()};
-        digest.Update(&size, sizeof(size));
         // linux and windows platform don't follow the same output format
         // (linux return a zero value for milliseconds member).
         // for consistency, use less precise format instead which discard
         // milliseconds value.
         // Unless a modification occur during the 1 second window when
         // kodi hash and update this particular file, we are safe.
-        time_t tt{};
-        pItem->GetDateTime().GetAsTime(tt);
-        digest.Update(&tt, sizeof(tt));
+        if (const std::string stackParts{pItem->GetProperty(PROPERTY_STACK_DIGEST).asString()};
+            !stackParts.empty())
+        {
+          // add a digest of every part (calculated in Stack())
+          digest.Update(stackParts);
+        }
+        else
+        {
+          const int64_t size{pItem->GetSize()};
+          digest.Update(&size, sizeof(size));
+
+          time_t tt{};
+          pItem->GetDateTime().GetAsTime(tt);
+          digest.Update(&tt, sizeof(tt));
+        }
       }
       if (IsVideo(*pItem) && !PLAYLIST::IsPlayList(*pItem) && !pItem->IsNFO())
         count++;
@@ -3133,11 +3162,12 @@ CVideoInfoScanner::~CVideoInfoScanner()
     CFileItemList items;
     // don't try to fetch anything local with plugin source
     if (!URIUtils::IsPlugin(actorsDir) && CDirectory::Exists(actorsDir))
-      CDirectory::GetDirectory(actorsDir, items, ".png|.jpg|.tbn",
-                               DIR_FLAG_NO_FILE_DIRS | DIR_FLAG_NO_FILE_INFO);
+      CDirectory::GetDirectory(actorsDir, items, ".png|.jpg|.tbn", DIR_FLAG_NO_FILE_DIRS);
 
-    // Index the thumbs by filename (without extension)
+    // Index the thumbs by filename (without extension), and the hashes taken from the directory
+    // listing by url
     std::map<std::string, std::string> thumbs;
+    std::map<std::string, std::string> listedHashes;
     for (const auto& item : items)
     {
       if (item->IsFolder())
@@ -3146,6 +3176,8 @@ CVideoInfoScanner::~CVideoInfoScanner()
       std::string name{URIUtils::GetFileName(item->GetPath())};
       URIUtils::RemoveExtension(name);
       thumbs.try_emplace(std::move(name), item->GetPath());
+      if (std::string hash{CTextureCacheJob::GetImageHash(*item)}; !hash.empty())
+        listedHashes.emplace(item->GetPath(), std::move(hash));
     }
 
     for (auto& actor : actors)
@@ -3171,7 +3203,13 @@ CVideoInfoScanner::~CVideoInfoScanner()
             actor.thumbUrl.Clear();
         }
       }
-      CacheArtwork(actor.thumb, m_artRetrievalTiming == ArtRetrievalTiming::SYNCHRONOUS);
+    }
+
+    for (const auto& actor : actors)
+    {
+      const auto hash{listedHashes.find(actor.thumb)};
+      CacheArtwork(actor.thumb, m_artRetrievalTiming == ArtRetrievalTiming::SYNCHRONOUS,
+                   hash != listedHashes.end() ? hash->second : std::string{});
     }
   }
 

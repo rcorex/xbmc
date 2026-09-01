@@ -653,6 +653,15 @@ public:
   void GetEpisodesByPlot(const std::string& strSearch, CFileItemList& items);
   void GetMoviesByPlot(const std::string& strSearch, CFileItemList& items);
 
+  /*!
+   * \brief Link or unlink a movie with a list of shows.
+   * \param idMovie Id of the movie
+   * \param shows List of show identifiers
+   * \param remove true: remove link, false: add link
+   * \return true for successful link/unlink of all shows, false on the first error otherwise.
+   * \note Attempting to link an already linked show results in failure.
+   */
+  bool LinkMovieToTvshows(int idMovie, std::vector<int> shows, bool remove);
   bool LinkMovieToTvshow(int idMovie, int idShow, bool bRemove);
   bool IsLinkedToTvshow(int idMovie);
   bool GetLinksToTvShow(int idMovie, std::vector<int>& ids);
@@ -1080,6 +1089,15 @@ protected:
    \return id of the file, -1 if it is not in the db.
    */
   int GetFileId(const std::string& url);
+
+  /*! \brief Get the id of a stack of discs, however its parts are expressed.
+   A stack holding a bluray folders or disc images may be stored resolved to the
+   bluray:// playlist of each part, whereas the scraper will be looking for a
+   stack:// of the base paths.
+   \param stackPath a stack:// path of which at least one part is a disc
+   \return id of the file, -1 if it is not in the db or several stacks match.
+   */
+  int GetDiscStackFileId(const std::string& stackPath);
 
   int AddToTable(const std::string& table, const std::string& firstField, const std::string& secondField, const std::string& value);
   int UpdateRatings(int mediaId, const char *mediaType, const RatingMap& values, const std::string& defaultRating);

@@ -12,6 +12,7 @@
 #include "cores/VideoPlayer/Interface/StreamInfo.h"
 #include "utils/IArchivable.h"
 
+#include <algorithm>
 #include <array>
 #include <memory>
 #include <string>
@@ -27,7 +28,9 @@ struct SubtitleStreamInfo;
 class CStreamDetail : public IArchivable, public ISerializable
 {
 public:
-  static constexpr int STREAM_DETAILS_VERSION = 2;
+  static constexpr int STREAM_DETAILS_VERSION = 3;
+  static constexpr int STREAM_DETAILS_VERSION_FLAGS =
+      3; // Version that introduced flags to audio and subtitle streams
 
   enum StreamType {
     VIDEO,
@@ -66,6 +69,16 @@ protected:
   friend class CVideoDatabase;
 };
 
+// Language codes held by the classes below are ISO 639-2/B, not BCP 47 as used elsewhere in the
+// player, and every writer narrows them on the way in. Archive reads and writes that form, while
+// Serialize widens to BCP 47 so a JSON-RPC client sees one notation across the API - though only
+// ever a bare language, since a value carrying a region lost it before it arrived.
+//
+// The classes are the shape of the streamdetails table, which smart playlists filter with SQL
+// built from user-authored rules (see CSmartPlaylistRule::GetWhereClause). Those rules live in
+// .xsp files rather than in the database, so another notation would silently stop matching and no
+// database migration could repair it.
+
 class CStreamDetailVideo final : public CStreamDetail
 {
 public:
@@ -102,6 +115,7 @@ public:
   int m_iChannels = -1;
   std::string m_strCodec;
   std::string m_strLanguage;
+  StreamFlags m_flags{StreamFlags::FLAG_NONE};
 };
 
 class CStreamDetailSubtitle final : public CStreamDetail
@@ -116,6 +130,7 @@ public:
   bool IsWorseThan(const CStreamDetail &that) const override;
 
   std::string m_strLanguage;
+  StreamFlags m_flags{StreamFlags::FLAG_NONE};
 };
 
 class CStreamDetails final : public IArchivable, public ISerializable
@@ -199,8 +214,54 @@ public:
       {2.76f, "2.76"},
   });
 
+  /*!
+   * \brief A stream flag, and the name Kodi reads and writes for it in an NFO.
+   */
+  struct FlagName
+  {
+    StreamFlags flag;
+    std::string_view name;
+  };
+
+  /*!
+   * \brief The vocabulary of stream flag names used in NFOs.
+   *
+   * Written out in alphabetical order.
+   */
+  static constexpr auto STREAM_FLAG_NAMES = std::to_array<FlagName>({
+      {StreamFlags::FLAG_COMMENT, "comment"},
+      {StreamFlags::FLAG_DEFAULT, "default"},
+      {StreamFlags::FLAG_DUB, "dub"},
+      {StreamFlags::FLAG_FORCED, "forced"},
+      {StreamFlags::FLAG_HEARING_IMPAIRED, "hearingimpaired"},
+      {StreamFlags::FLAG_KARAOKE, "karaoke"},
+      {StreamFlags::FLAG_LYRICS, "lyrics"},
+      {StreamFlags::FLAG_ORIGINAL, "original"},
+      {StreamFlags::FLAG_STILL_IMAGES, "stillimages"},
+      {StreamFlags::FLAG_VISUAL_IMPAIRED, "visualimpaired"},
+      {StreamFlags::FLAG_WEBVTT_DATA_PACKETS, "webvttdatapackets"},
+  });
+
+  static_assert(std::ranges::is_sorted(STREAM_FLAG_NAMES, {}, &FlagName::name),
+                "STREAM_FLAG_NAMES must be in alphabetical order - StreamFlagsToNames() walks it "
+                "in order and its callers rely on the names coming out sorted");
+
   static std::string VideoDimsToResolutionDescription(int iWidth, int iHeight);
   static std::string VideoAspectToAspectDescription(float fAspect);
+
+  /*!
+   * \brief Break a flag set out into its names, in alphabetical order.
+   * \param flags The flags to name.
+   * \return One entry per set bit that has a name; empty for FLAG_NONE.
+   */
+  static std::vector<std::string> StreamFlagsToNames(StreamFlags flags);
+
+  /*!
+   * \brief Look a single flag up by name.
+   * \param name The name to look up. Leading and trailing space is ignored, as is case.
+   * \return The matching flag, or FLAG_NONE if the name isn't known.
+   */
+  static StreamFlags StreamFlagFromName(std::string_view name);
 
   bool HasItems(void) const { return !m_vecItems.empty(); }
   int GetStreamCount(CStreamDetail::StreamType type) const;
@@ -221,11 +282,90 @@ public:
   std::string GetStereoMode(int idx = 0) const;
   std::string GetVideoLanguage(int idx = 0) const;
 
+  /*!
+   * \name Audio stream properties
+   *
+   * An idx of 0 asks for the technically best stream, as judged by StreamUtils::CompareAudioQuality()
+   * (based on codec and channel count only).
+   *
+   * Any other idx is a 1-based ordinal into the streams in the order the source presented them.
+   *
+   * @{
+   */
   std::string GetAudioCodec(int idx = 0) const;
   std::string GetAudioLanguage(int idx = 0) const;
   int GetAudioChannels(int idx = 0) const;
+  StreamFlags GetAudioFlags(int idx = 0) const;
+  /*! @} */
 
   std::string GetSubtitleLanguage(int idx = 0) const;
+  StreamFlags GetSubtitleFlags(int idx = 0) const;
+
+  /*!
+   * \brief Get the index of the best audio stream in the given language.
+   *
+   * \param language The preferred audio language as an ISO 639 code, empty for no preference
+   * \return The 1-based index of the best stream in that language, or 0 (meaning the technically
+   *         best stream, see GetAudioCodec()) when no preference was given or no stream matches
+   */
+  int GetPreferredAudioStreamIndex(const std::string& language) const;
+
+  /*!
+   * \brief Get the language of the first audio stream in the order the source lists them.
+   *
+   * This is neither the technically best stream (GetAudioLanguage()) nor the one the user's
+   * preferences ask for (GetPreferredAudioStreamIndex()) - it is simply the stream listed first
+   * by whatever produced these details, which is one of:
+   *
+   * - a bluray playlist, whose streams are stored in stream number order, so the first is audio
+   *   stream number 1 - the stream the disc expects a player to start with. This is the only
+   *   case where the order is specified rather than conventional.
+   * - any other container, in the order its demuxer reports the streams.
+   * - an NFO, in the order its elements appear.
+   *
+   * Note this does not say which stream playback will actually start on. That also depends on
+   * stream flags, a choice remembered from a previous watch and the audio layout at play time,
+   * none of which the library carries.
+   *
+   * Note also that "first" is the order the details were stored, which is the order the source
+   * presented for freshly scanned or disc-browsed content. It is not currently guaranteed to
+   * survive a round trip through the video database, which stores no stream ordinal and reads
+   * the rows back without an ORDER BY.
+   *
+   * \todo Persist a stream ordinal and order by it, so this holds unconditionally.
+   *
+   * \return The language of the first audio stream, or an empty string if there is none
+   */
+  std::string GetFirstAudioLanguage() const;
+
+  /*!
+   * \brief Get the codec of the first audio stream in the order the source lists them.
+   *
+   * The counterpart of GetFirstAudioLanguage() for the codec.
+   *
+   * \return The codec of the first audio stream, or an empty string if there is none
+   */
+  std::string GetFirstAudioCodec() const;
+
+  /*!
+   * \brief Get the channel count of the first audio stream in the order the source lists them.
+   *
+   * The counterpart of GetFirstAudioLanguage() for the channel count.
+   *
+   * \return The channel count of the first audio stream, or -1 if there is none
+   */
+  int GetFirstAudioChannels() const;
+
+  /*!
+   * \brief Get the language of the first subtitle stream in the order the source lists them.
+   *
+   * The counterpart of GetFirstAudioLanguage() for subtitles, ie. presentation graphic stream
+   * number 1 of a bluray playlist. Note that this says nothing about whether subtitles are
+   * displayed to begin with, which the locale.subtitlelanguage setting decides.
+   *
+   * \return The language of the first subtitle stream, or an empty string if there is none
+   */
+  std::string GetFirstSubtitleLanguage() const;
 
   void AddStream(CStreamDetail *item);
   void Reset(void);

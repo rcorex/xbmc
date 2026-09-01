@@ -168,14 +168,68 @@ public:
   bool RequiresGameLoop() const { return m_bRequiresGameLoop; }
   bool IsPlaying() const { return m_bIsPlaying; }
   size_t GetSerializeSize() const { return m_serializeSize; }
-  double GetFrameRate() const { return m_framerate; }
-  double GetSampleRate() const { return m_samplerate; }
+  double GetFrameRate() const { return m_framerate.load(); }
+  double GetSampleRate() const { return m_samplerate.load(); }
   void RunFrame();
+
+  /*!
+   * \brief Tell the client what speed the player is running at
+   *
+   * \param speed The speed as a multiple of normal speed, with the player's own
+   *              meaning: 1.0 normal, 0.0 paused, above 1.0 fast-forward,
+   *              between 0.0 and 1.0 slow motion, below 0.0 rewind
+   *
+   * Kept so the client can answer for it when asked. Clients that care use it
+   * to drop work the user will not see at speed, and the audio limiter is the
+   * usual one.
+   */
+  void SetPlaybackSpeed(double speed) { m_playbackSpeed = speed; }
 
   // Access memory
   size_t SerializeSize() const { return m_serializeSize; }
   bool Serialize(uint8_t* data, size_t size);
   bool Deserialize(const uint8_t* data, size_t size);
+
+  /*!
+   * \brief Hold the client still for the duration of a savestate snapshot
+   *
+   * The emulator's memory and the achievement state have to describe the same
+   * frame. Both are read from a worker thread while the game loop runs, so
+   * locking each read on its own is not enough - RunFrame() would still be
+   * free to advance between them, pairing one frame's memory with another
+   * frame's achievement progress.
+   *
+   * The lock is recursive, so the calls made while holding it may take it
+   * again.
+   */
+  std::unique_lock<CCriticalSection> LockForSnapshot() { return std::unique_lock(m_critSection); }
+
+  /*!
+   * \brief Take a snapshot of the client's achievement state
+   *
+   * Separate from the emulator's state, which must keep the exact size the
+   * client reports. See savestate.fbs.
+   *
+   * \param[out] data The state, emptied if there is none
+   *
+   * \return True if state was captured, false if the client has none
+   */
+  bool SerializeAchievementState(std::vector<uint8_t>& data);
+
+  /*!
+   * \brief Restore the client's achievement state after a savestate load
+   *
+   * Called for every load, including savestates that carry no achievement
+   * data: the client has to know the machine state jumped either way.
+   */
+  bool DeserializeAchievements(const uint8_t* data, size_t size);
+
+  /*!
+   * \brief Give the client the RetroAchievements account to sign in with
+   *
+   * The account is held by Kodi, which owns the settings it is entered in.
+   */
+  bool SetRetroAchievementsCredentials(const std::string& username, const std::string& token);
 
   // Implementation of IHwFramebufferCallback
   void HardwareContextReset() override;
@@ -210,6 +264,8 @@ private:
   static bool cb_enable_hardware_rendering(void* kodiInstance,
                                            const game_hw_rendering_properties* properties);
   static void cb_close_game(KODI_HANDLE kodiInstance);
+  static double cb_get_playback_speed(KODI_HANDLE kodiInstance);
+  static void cb_set_game_timing(KODI_HANDLE kodiInstance, const game_system_timing* timingInfo);
   static KODI_GAME_STREAM_HANDLE cb_open_stream(KODI_HANDLE kodiInstance,
                                                 const game_stream_properties* properties);
   static bool cb_get_stream_buffer(KODI_HANDLE kodiInstance,
@@ -226,6 +282,17 @@ private:
   static void cb_close_stream(KODI_HANDLE kodiInstance, KODI_GAME_STREAM_HANDLE stream);
   static game_proc_address_t cb_hw_get_proc_address(KODI_HANDLE kodiInstance, const char* sym);
   static bool cb_input_event(KODI_HANDLE kodiInstance, const game_input_event* event);
+  static void cb_rc_on_game_loaded(KODI_HANDLE kodiInstance, const game_rc_game_loaded* data);
+  static void cb_rc_on_achievement_triggered(KODI_HANDLE kodiInstance,
+                                             const game_rc_achievement_triggered* data);
+  static void cb_rc_on_game_completed(KODI_HANDLE kodiInstance, const char* title, bool hardcore);
+  static void cb_rc_on_rich_presence_updated(KODI_HANDLE kodiInstance, const char* evaluation);
+  static void cb_rc_on_login_result(KODI_HANDLE kodiInstance, const game_rc_login_result* data);
+  static void cb_rc_on_achievement_progress(KODI_HANDLE kodiInstance,
+                                            const game_rc_achievement_progress* progress,
+                                            unsigned int count);
+  static void cb_rc_on_server_error(KODI_HANDLE kodiInstance, const char* message, const char* api);
+  static void cb_rc_on_connection_changed(KODI_HANDLE kodiInstance, bool connected);
   //@}
 
   /*!
@@ -261,12 +328,23 @@ private:
   // Properties of the current playing file
   std::atomic_bool m_bIsPlaying; // True between OpenFile() and CloseFile()
   std::atomic_bool m_hasFrameRun{false};
+  // The speed the player is running at, as a multiple of normal speed. Written
+  // by the thread that changes the speed and read by the client's own, so it is
+  // atomic; a client asks for it from inside a call of its own, which can be on
+  // any thread.
+  //
+  // Starts at normal speed rather than zero because clients ask this while
+  // loading, before the player has set a speed for the first time, and the
+  // honest answer to "am I being fast-forwarded" at that point is no. Zero
+  // would read as paused and have a client behave as though the user had
+  // stopped the game before it started.
+  std::atomic<double> m_playbackSpeed{1.0};
   std::string m_gamePath;
   bool m_bRequiresGameLoop = false;
   size_t m_serializeSize = 0;
   IGameInputCallback* m_input = nullptr; // The input callback passed to OpenFile()
-  double m_framerate = 0.0; // Video frame rate (fps)
-  double m_samplerate = 0.0; // Audio sample rate (Hz)
+  std::atomic<double> m_framerate{0.0}; // Video frame rate (fps)
+  std::atomic<double> m_samplerate{0.0}; // Audio sample rate (Hz)
   GAME_REGION m_region = GAME_REGION_UNKNOWN; // Region of the loaded game
 
   // In-game saves
