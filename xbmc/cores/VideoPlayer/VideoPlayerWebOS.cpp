@@ -89,6 +89,15 @@ void CVideoPlayerWebOS::GetVideoResolution(unsigned int& width, unsigned int& he
     CVideoPlayer::GetVideoResolution(width, height);
 }
 
+bool CVideoPlayerWebOS::NeedsFullMediaRestartOnAudioChange() const
+{
+  if (!m_mediaPipelineWebOS)
+    return false;
+
+  return CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
+      CSettings::SETTING_AUDIOOUTPUT_WEBOS_ALT_AUDIOTRACK_CHANGE);
+}
+
 void CVideoPlayerWebOS::UpdateContent()
 {
   CVideoPlayer::UpdateContent();
