@@ -449,7 +449,6 @@ CMediaPipelineWebOS::~CMediaPipelineWebOS()
   if (const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer))
     buffer->ResetAcbHandle();
 
-  UpdateGUISounds(false);
   CServiceBroker::GetSettingsComponent()->GetSettings()->UnregisterCallback(this);
 }
 
@@ -885,7 +884,6 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
   m_fedVideoPts = NO_PTS;
   m_started = false;
   CLog::LogF(LOGINFO, "Resetting internal play state tracking variables (Load)");
-  UpdateGUISounds(true);
 
   CWorkerGate::Lock videoLock(m_videoGate);
   CWorkerGate::Lock audioLock(m_audioGate);
