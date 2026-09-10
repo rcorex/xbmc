@@ -136,7 +136,6 @@ bool CGUIWindow::LoadXML(const std::string &strPath, const std::string &strLower
     {
       CLog::Log(LOGERROR, "Unable to load window XML: {}. Line {}\n{}", strPath, xmlDoc.ErrorRow(),
                 xmlDoc.ErrorDesc());
-      SetID(WINDOW_INVALID);
       return false;
     }
 
