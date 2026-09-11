@@ -537,6 +537,33 @@ macro(BUILD_DEP_TARGET)
                       ${BUILD_BYPRODUCTS}
                       ${BUILD_IN_SOURCE})
 
+  # Fetch ahead of the download step with broader retries, see DownloadWithRetry.cmake.
+  # Pointless for local tarballs, and without a hash the download step re-downloads
+  # regardless. INDEPENDENT like the download step itself, which CMP0114 requires of
+  # anything that step depends on.
+  if(NOT ${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_SOURCE_DIR
+     AND ${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_HASH
+     AND ${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_URL MATCHES "^[A-Za-z][A-Za-z0-9+.-]*://")
+    # ExternalProject bakes these into its download script; a cmake -P process would
+    # not see them otherwise
+    set(_download_retry_settings)
+    foreach(_var CMAKE_TLS_VERIFY CMAKE_TLS_CAINFO CMAKE_TLS_VERSION CMAKE_NETRC CMAKE_NETRC_FILE)
+      if(DEFINED ${_var})
+        list(APPEND _download_retry_settings "-D${_var}=${${_var}}")
+      endif()
+    endforeach()
+    externalproject_add_step(${${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_BUILD_NAME} download-retry
+                             COMMAND ${CMAKE_COMMAND} ${_download_retry_settings}
+                                     -DARCHIVE_URL=${${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_URL}
+                                     -DARCHIVE_DEST=${TARBALL_DIR}/${${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_ARCHIVE}
+                                     -DARCHIVE_HASH=${${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_HASH}
+                                     -P ${PROJECTSOURCE}/cmake/scripts/common/DownloadWithRetry.cmake
+                             DEPENDERS download
+                             INDEPENDENT TRUE
+                             COMMENT "Fetching ${${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_ARCHIVE}")
+    unset(_download_retry_settings)
+  endif()
+
   set_target_properties(${${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_BUILD_NAME} PROPERTIES FOLDER "External Projects")
 
   CLEAR_BUILD_VARS()
@@ -985,6 +1012,15 @@ function(create_module_dev_env)
 
     string(TOLOWER "${CMAKE_VS_PLATFORM_TOOLSET_HOST_ARCHITECTURE}" _lower_hostarch)
     string(TOLOWER "${CMAKE_GENERATOR_PLATFORM}" _lower_targetarch)
+
+    # Only the Visual Studio generator sets the two above. Under Ninja, ARCH comes
+    # from ArchSetup and the host from the machine, so vcvarsall still gets an arch.
+    if(NOT _lower_hostarch)
+      string(TOLOWER "${CMAKE_HOST_SYSTEM_PROCESSOR}" _lower_hostarch)
+    endif()
+    if(NOT _lower_targetarch)
+      string(TOLOWER "${ARCH}" _lower_targetarch)
+    endif()
 
     if("${_lower_hostarch}" STREQUAL "x64")
       set(_lower_hostarch amd64)
