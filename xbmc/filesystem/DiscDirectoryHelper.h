@@ -196,7 +196,6 @@ class CDiscDirectoryHelper
   {
     unsigned int playlist{0};
     unsigned int index{0};
-    unsigned int playAllPlaylistEpisodesStartOffset{0};
     std::chrono::milliseconds duration{0ms};
     std::chrono::milliseconds durationDelta{0ms};
     int multiple{0};
@@ -322,6 +321,24 @@ public:
                                          CFileItemList& items,
                                          MenuDecision playback);
 
+  /*!
+   * \brief Re-read the details the disc holds for an item whose playlist has already been chosen.
+   * Stream details cannot be extracted from a bluray:// path, so they have to be read from the disc
+   * again whenever the library entry is refreshed.
+   * \param item item with a bluray:// playlist path, updated in place.
+   * \return true if the playlist was read.
+   */
+  static bool ReadResolvedPlaylist(CFileItem& item);
+
+  /*!
+   * \brief Re-read the details the disc holds for an episode whose playlist has already been
+   * chosen. Matching the episode against the disc again recovers its own duration and its
+   * bookmark within a multi-episode playlist.
+   * \param item episode with a bluray:// playlist path, updated in place.
+   * \return true if the playlist was read.
+   */
+  static bool ReadEpisodePlaylist(CFileItem& item);
+
 protected:
   static bool GetDirectoryItems(const std::string& path,
                                 CFileItemList& items,
@@ -333,7 +350,6 @@ private:
   void InitialiseEpisodePlaylistSearch(int episodeIndex, const Episodes& episodesOnDisc);
   void StorePlayAllPlaylist(
       unsigned int playlistNumber,
-      unsigned int playAllPlaylistEpisodesStartOffset,
       const PlaylistInformation& playlistInformation,
       const std::map<unsigned int, std::vector<unsigned int>>& playAllPlaylistClipMap);
   void FindPlayAllPlaylists(const ClipMap& clips,
