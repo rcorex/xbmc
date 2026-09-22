@@ -20,6 +20,7 @@ public:
   explicit CVideoPlayerWebOS(IPlayerCallback& callback);
   ~CVideoPlayerWebOS() override;
   void GetVideoResolution(unsigned int& width, unsigned int& height) override;
+  bool NeedsFullMediaRestartOnAudioChange() const override;
 
 protected:
   void UpdateContent() override;
