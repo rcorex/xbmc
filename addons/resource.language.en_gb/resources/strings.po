@@ -25194,7 +25194,19 @@ msgctxt "#39319"
 msgid "Does a full player restart when changing audio tracks. Enable this if you have issues changing audio tracks."
 msgstr ""
 
-#empty strings from id 39320 to 39899
+#. Setting "Optimally resample audio to 48 kHz"
+#: system/settings/settings.xml
+msgctxt "#39320"
+msgid "Optimally resample audio to 48 kHz"
+msgstr ""
+
+#. Help text for setting "Optimally resample audio to 48 kHz" of label #39320
+#: system/settings/settings.xml
+msgctxt "#39321"
+msgid "When enabled, audio with a sample rate other than 48 kHz will be resampled to 48 kHz at high quality, and transcoded to AC3/EAC3."
+msgstr ""
+
+#empty strings from id 39322 to 39899
 
 #. List formatting: pattern used to join a list of exactly two items, e.g. "A and B"
 #. STR_LIST_AND_TWO

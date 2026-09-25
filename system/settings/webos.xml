@@ -57,6 +57,10 @@
         <setting id="audiooutput.webosstarfishdownmixstereodplii">
           <visible>true</visible>
         </setting>
+        <setting id="audiooutput.webosresample48k">
+          <default>true</default>
+          <visible>true</visible>
+        </setting>
         <setting id="audiooutput.passthroughdevice">
           <visible>false</visible>
         </setting>
