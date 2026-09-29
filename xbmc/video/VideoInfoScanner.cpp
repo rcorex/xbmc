@@ -275,7 +275,8 @@ CVideoInfoScanner::~CVideoInfoScanner()
 
       if (!bCancelled)
       {
-        if (m_bClean)
+        // An empty set cleans the whole library, which a scan of part of it must not do
+        if (m_bClean && !(m_scanSubtree && m_pathsToClean.empty()))
           m_database.CleanDatabase(m_handle, m_pathsToClean, false);
         else
         {
@@ -316,6 +317,7 @@ CVideoInfoScanner::~CVideoInfoScanner()
   void CVideoInfoScanner::Start(const std::string& strDirectory, bool scanAll)
   {
     m_scanAll = scanAll;
+    m_scanSubtree = !strDirectory.empty();
     m_pathsToScan.clear();
     m_pathsToClean.clear();
 
@@ -1485,6 +1487,8 @@ CVideoInfoScanner::~CVideoInfoScanner()
         CFileItemList items;
         using enum CVideoDatabase::MatchingMask;
         m_database.GetSameVideoItems(item, items, UniqueId | (bDirNames ? Path : None));
+        erase_if(items, [tag](const std::shared_ptr<CFileItem>& current)
+                 { return tag->HasConflictingUniqueID(*current->GetVideoInfoTag()); });
         if (!items.IsEmpty())
         {
           // Movie already exists

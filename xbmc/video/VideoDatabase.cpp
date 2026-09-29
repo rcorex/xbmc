@@ -4448,17 +4448,22 @@ void CVideoDatabase::GetSameVideoItems(const CFileItem& item,
       }
       else
       {
-        // If item not yet in database then use default uniqueid in the tag
+        // If item not yet in database then use the uniqueids in the tag
+        std::vector<std::string> conditions;
         const CVideoInfoTag* tag{item.GetVideoInfoTag()};
-        if (tag->HasUniqueID())
+        for (const auto& [type, value] : tag->GetUniqueIDs())
         {
-          const std::string idType{tag->GetDefaultUniqueID()};
-          const std::string idValue{tag->GetUniqueID(idType)};
+          // A nondefault 'unknown' id does not identify the kind of id
+          if (!value.empty() && (type != "unknown" || type == tag->GetDefaultUniqueID()))
+            conditions.emplace_back(
+                PrepareSQL("(value = '%s' AND type = '%s')", value.c_str(), type.c_str()));
+        }
+        if (!conditions.empty())
           sql = PrepareSQL("SELECT DISTINCT media_id "
                            "FROM uniqueid "
-                           "WHERE media_type = '%s' AND value = '%s' AND type = '%s'",
-                           mediaType.c_str(), idValue.c_str(), idType.c_str());
-        }
+                           "WHERE media_type = '%s' AND ",
+                           mediaType.c_str()) +
+                "(" + StringUtils::Join(conditions, " OR ") + ")";
       }
       if (!sql.empty())
       {
@@ -10545,6 +10550,7 @@ void CVideoDatabase::CleanDatabase(CGUIDialogProgressBarHandle* handle,
             "AND (exclude IS NULL OR exclude != 1))";
       m_pDS2->query(sql);
       std::string strIds;
+      std::map<std::string, bool> sourcesReachable;
       while (!m_pDS2->eof())
       {
         auto pathsDeleteDecision = pathsDeleteDecisions.find(m_pDS2->fv(0).get_asInt());
@@ -10562,7 +10568,25 @@ void CVideoDatabase::CleanDatabase(CGUIDialogProgressBarHandle* handle,
             exists = true;
         }
         else
+        {
           exists = CDirectory::Exists(path, false);
+
+          // Under a source that can't be reached a path is unavailable rather than gone,
+          // unless removing that source's contents was asked for
+          std::string sourcePath;
+          if (!exists && GetSourcePath(path, sourcePath))
+          {
+            auto reachable = sourcesReachable.find(sourcePath);
+            if (reachable == sourcesReachable.end())
+              reachable =
+                  sourcesReachable.emplace(sourcePath, CDirectory::Exists(sourcePath, false)).first;
+            if (!reachable->second)
+            {
+              const auto sourceDecision = pathsDeleteDecisions.find(GetPathId(sourcePath));
+              exists = sourceDecision == pathsDeleteDecisions.end() || !sourceDecision->second;
+            }
+          }
+        }
 
         if (((pathsDeleteDecision != pathsDeleteDecisions.end() && pathsDeleteDecision->second) ||
              (pathsDeleteDecision == pathsDeleteDecisions.end() && !exists)) &&
@@ -10792,8 +10816,12 @@ std::vector<int> CVideoDatabase::CleanMediaType(const std::string &mediaType, co
         // ask the user whether to remove all items it contained
         if (sourcePathNotExists)
         {
+          // An earlier media type may already have asked about this source
+          if (const auto asked = pathsDeleteDecisions.find(sourcePathID);
+              asked != pathsDeleteDecisions.end())
+            del = asked->second;
           // in silent mode assume that the files are just temporarily missing
-          if (silent)
+          else if (silent)
             del = false;
           else
           {
