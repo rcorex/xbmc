@@ -415,6 +415,8 @@ public:
   static constexpr auto SETTING_AUDIOOUTPUT_GUISOUNDVOLUME = "audiooutput.guisoundvolume";
   static constexpr auto SETTING_AUDIOOUTPUT_WEBOS_ALT_AUDIOTRACK_CHANGE = "audiooutput.webosaltaudiotrackchange";
   static constexpr auto SETTING_AUDIOOUTPUT_PASSTHROUGH = "audiooutput.passthrough";
+  static constexpr auto SETTING_AUDIOOUTPUT_PASSTHROUGHVOLUMECONTROL =
+      "audiooutput.passthroughvolumecontrol";
   static constexpr auto SETTING_AUDIOOUTPUT_PASSTHROUGHDEVICE = "audiooutput.passthroughdevice";
   static constexpr auto SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM = "audiooutput.webosbypassdialnorm";
   static constexpr auto SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS = "audiooutput.webosbypassdialnormatmos";
