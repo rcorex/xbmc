@@ -66,6 +66,7 @@ namespace
 {
 constexpr const char* GAME_PROPERTY_SUPPORTS_DISC_CONTROL = "supports_disc_control";
 constexpr const char* GAME_PROPERTY_PLATFORMS = "platforms";
+constexpr const char* GAME_PROPERTY_LIBRETRO_CORE = "libretro_core";
 
 /*!
  * \brief Holds a hardware-rendering client's context current for a call into it
@@ -154,6 +155,9 @@ CGameClient::CGameClient(const ADDON::AddonInfoPtr& addonInfo)
       addonInfo->Type(AddonType::GAMEDLL)->GetValue(GAME_PROPERTY_PLATFORMS).asString();
   if (!platforms.empty())
     m_platforms = platforms;
+
+  m_libretroCore =
+      addonInfo->Type(AddonType::GAMEDLL)->GetValue(GAME_PROPERTY_LIBRETRO_CORE).asString();
 }
 
 CGameClient::~CGameClient(void)
@@ -579,7 +583,7 @@ void CGameClient::NotifyError(GAME_ERROR error)
     const std::string& wanted = Streams().HardwareRenderingRefusedWanted();
     const std::string& available = Streams().HardwareRenderingRefusedAvailable();
 
-    if (!wanted.empty() && !available.empty())
+    if (!available.empty())
     {
       // Failed to play game
       MESSAGING::HELPERS::ShowOKDialogText(
@@ -588,19 +592,13 @@ void CGameClient::NotifyError(GAME_ERROR error)
               CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(35300), wanted,
               available)});
     }
-    else if (!wanted.empty())
+    else
     {
       // Failed to play game
       MESSAGING::HELPERS::ShowOKDialogText(
           CVariant{35210},
           CVariant{StringUtils::Format(
               CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(35301), wanted)});
-    }
-    else
-    {
-      // Failed to play game
-      // This game requires OpenGL support for 3D rendering. OpenGL support is still under development.
-      MESSAGING::HELPERS::ShowOKDialogText(CVariant{35210}, CVariant{35271});
     }
   }
   else if (!missingResource.empty())
@@ -1002,6 +1000,7 @@ void CGameClient::LogAddonProperties(void) const
   CLog::Log(LOGINFO, "GAME: Supports VFS:        {}", m_bSupportsVFS);
   CLog::Log(LOGINFO, "GAME: Supports standalone: {}", m_bSupportsStandalone);
   CLog::Log(LOGINFO, "GAME: Disc control:        {}", m_supportsDiscControl);
+  CLog::Log(LOGINFO, "GAME: Libretro core:       {}", m_libretroCore);
   CLog::Log(LOGINFO, "GAME: ------------------------------------");
 }
 
