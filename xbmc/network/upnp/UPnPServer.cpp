@@ -30,6 +30,7 @@
 #include "interfaces/AnnouncementManager.h"
 #include "music/Artist.h"
 #include "music/MusicDatabase.h"
+#include "music/MusicDbPaths.h"
 #include "music/MusicFileItemClassify.h"
 #include "music/MusicLibraryQueue.h"
 #include "music/MusicThumbLoader.h"
@@ -42,12 +43,14 @@
 #include "utils/Digest.h"
 #include "utils/FileExtensionProvider.h"
 #include "utils/FileUtils.h"
+#include "utils/ItemProperties.h"
 #include "utils/SortUtils.h"
 #include "utils/StringUtils.h"
 #include "utils/URIUtils.h"
 #include "utils/Variant.h"
 #include "utils/log.h"
 #include "video/VideoDatabase.h"
+#include "video/VideoDbPaths.h"
 #include "video/VideoFileItemClassify.h"
 #include "video/VideoLibraryQueue.h"
 #include "video/VideoThumbLoader.h"
@@ -70,17 +73,18 @@ namespace UPNP
 
 NPT_UInt32 CUPnPServer::m_MaxReturnedItems = 0;
 
-const char* audio_containers[] = {"musicdb://genres/",
-                                  "musicdb://artists/",
-                                  "musicdb://albums/",
-                                  "musicdb://songs/",
-                                  "musicdb://recentlyaddedalbums/",
-                                  "musicdb://years/",
-                                  "musicdb://singles/"};
+const char* audio_containers[] = {MUSIC::DB_PATH::GENRES,
+                                  MUSIC::DB_PATH::ARTISTS,
+                                  MUSIC::DB_PATH::ALBUMS,
+                                  MUSIC::DB_PATH::SONGS,
+                                  MUSIC::DB_PATH::RECENTLY_ADDED_ALBUMS,
+                                  MUSIC::DB_PATH::YEARS,
+                                  MUSIC::DB_PATH::SINGLES};
 
-const char* video_containers[] = {LIBRARY::MOVIE_TITLES, LIBRARY::TVSHOW_TITLES,
-                                  "videodb://recentlyaddedmovies/",
-                                  "videodb://recentlyaddedepisodes/"};
+const char* video_containers[] = {MEDIA::LIBRARY_PATH::MOVIE_TITLES,
+                                  MEDIA::LIBRARY_PATH::TVSHOW_TITLES,
+                                  VIDEO::DB_PATH::RECENTLY_ADDED_MOVIES,
+                                  VIDEO::DB_PATH::RECENTLY_ADDED_EPISODES};
 
 /*----------------------------------------------------------------------
 |   CUPnPServer::CUPnPServer
@@ -323,9 +327,9 @@ PLT_MediaObject* CUPnPServer::Build(const std::shared_ptr<CFileItem>& item,
     file_path = item->GetPath().c_str();
     share_name = "";
 
-    if (path.StartsWith("musicdb://"))
+    if (path.StartsWith(MUSIC::DB_PATH::ROOT))
     {
-      if (path == "musicdb://")
+      if (path == MUSIC::DB_PATH::ROOT)
       {
         item->SetLabel("Music Library");
         item->SetLabelPreformatted(true);
@@ -365,7 +369,7 @@ PLT_MediaObject* CUPnPServer::Build(const std::shared_ptr<CFileItem>& item,
         }
 
         // all items apart from songs (artists, albums, etc) are folders
-        if (!item->HasMusicInfoTag() || item->GetMusicInfoTag()->GetType() != MediaTypeSong)
+        if (!item->HasMusicInfoTag() || item->GetMusicInfoTag()->GetMediaType() != KODI::MEDIA::TYPE::SONG)
         {
           item->SetFolder(true);
         }
@@ -382,9 +386,10 @@ PLT_MediaObject* CUPnPServer::Build(const std::shared_ptr<CFileItem>& item,
         }
       }
     }
-    else if (file_path.StartsWith(LIBRARY::ROOT) || file_path.StartsWith("videodb://"))
+    else if (file_path.StartsWith(MEDIA::LIBRARY_PATH::ROOT) ||
+             file_path.StartsWith(VIDEO::DB_PATH::ROOT))
     {
-      if (path == LIBRARY::VIDEO)
+      if (path == MEDIA::LIBRARY_PATH::VIDEO)
       {
         item->SetLabel("Video Library");
         item->SetLabelPreformatted(true);
@@ -422,15 +427,16 @@ PLT_MediaObject* CUPnPServer::Build(const std::shared_ptr<CFileItem>& item,
           }
         }
 
-        if (item->GetVideoInfoTag()->m_type == MediaTypeTvShow ||
-            item->GetVideoInfoTag()->m_type == MediaTypeSeason)
+        if (item->GetVideoInfoTag()->GetMediaType() == KODI::MEDIA::TYPE::TV_SHOW ||
+            item->GetVideoInfoTag()->GetMediaType() == KODI::MEDIA::TYPE::SEASON)
         {
           // for tvshows and seasons, iEpisode and playCount are
           // invalid
           item->SetFolder(true);
-          item->GetVideoInfoTag()->m_iEpisode = (int)item->GetProperty("totalepisodes").asInteger();
+          item->GetVideoInfoTag()->m_iEpisode =
+              (int)item->GetProperty(ITEM::PROPERTY::TOTAL_EPISODES).asInteger();
           item->GetVideoInfoTag()->SetPlayCount(
-              static_cast<int>(item->GetProperty("watchedepisodes").asInteger()));
+              static_cast<int>(item->GetProperty(ITEM::PROPERTY::WATCHED_EPISODES).asInteger()));
         }
         // if this is an item in the library without a playable path it most be a folder
         else if (item->GetVideoInfoTag()->m_strFileNameAndPath.empty())
@@ -551,35 +557,35 @@ void CUPnPServer::Announce(AnnouncementFlag flag,
     // as we don't differentiate 'updates' from 'adds' in RPC interface
     if (flag == VideoLibrary)
     {
-      if (item_type == MediaTypeEpisode)
+      if (item_type == KODI::MEDIA::NameOf(KODI::MEDIA::TYPE::EPISODE))
       {
         CVideoDatabase db;
         if (!db.Open())
           return;
         int show_id = db.GetTvShowForEpisode(item_id);
         int season_id = db.GetSeasonForEpisode(item_id);
-        UpdateContainer(StringUtils::Format("videodb://tvshows/titles/{}/", show_id));
-        UpdateContainer(StringUtils::Format("videodb://tvshows/titles/{}/{}/?tvshowid={}", show_id,
+        UpdateContainer(StringUtils::Format("{}{}/", VIDEO::DB_PATH::TVSHOW_TITLES, show_id));
+        UpdateContainer(StringUtils::Format("{}{}/{}/?tvshowid={}", VIDEO::DB_PATH::TVSHOW_TITLES, show_id,
                                             season_id, show_id));
-        UpdateContainer("videodb://recentlyaddedepisodes/");
+        UpdateContainer(VIDEO::DB_PATH::RECENTLY_ADDED_EPISODES);
       }
-      else if (item_type == MediaTypeTvShow)
+      else if (item_type == KODI::MEDIA::NameOf(KODI::MEDIA::TYPE::TV_SHOW))
       {
-        UpdateContainer(LIBRARY::TVSHOW_TITLES);
-        UpdateContainer("videodb://recentlyaddedepisodes/");
+        UpdateContainer(MEDIA::LIBRARY_PATH::TVSHOW_TITLES);
+        UpdateContainer(VIDEO::DB_PATH::RECENTLY_ADDED_EPISODES);
       }
-      else if (item_type == MediaTypeMovie)
+      else if (item_type == KODI::MEDIA::NameOf(KODI::MEDIA::TYPE::MOVIE))
       {
-        UpdateContainer(LIBRARY::MOVIE_TITLES);
-        UpdateContainer("videodb://recentlyaddedmovies/");
+        UpdateContainer(MEDIA::LIBRARY_PATH::MOVIE_TITLES);
+        UpdateContainer(VIDEO::DB_PATH::RECENTLY_ADDED_MOVIES);
       }
-      else if (item_type == MediaTypeMusicVideo)
+      else if (item_type == KODI::MEDIA::NameOf(KODI::MEDIA::TYPE::MUSIC_VIDEO))
       {
-        UpdateContainer(LIBRARY::MUSICVIDEO_TITLES);
-        UpdateContainer("videodb://recentlyaddedmusicvideos/");
+        UpdateContainer(MEDIA::LIBRARY_PATH::MUSICVIDEO_TITLES);
+        UpdateContainer(VIDEO::DB_PATH::RECENTLY_ADDED_MUSICVIDEOS);
       }
     }
-    else if (flag == AudioLibrary && item_type == MediaTypeSong)
+    else if (flag == AudioLibrary && item_type == KODI::MEDIA::NameOf(KODI::MEDIA::TYPE::SONG))
     {
       // we also update the 'songs' container is maybe a performance drop too
       // high? would need to check if slow clients even cache at all anyway
@@ -589,9 +595,9 @@ void CUPnPServer::Announce(AnnouncementFlag flag,
         return;
       if (db.GetAlbumFromSong(item_id, album))
       {
-        UpdateContainer(StringUtils::Format("musicdb://albums/{}", album.idAlbum));
-        UpdateContainer("musicdb://songs/");
-        UpdateContainer("musicdb://recentlyaddedalbums/");
+        UpdateContainer(StringUtils::Format("{}{}", MUSIC::DB_PATH::ALBUMS, album.idAlbum));
+        UpdateContainer(MUSIC::DB_PATH::SONGS);
+        UpdateContainer(MUSIC::DB_PATH::RECENTLY_ADDED_ALBUMS);
       }
     }
   }
@@ -609,7 +615,7 @@ static NPT_String TranslateWMPObjectId(NPT_String id, const Logger& logger)
   else if (id == "15")
   {
     // Xbox 360 asking for videos
-    id = LIBRARY::VIDEO;
+    id = MEDIA::LIBRARY_PATH::VIDEO;
   }
   else if (id == "16")
   {
@@ -618,17 +624,17 @@ static NPT_String TranslateWMPObjectId(NPT_String id, const Logger& logger)
   else if (id == "107")
   {
     // Sonos uses 107 for artists root container id
-    id = "musicdb://artists/";
+    id = MUSIC::DB_PATH::ARTISTS;
   }
   else if (id == "7")
   {
     // Sonos uses 7 for albums root container id
-    id = "musicdb://albums/";
+    id = MUSIC::DB_PATH::ALBUMS;
   }
   else if (id == "4")
   {
     // Sonos uses 4 for tracks root container id
-    id = "musicdb://songs/";
+    id = MUSIC::DB_PATH::SONGS;
   }
 
   logger->debug("Translated id to '{}'", (const char*)id);
@@ -698,7 +704,7 @@ NPT_Result CUPnPServer::OnBrowseMetadata(PLT_ActionReference& action,
     // attempt to determine the parent of this item
     std::string parent;
     if (URIUtils::IsVideoDb((const char*)id) || URIUtils::IsMusicDb((const char*)id) ||
-        StringUtils::StartsWithNoCase((const char*)id, LIBRARY::VIDEO))
+        StringUtils::StartsWithNoCase((const char*)id, MEDIA::LIBRARY_PATH::VIDEO))
     {
       if (!URIUtils::GetParentPath((const char*)id, parent))
       {
@@ -715,14 +721,14 @@ NPT_Result CUPnPServer::OnBrowseMetadata(PLT_ActionReference& action,
       // better solution presents itself
       std::string child_id((const char*)id);
       if (StringUtils::StartsWithNoCase(child_id, "special://musicplaylists/"))
-        parent = "musicdb://";
+        parent = MUSIC::DB_PATH::ROOT;
       else if (StringUtils::StartsWithNoCase(child_id, "special://videoplaylists/"))
-        parent = LIBRARY::VIDEO;
+        parent = MEDIA::LIBRARY_PATH::VIDEO;
       else if (StringUtils::StartsWithNoCase(child_id, "sources://video/"))
-        parent = LIBRARY::VIDEO;
-      else if (StringUtils::StartsWithNoCase(child_id, "special://profile/playlists/music/"))
+        parent = MEDIA::LIBRARY_PATH::VIDEO;
+      else if (CUtil::IsInPlaylistsFolder(child_id, KODI::MEDIA::MediaSection::MUSIC))
         parent = "special://musicplaylists/";
-      else if (StringUtils::StartsWithNoCase(child_id, "special://profile/playlists/video/"))
+      else if (CUtil::IsInPlaylistsFolder(child_id, KODI::MEDIA::MediaSection::VIDEO))
         parent = "special://videoplaylists/";
       else
         parent = "sources://video/"; // this can only match video sources
@@ -814,13 +820,13 @@ NPT_Result CUPnPServer::OnBrowseDirectChildren(PLT_ActionReference& action,
       CFileItemPtr item;
 
       // music library
-      item = std::make_shared<CFileItem>("musicdb://", true);
+      item = std::make_shared<CFileItem>(MUSIC::DB_PATH::ROOT, true);
       item->SetLabel("Music Library");
       item->SetLabelPreformatted(true);
       items.Add(item);
 
       // video library
-      item = std::make_shared<CFileItem>(LIBRARY::VIDEO, true);
+      item = std::make_shared<CFileItem>(MEDIA::LIBRARY_PATH::VIDEO, true);
       item->SetLabel("Video Library");
       item->SetLabelPreformatted(true);
       items.Add(item);
@@ -853,7 +859,7 @@ NPT_Result CUPnPServer::OnBrowseDirectChildren(PLT_ActionReference& action,
 
   // as there's no library://music support, manually add playlists and music
   // video nodes
-  if (items.GetPath() == "musicdb://")
+  if (items.GetPath() == MUSIC::DB_PATH::ROOT)
   {
     CFileItemPtr playlists(new CFileItem("special://musicplaylists/", true));
     playlists->SetLabel(CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(136));
@@ -863,7 +869,7 @@ NPT_Result CUPnPServer::OnBrowseDirectChildren(PLT_ActionReference& action,
     database.Open();
     if (database.HasContent(VideoDbContentType::MUSICVIDEOS))
     {
-      CFileItemPtr mvideos(new CFileItem(LIBRARY::MUSICVIDEOS, true));
+      CFileItemPtr mvideos(new CFileItem(MEDIA::LIBRARY_PATH::MUSICVIDEOS, true));
       mvideos->SetLabel(CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(20389));
       items.Add(mvideos);
     }
@@ -899,14 +905,14 @@ NPT_Result CUPnPServer::BuildResponse(PLT_ActionReference& action,
   NPT_Reference<CThumbLoader> thumb_loader;
 
   if (URIUtils::IsVideoDb(items.GetPath()) ||
-      StringUtils::StartsWithNoCase(items.GetPath(), LIBRARY::VIDEO) ||
-      StringUtils::StartsWithNoCase(items.GetPath(), "special://profile/playlists/video/"))
+      StringUtils::StartsWithNoCase(items.GetPath(), MEDIA::LIBRARY_PATH::VIDEO) ||
+      CUtil::IsInPlaylistsFolder(items.GetPath(), KODI::MEDIA::MediaSection::VIDEO))
   {
 
     thumb_loader = NPT_Reference<CThumbLoader>(new CVideoThumbLoader());
   }
   else if (URIUtils::IsMusicDb(items.GetPath()) ||
-           StringUtils::StartsWithNoCase(items.GetPath(), "special://profile/playlists/music/"))
+           CUtil::IsInPlaylistsFolder(items.GetPath(), KODI::MEDIA::MediaSection::MUSIC))
   {
 
     thumb_loader = NPT_Reference<CThumbLoader>(new CMusicThumbLoader());
@@ -1015,7 +1021,7 @@ NPT_Result CUPnPServer::OnSearchContainer(PLT_ActionReference& action,
       object_id, id.GetChars(), search_criteria);
 
   NPT_String searchClass = NPT_String(search_criteria);
-  if (id.StartsWith("musicdb://"))
+  if (id.StartsWith(MUSIC::DB_PATH::ROOT))
   {
     // we browse for all tracks given a genre, artist or album
     if (searchClass.Find("object.item.audioItem") >= 0)
@@ -1027,7 +1033,7 @@ NPT_Result CUPnPServer::OnSearchContainer(PLT_ActionReference& action,
       count = count ? count - 1 : 0;
 
       // genre
-      if (id.StartsWith("musicdb://genres/"))
+      if (id.StartsWith(MUSIC::DB_PATH::GENRES))
       {
         // all tracks of all genres
         if (count == 1)
@@ -1039,7 +1045,7 @@ NPT_Result CUPnPServer::OnSearchContainer(PLT_ActionReference& action,
         else if (count == 3)
           id += "-1/";
       }
-      else if (id.StartsWith("musicdb://artists/"))
+      else if (id.StartsWith(MUSIC::DB_PATH::ARTISTS))
       {
         // all tracks by all artists
         if (count == 1)
@@ -1048,7 +1054,7 @@ NPT_Result CUPnPServer::OnSearchContainer(PLT_ActionReference& action,
         else if (count == 2)
           id += "-1/";
       }
-      else if (id.StartsWith("musicdb://albums/"))
+      else if (id.StartsWith(MUSIC::DB_PATH::ALBUMS))
       {
         // all albums ?
         if (count == 1)
@@ -1078,7 +1084,7 @@ NPT_Result CUPnPServer::OnSearchContainer(PLT_ActionReference& action,
     {
       // all tracks by genre filtered by artist and/or album
       std::string strPath = StringUtils::Format(
-          "musicdb://genres/{}/{}/{}/", database.GetGenreByName((const char*)genre),
+          "{}{}/{}/{}/", MUSIC::DB_PATH::GENRES, database.GetGenreByName((const char*)genre),
           database.GetArtistByName((const char*)artist), // will return -1 if no artist
           database.GetAlbumByName((const char*)album)); // will return -1 if no album
 
@@ -1089,7 +1095,7 @@ NPT_Result CUPnPServer::OnSearchContainer(PLT_ActionReference& action,
     {
       // all tracks by artist name filtered by album if passed
       std::string strPath = StringUtils::Format(
-          "musicdb://artists/{}/{}/", database.GetArtistByName((const char*)artist),
+          "{}{}/{}/", MUSIC::DB_PATH::ARTISTS, database.GetArtistByName((const char*)artist),
           database.GetAlbumByName((const char*)album)); // will return -1 if no album
 
       return OnBrowseDirectChildren(action, strPath.c_str(), filter, starting_index,
@@ -1098,15 +1104,15 @@ NPT_Result CUPnPServer::OnSearchContainer(PLT_ActionReference& action,
     else if (album.GetLength() > 0)
     {
       // all tracks by album name
-      std::string strPath =
-          StringUtils::Format("musicdb://albums/{}/", database.GetAlbumByName((const char*)album));
+      std::string strPath = StringUtils::Format("{}{}/", MUSIC::DB_PATH::ALBUMS,
+                                                database.GetAlbumByName((const char*)album));
 
       return OnBrowseDirectChildren(action, strPath.c_str(), filter, starting_index,
                                     requested_count, sort_criteria, context);
     }
 
     // browse all songs
-    return OnBrowseDirectChildren(action, "musicdb://songs/", filter, starting_index,
+    return OnBrowseDirectChildren(action, MUSIC::DB_PATH::SONGS, filter, starting_index,
                                   requested_count, sort_criteria, context);
   }
   else if (searchClass.Find("object.container.album.musicAlbum") >= 0)
@@ -1129,21 +1135,21 @@ NPT_Result CUPnPServer::OnSearchContainer(PLT_ActionReference& action,
     if (genre.GetLength() > 0)
     {
       std::string strPath = StringUtils::Format(
-          "musicdb://genres/{}/{}/", database.GetGenreByName((const char*)genre),
+          "{}{}/{}/", MUSIC::DB_PATH::GENRES, database.GetGenreByName((const char*)genre),
           database.GetArtistByName((const char*)artist)); // no artist should return -1
       return OnBrowseDirectChildren(action, strPath.c_str(), filter, starting_index,
                                     requested_count, sort_criteria, context);
     }
     else if (artist.GetLength() > 0)
     {
-      std::string strPath = StringUtils::Format("musicdb://artists/{}/",
+      std::string strPath = StringUtils::Format("{}{}/", MUSIC::DB_PATH::ARTISTS,
                                                 database.GetArtistByName((const char*)artist));
       return OnBrowseDirectChildren(action, strPath.c_str(), filter, starting_index,
                                     requested_count, sort_criteria, context);
     }
 
     // all albums
-    return OnBrowseDirectChildren(action, "musicdb://albums/", filter, starting_index,
+    return OnBrowseDirectChildren(action, MUSIC::DB_PATH::ALBUMS, filter, starting_index,
                                   requested_count, sort_criteria, context);
   }
   else if (searchClass.Find("object.container.person.musicArtist") >= 0)
@@ -1154,17 +1160,17 @@ NPT_Result CUPnPServer::OnSearchContainer(PLT_ActionReference& action,
     {
       CMusicDatabase database;
       database.Open();
-      std::string strPath =
-          StringUtils::Format("musicdb://genres/{}/", database.GetGenreByName((const char*)genre));
+      std::string strPath = StringUtils::Format("{}{}/", MUSIC::DB_PATH::GENRES,
+                                                database.GetGenreByName((const char*)genre));
       return OnBrowseDirectChildren(action, strPath.c_str(), filter, starting_index,
                                     requested_count, sort_criteria, context);
     }
-    return OnBrowseDirectChildren(action, "musicdb://artists/", filter, starting_index,
+    return OnBrowseDirectChildren(action, MUSIC::DB_PATH::ARTISTS, filter, starting_index,
                                   requested_count, sort_criteria, context);
   }
   else if (searchClass.Find("object.container.genre.musicGenre") >= 0)
   {
-    return OnBrowseDirectChildren(action, "musicdb://genres/", filter, starting_index,
+    return OnBrowseDirectChildren(action, MUSIC::DB_PATH::GENRES, filter, starting_index,
                                   requested_count, sort_criteria, context);
   }
   else if (searchClass.Find("object.container.playlistContainer") >= 0)
@@ -1182,7 +1188,7 @@ NPT_Result CUPnPServer::OnSearchContainer(PLT_ActionReference& action,
     }
 
     CFileItemList items;
-    if (!database.GetTvShowsByWhere("videodb://tvshows/titles/?local", CDatabase::Filter(), items,
+    if (!database.GetTvShowsByWhere(std::string{VIDEO::DB_PATH::TVSHOW_TITLES} + "?local", CDatabase::Filter(), items,
                                     SortDescription(),
                                     GetRequiredVideoDbDetails(NPT_String(filter))))
     {
@@ -1190,7 +1196,7 @@ NPT_Result CUPnPServer::OnSearchContainer(PLT_ActionReference& action,
       return NPT_SUCCESS;
     }
 
-    items.SetPath("videodb://tvshows/titles/");
+    items.SetPath(VIDEO::DB_PATH::TVSHOW_TITLES);
     return BuildResponse(action, items, filter, starting_index, requested_count, sort_criteria,
                          context, NULL);
   }
@@ -1204,14 +1210,15 @@ NPT_Result CUPnPServer::OnSearchContainer(PLT_ActionReference& action,
     }
 
     CFileItemList items;
-    if (!database.GetSeasonsByWhere("videodb://tvshows/titles/-1/?local", CDatabase::Filter(),
+    if (!database.GetSeasonsByWhere(
+            StringUtils::Format("{}-1/?local", VIDEO::DB_PATH::TVSHOW_TITLES), CDatabase::Filter(),
                                     items, true))
     {
       action->SetError(800, "Internal Error");
       return NPT_SUCCESS;
     }
 
-    items.SetPath("videodb://tvshows/titles/-1/");
+    items.SetPath(StringUtils::Format("{}-1/", VIDEO::DB_PATH::TVSHOW_TITLES));
     return BuildResponse(action, items, filter, starting_index, requested_count, sort_criteria,
                          context, NULL);
   }
@@ -1233,7 +1240,7 @@ NPT_Result CUPnPServer::OnSearchContainer(PLT_ActionReference& action,
 
     if (allVideoItems || searchClass.Find("object.item.videoItem.movie") >= 0)
     {
-      if (!database.GetMoviesByWhere("videodb://movies/titles/?local", CDatabase::Filter(), items,
+      if (!database.GetMoviesByWhere(std::string{VIDEO::DB_PATH::MOVIE_TITLES} + "?local", CDatabase::Filter(), items,
                                      SortDescription(), requiredVideoDbDetails))
       {
         action->SetError(800, "Internal Error");
@@ -1244,12 +1251,12 @@ NPT_Result CUPnPServer::OnSearchContainer(PLT_ActionReference& action,
       items.Clear();
 
       if (!allVideoItems)
-        allItems.SetPath("videodb://movies/titles/");
+        allItems.SetPath(VIDEO::DB_PATH::MOVIE_TITLES);
     }
 
     if (allVideoItems || searchClass.Find("object.item.videoItem.videoBroadcast") >= 0)
     {
-      if (!database.GetEpisodesByWhere("videodb://tvshows/titles/?local", CDatabase::Filter(),
+      if (!database.GetEpisodesByWhere(std::string{VIDEO::DB_PATH::TVSHOW_TITLES} + "?local", CDatabase::Filter(),
                                        items, true, SortDescription(), requiredVideoDbDetails))
       {
         action->SetError(800, "Internal Error");
@@ -1260,12 +1267,12 @@ NPT_Result CUPnPServer::OnSearchContainer(PLT_ActionReference& action,
       items.Clear();
 
       if (!allVideoItems)
-        allItems.SetPath("videodb://tvshows/titles/");
+        allItems.SetPath(VIDEO::DB_PATH::TVSHOW_TITLES);
     }
 
     if (allVideoItems || searchClass.Find("object.item.videoItem.musicVideoClip") >= 0)
     {
-      if (!database.GetMusicVideosByWhere("videodb://musicvideos/titles/?local",
+      if (!database.GetMusicVideosByWhere(std::string{VIDEO::DB_PATH::MUSICVIDEO_TITLES} + "?local",
                                           CDatabase::Filter(), items, true, SortDescription(),
                                           requiredVideoDbDetails))
       {
@@ -1277,11 +1284,11 @@ NPT_Result CUPnPServer::OnSearchContainer(PLT_ActionReference& action,
       items.Clear();
 
       if (!allVideoItems)
-        allItems.SetPath("videodb://musicvideos/titles/");
+        allItems.SetPath(VIDEO::DB_PATH::MUSICVIDEO_TITLES);
     }
 
     if (allVideoItems)
-      allItems.SetPath("videodb://movies/titles/");
+      allItems.SetPath(VIDEO::DB_PATH::MOVIE_TITLES);
 
     return BuildResponse(action, allItems, filter, starting_index, requested_count, sort_criteria,
                          context, NULL);

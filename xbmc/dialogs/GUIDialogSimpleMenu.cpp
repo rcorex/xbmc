@@ -18,6 +18,7 @@
 #include "guilib/GUIComponent.h"
 #include "guilib/GUIWindowManager.h"
 #include "media/MediaType.h"
+#include "utils/ItemProperties.h"
 #include "utils/URIUtils.h"
 #include "utils/Variant.h"
 #include "utils/log.h"
@@ -37,7 +38,7 @@ namespace
 void RetypeAsVersion(CFileItem& item)
 {
   CVideoInfoTag* tag{item.GetVideoInfoTag()};
-  tag->m_type = MediaTypeVideoVersion;
+  tag->SetMediaType(MEDIA::TYPE::VIDEO_VERSION);
   tag->m_iDbId = tag->m_iFileId;
   tag->m_strTitle = tag->GetAssetInfo().GetTitle();
   item.SetTitle(tag->m_strTitle);
@@ -61,9 +62,9 @@ bool ReassignPlaylist(const CFileItem& item,
   if (item.HasVideoInfoTag())
   {
     const CVideoInfoTag* tag{item.GetVideoInfoTag()};
-    if (tag->m_type == MediaTypeMovie) // In library view
+    if (tag->GetMediaType() == MEDIA::TYPE::MOVIE) // In library view
       assignedMovie = tag->m_iDbId;
-    else if (tag->m_type == MediaTypeVideoVersion) // From versions manager
+    else if (tag->GetMediaType() == MEDIA::TYPE::VIDEO_VERSION) // From versions manager
       assignedMovie = db.GetVideoVersionInfo(item.GetDynPath()).m_idMedia;
   }
   if (assignedMovie >= 0 &&
@@ -95,7 +96,7 @@ bool ReassignPlaylist(const CFileItem& item,
     std::string oldPath;
     int oldFile;
     bool version;
-    std::string mediaType;
+    MEDIA::TYPE mediaType;
     int idMedia;
   };
   std::vector<Displaced> displaced;
@@ -104,8 +105,8 @@ bool ReassignPlaylist(const CFileItem& item,
 
   for (const auto& it : matchingPlaylists)
   {
-    const MediaType& mediaType{it.mediaType == VideoDbContentType::EPISODES ? MediaTypeEpisode
-                                                                            : MediaTypeMovie};
+    const MEDIA::TYPE mediaType{it.mediaType == VideoDbContentType::EPISODES ? MEDIA::TYPE::EPISODE
+                                                                           : MEDIA::TYPE::MOVIE};
 
     // History belongs to the playlist (watched counts etc.), so it is not carried over.
     // An item already at the base file keeps its own, as SetFileForMedia() rewrites the row
@@ -225,7 +226,7 @@ bool CGUIDialogSimpleMenu::ShowPlaylistSelection(
     return true;
 
   CLog::LogF(LOGDEBUG, "Playlist {} chosen for {}",
-             selectedItem.GetProperty("bluray_playlist").asInteger32(-1),
+             selectedItem.GetProperty(ITEM::PROPERTY::BLURAY_PLAYLIST).asInteger32(-1),
              CURL::GetRedacted(item.GetDynPath()));
 
   // See if already selected
@@ -233,7 +234,7 @@ bool CGUIDialogSimpleMenu::ShowPlaylistSelection(
     return true; // No playlists used yet
 
   // See if playlist already used
-  const int newPlaylist{selectedItem.GetProperty("bluray_playlist").asInteger32(-1)};
+  const int newPlaylist{selectedItem.GetProperty(ITEM::PROPERTY::BLURAY_PLAYLIST).asInteger32(-1)};
   auto matching{usedPlaylists |
                 std::views::filter([newPlaylist](const CVideoDatabase::PlaylistInfo& p)
                                    { return p.playlist == newPlaylist; })};

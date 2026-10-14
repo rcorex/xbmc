@@ -37,8 +37,10 @@
 #include "resources/LocalizeStrings.h"
 #include "resources/ResourcesComponent.h"
 #include "settings/DisplaySettings.h"
+#include "settings/MediaSettings.h"
 #include "settings/Settings.h"
 #include "settings/SettingsComponent.h"
+#include "utils/ArtTypes.h"
 #include "utils/Random.h"
 #include "utils/URIUtils.h"
 #include "utils/Variant.h"
@@ -236,6 +238,7 @@ void CGUIWindowSlideShow::Reset()
   m_bShuffled = false;
   m_bPause = false;
   m_bPlayingVideo = false;
+  m_iVideoSlide = -1;
   m_bErrorMessage = false;
 
   if (m_Image[0])
@@ -442,13 +445,30 @@ void CGUIWindowSlideShow::Process(unsigned int currentTime, CDirtyRegionList &re
   }
 
   bool bSlideShow = m_bSlideShow && !m_bPause && !m_bPlayingVideo;
-  if (bSlideShow && m_slides.at(m_iCurrentSlide)->HasProperty("unplayable"))
+  // A thumbnail still loading into the current image would land after the skip, so wait for it
+  const bool loadingCurrent = m_pBackgroundLoader->IsLoading() &&
+                              m_pBackgroundLoader->Pic() == m_iCurrentPic &&
+                              m_pBackgroundLoader->SlideNumber() == m_iCurrentSlide;
+  if (bSlideShow && !loadingCurrent && m_slides.at(m_iCurrentSlide)->HasProperty("unplayable"))
   {
     m_iNextSlide = GetNextSlide();
     if (m_iCurrentSlide == m_iNextSlide)
       return;
+    // A video that won't play still shows its thumbnail, so move on to the next slide's image too
+    if (m_Image[m_iCurrentPic]->IsLoaded() &&
+        m_Image[m_iCurrentPic]->SlideNumber() == m_iCurrentSlide)
+    {
+      m_Image[m_iCurrentPic]->Close();
+      if ((m_Image[1 - m_iCurrentPic]->IsLoaded() &&
+           m_Image[1 - m_iCurrentPic]->SlideNumber() == m_iNextSlide) ||
+          (m_pBackgroundLoader->IsLoading() && m_pBackgroundLoader->SlideNumber() == m_iNextSlide &&
+           m_pBackgroundLoader->Pic() == 1 - m_iCurrentPic))
+        m_iCurrentPic = 1 - m_iCurrentPic;
+    }
     m_iCurrentSlide = m_iNextSlide;
     m_iNextSlide = GetNextSlide();
+    // A Next or Previous pressed on the slide that failed is answered by the skip itself
+    m_bLoadNextPic = false;
   }
 
   if (m_bErrorMessage)
@@ -466,13 +486,13 @@ void CGUIWindowSlideShow::Process(unsigned int currentTime, CDirtyRegionList &re
       {
         CLog::Log(LOGERROR, "Error loading the current image {}: {}", m_iCurrentSlide,
                   m_slides.at(m_iCurrentSlide)->GetPath());
-        if (!IsVideo(*m_slides.at(m_iCurrentPic)))
+        if (!IsVideo(*m_slides.at(m_iCurrentSlide)))
         {
           // try next if we are in slideshow
           CLog::Log(LOGINFO, "set image {} unplayable", m_slides.at(m_iCurrentSlide)->GetPath());
           m_slides.at(m_iCurrentSlide)->SetProperty("unplayable", true);
         }
-        if (m_bLoadNextPic || (bSlideShow && !m_bPause && !IsVideo(*m_slides.at(m_iCurrentPic))))
+        if (m_bLoadNextPic || (bSlideShow && !m_bPause && !IsVideo(*m_slides.at(m_iCurrentSlide))))
         {
           // change to next item, wait loading.
           m_iCurrentSlide = m_iNextSlide;
@@ -553,7 +573,7 @@ void CGUIWindowSlideShow::Process(unsigned int currentTime, CDirtyRegionList &re
     m_iLastFailedNextSlide = -1;
     CFileItemPtr item = m_slides.at(m_iNextSlide);
     std::string picturePath = GetPicturePath(item.get());
-    if (!picturePath.empty() && (!IsVideo(*item) || !m_bSlideShow || m_bPause))
+    if (!picturePath.empty())
     {
       if (IsVideo(*item))
         CLog::Log(LOGDEBUG, "Loading the thumb {} for next video {}: {}", picturePath, m_iNextSlide,
@@ -602,11 +622,7 @@ void CGUIWindowSlideShow::Process(unsigned int currentTime, CDirtyRegionList &re
   // render the next image
   if (m_Image[m_iCurrentPic]->DrawNextImage())
   {
-    if (m_bSlideShow && !m_bPause && IsVideo(*m_slides.at(m_iNextSlide)))
-    {
-      // do not show thumb of video when playing slideshow
-    }
-    else if (m_Image[1 - m_iCurrentPic]->IsLoaded())
+    if (m_Image[1 - m_iCurrentPic]->IsLoaded())
     {
       if (appPlayer->IsPlayingVideo())
         appPlayer->ClosePlayer();
@@ -713,15 +729,19 @@ void CGUIWindowSlideShow::Render()
     return;
 
   CGraphicContext& gfxCtx = CServiceBroker::GetWinSystem()->GetGfxContext();
-  gfxCtx.Clear(0xff000000);
+  // HDR video is drawn underneath the GUI, by the window below the slideshow
+  const bool hdrVideo =
+      IsVideo(*m_slides.at(m_iCurrentSlide)) && CServiceBroker::GetWinSystem()->IsHdrComposite();
+  gfxCtx.Clear(hdrVideo ? 0 : 0xff000000);
 
-  if (IsVideo(*m_slides.at(m_iCurrentSlide)))
+  auto& components = CServiceBroker::GetAppComponents();
+  const auto appPlayer = components.GetComponent<CApplicationPlayer>();
+
+  // Keep the video's thumbnail up until its first frame
+  if (IsVideo(*m_slides.at(m_iCurrentSlide)) && appPlayer->IsRenderingVideo())
   {
     gfxCtx.SetViewWindow(0, 0, m_coordsRes.iWidth, m_coordsRes.iHeight);
     gfxCtx.SetRenderingResolution(gfxCtx.GetVideoResolution(), false);
-
-    auto& components = CServiceBroker::GetAppComponents();
-    const auto appPlayer = components.GetComponent<CApplicationPlayer>();
 
     if (appPlayer->IsRenderingVideoLayer())
     {
@@ -1132,6 +1152,19 @@ bool CGUIWindowSlideShow::OnMessage(CGUIMessage& message)
         }
       }
       break;
+
+      case GUI_MSG_PLAYBACK_ERROR:
+        // While a player is running, the error is a late one from a video already left behind
+        if (m_bPlayingVideo && m_iVideoSlide >= 0 &&
+            m_iVideoSlide < static_cast<int>(m_slides.size()) &&
+            !CServiceBroker::GetAppComponents().GetComponent<CApplicationPlayer>()->IsPlaying())
+        {
+          // Skip it like a picture that won't load. m_iVideoSlide stays set, so it isn't retried.
+          CLog::Log(LOGINFO, "set video {} unplayable", m_slides.at(m_iVideoSlide)->GetPath());
+          m_slides.at(m_iVideoSlide)->SetProperty("unplayable", true);
+          m_bPlayingVideo = false;
+        }
+        break;
   }
   return CGUIDialog::OnMessage(message);
 }
@@ -1212,7 +1245,11 @@ bool CGUIWindowSlideShow::PlayVideo()
   CLog::Log(LOGDEBUG, "Playing current video slide {}", item->GetPath());
   m_bPlayingVideo = true;
   m_iVideoSlide = m_iCurrentSlide;
+  // The clip plays inside the slideshow, so it mustn't switch the display mode like a film
+  const bool startWindowed = CMediaSettings::GetInstance().DoesMediaStartWindowed();
+  CMediaSettings::GetInstance().SetMediaStartWindowed(true);
   bool ret = g_application.PlayFile(*item, "");
+  CMediaSettings::GetInstance().SetMediaStartWindowed(startWindowed);
   if (ret == true)
     return true;
   else
@@ -1220,8 +1257,8 @@ bool CGUIWindowSlideShow::PlayVideo()
     CLog::Log(LOGINFO, "set video {} unplayable", item->GetPath());
     item->SetProperty("unplayable", true);
   }
+  // m_iVideoSlide stays set, so the video isn't retried while it's showing
   m_bPlayingVideo = false;
-  m_iVideoSlide = -1;
   return false;
 }
 
@@ -1423,12 +1460,12 @@ std::string CGUIWindowSlideShow::GetPicturePath(CFileItem *item)
   std::string picturePath = item->GetDynPath();
   if (isVideo)
   {
-    picturePath = item->GetArt("thumb");
+    picturePath = item->GetArt(ART::TYPE::THUMB);
     if (picturePath.empty() && !item->HasProperty("nothumb"))
     {
       CPictureThumbLoader thumbLoader;
       thumbLoader.LoadItem(item);
-      picturePath = item->GetArt("thumb");
+      picturePath = item->GetArt(ART::TYPE::THUMB);
       if (picturePath.empty())
         item->SetProperty("nothumb", true);
     }

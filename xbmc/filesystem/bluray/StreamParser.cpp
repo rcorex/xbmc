@@ -11,7 +11,7 @@
 #include "M2TSParser.h"
 #include "PlaylistStructure.h"
 #include "filesystem/DiscDirectoryHelper.h"
-#include "utils/LanguageTag.h"
+#include "language/LanguageTag.h"
 #include "utils/log.h"
 
 #include <algorithm>
@@ -24,7 +24,7 @@
 #include <fmt/format.h>
 #include <libbluray/bluray.h>
 
-using namespace KODI::UTILS;
+using namespace KODI::LANGUAGE;
 
 namespace XFILE
 {
@@ -426,9 +426,10 @@ void CStreamParser::ConvertBlurayPlaylistInformation(const BlurayPlaylistInforma
     if (streamDetails != StreamDetails::DEFER)
       LogDefaultStreams(b);
 
-    // The secondary video stream is not one Kodi plays, but it tells the playlist apart from one
-    // presenting the same content without it (see IsPictureInPicturePresentation)
+    // The secondary video stream is not one Kodi plays, but it marks the playlist as presenting the
+    // content picture-in-picture (see IsPictureInPicturePresentation)
     p.hasSecondaryVideo = !playItem->secondaryVideoStreams.empty();
+    p.hasDolbyVision = !playItem->dolbyVisionStreams.empty();
 
     for (const auto* streams :
          {&playItem->videoStreams, &playItem->audioStreams, &playItem->presentationGraphicStreams})

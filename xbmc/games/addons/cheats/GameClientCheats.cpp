@@ -23,6 +23,9 @@
 #include "addons/kodi-dev-kit/include/kodi/c-api/addon-instance/game.h"
 #include "filesystem/Directory.h"
 #include "filesystem/File.h"
+#include "games/GameServices.h"
+#include "games/GameSettings.h"
+#include "games/GameUtils.h"
 #include "games/addons/GameClient.h"
 #include "games/cheats/CheatUtils.h"
 #include "guilib/GUIComponent.h"
@@ -51,6 +54,13 @@ constexpr auto SETTING_GAMES_CHEATS_PATH = "gamesgeneral.cheatspath";
 
 //! The add-on carrying the libretro cheat database, one zip per system
 constexpr auto CHEATS_ADDON = "resource.games.cheats.libretro";
+
+bool HardcoreEnabled()
+{
+  // Without the service manager, as under test, there is no game to protect
+  return CServiceBroker::IsServiceManagerUp() &&
+         CServiceBroker::GetGameServices().GameSettings().GetAchievementsHardcore();
+}
 
 } // namespace
 
@@ -184,6 +194,7 @@ bool CGameClientCheats::Reload(const std::shared_ptr<Session>& session,
   }
 
   // Archive searches must not hold either lock used by the player or GUI-info queries.
+  const bool hardcore = HardcoreEnabled();
   std::unique_lock clientLock(m_clientAccess, std::defer_lock);
   while (true)
   {
@@ -242,7 +253,7 @@ bool CGameClientCheats::Reload(const std::shared_ptr<Session>& session,
     m_sources = sources;
     break;
   }
-  Apply();
+  Apply(hardcore);
   clientLock.unlock();
   if (accepted)
   {
@@ -565,8 +576,7 @@ CCheatPack CGameClientCheats::ReadPack(const std::string& path)
 
 std::string CGameClientCheats::GetSelectionPath(const std::string& gamePath) const
 {
-  return URIUtils::AddFileToFolder("special://masterprofile/games/cheats",
-                                   CCheatUtils::GetSelectionFileName(gamePath));
+  return URIUtils::AddFileToFolder(CGameUtils::GetGameFolder(gamePath), "cheats.xml");
 }
 
 std::string CGameClientCheats::ReadChoice(const std::string& gamePath) const
@@ -577,7 +587,7 @@ std::string CGameClientCheats::ReadChoice(const std::string& gamePath) const
   if (xml.LoadFile(GetSelectionPath(gamePath)))
   {
     const auto* root = xml.FirstChildElement("cheatpack");
-    if (root && root->Attribute("game", gamePath.c_str()))
+    if (root)
     {
       if (const char* candidate = root->Attribute("candidate"))
         return candidate;
@@ -646,6 +656,14 @@ bool CGameClientCheats::SetEnabled(unsigned int index,
                                    const Cheat& expected,
                                    uint64_t generation)
 {
+  const bool hardcore = HardcoreEnabled();
+  if (enabled && hardcore)
+  {
+    CLog::Log(LOGDEBUG, "GameClientCheats: Refusing to enable a cheat in hardcore mode");
+    CGameUtils::NotifyBlockedByHardcore(35320); // "Cheats"
+    return false;
+  }
+
   std::unique_lock clientLock(m_clientAccess);
 
   {
@@ -659,14 +677,26 @@ bool CGameClientCheats::SetEnabled(unsigned int index,
     m_enabled[index] = enabled;
   }
 
-  Apply();
+  Apply(hardcore);
   return true;
 }
 
-void CGameClientCheats::Apply()
+void CGameClientCheats::SetHardcore(bool hardcore)
+{
+  std::unique_lock clientLock(m_clientAccess);
+  Apply(hardcore);
+}
+
+void CGameClientCheats::Apply(bool hardcore)
 {
   if (!m_gameClient.IsPlaying())
     return;
+
+  if (hardcore)
+  {
+    CheatReset();
+    return;
+  }
 
   std::vector<std::string> codes;
   {

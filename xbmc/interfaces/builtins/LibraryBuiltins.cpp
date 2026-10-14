@@ -18,6 +18,7 @@
 #include "guilib/GUIWindowManager.h"
 #include "messaging/helpers/DialogHelper.h"
 #include "messaging/helpers/DialogOKHelper.h"
+#include "music/MusicDbPaths.h"
 #include "music/MusicDbUrl.h"
 #include "music/MusicLibraryQueue.h"
 #include "music/infoscanner/MusicInfoScanner.h"
@@ -27,12 +28,29 @@
 #include "settings/Settings.h"
 #include "settings/SettingsComponent.h"
 #include "storage/MediaManager.h"
+#include "utils/ContentNames.h"
 #include "utils/StringUtils.h"
 #include "utils/log.h"
 #include "video/VideoDatabase.h"
 #include "video/VideoLibraryQueue.h"
 
 using namespace KODI::MESSAGING;
+
+namespace CONTENT = KODI::MEDIA::CONTENT;
+
+namespace
+{
+//! The library content a clean is limited to, in the database's spelling; empty for any.
+std::string ContentToClean(const std::vector<std::string>& params)
+{
+  if (params.empty())
+    return {};
+  for (const char* content : {CONTENT::MOVIES, CONTENT::TVSHOWS, CONTENT::MUSICVIDEOS})
+    if (StringUtils::EqualsNoCase(params[0], content))
+      return content;
+  return {};
+}
+} // unnamed namespace
 
 /*! \brief Clean a library.
  *  \param params The parameters.
@@ -44,9 +62,7 @@ static int CleanLibrary(const std::vector<std::string>& params)
   if (params.size() > 1)
     userInitiated = StringUtils::EqualsNoCase(params[1], "true");
   if (params.empty() || StringUtils::EqualsNoCase(params[0], "video") ||
-      StringUtils::EqualsNoCase(params[0], "movies") ||
-      StringUtils::EqualsNoCase(params[0], "tvshows") ||
-      StringUtils::EqualsNoCase(params[0], "musicvideos"))
+      !ContentToClean(params).empty())
   {
     if (!CVideoLibraryQueue::GetInstance().IsScanningLibrary())
     {
@@ -54,7 +70,7 @@ static int CleanLibrary(const std::vector<std::string>& params)
         HELPERS::ShowOKDialogText(CVariant{700}, CVariant{703});
       else
       {
-        const std::string content = (params.empty() || params[0] == "video") ? "" : params[0];
+        const std::string content = ContentToClean(params);
         const std::string directory = params.size() > 2 ? params[2] : "";
 
         std::set<int> paths;
@@ -349,7 +365,7 @@ static int RefreshArtist(const std::vector<std::string>& params)
 
   // Set the artist id on the musicdb url
   CMusicDbUrl musicUrl;
-  if (!musicUrl.FromString("musicdb://artists/"))
+  if (!musicUrl.FromString(KODI::MUSIC::DB_PATH::ARTISTS))
     return -1;
   musicUrl.AddOption("artistid", params.front());
 
@@ -371,7 +387,7 @@ static int RefreshAlbum(const std::vector<std::string>& params)
 
   // Set the album id on the musicdb url
   CMusicDbUrl musicUrl;
-  if (!musicUrl.FromString("musicdb://albums/"))
+  if (!musicUrl.FromString(KODI::MUSIC::DB_PATH::ALBUMS))
     return -1;
   musicUrl.AddOption("albumid", params.front());
 

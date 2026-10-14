@@ -8,7 +8,7 @@
 
 #include "filesystem/BlurayDirectory.h"
 #include "filesystem/DiscDirectoryHelper.h"
-#include "utils/LanguageTag.h"
+#include "language/LanguageTag.h"
 
 #include <chrono>
 #include <vector>
@@ -17,7 +17,7 @@
 
 using namespace XFILE;
 using namespace std::chrono_literals;
-using KODI::UTILS::CLanguageTag;
+using KODI::LANGUAGE::CLanguageTag;
 
 class TestBlurayDirectory : public ::testing::Test
 {
@@ -212,6 +212,46 @@ TEST_F(TestBlurayDirectory, FilterPlaylists_KeepsPlaylistsDifferingByDuration)
 
   EXPECT_TRUE(FilterPlaylists(playlists));
   EXPECT_EQ(PlaylistNumbers(playlists), (std::vector<unsigned int>{800u, 801u}));
+}
+
+// A picture-in-picture copy is the one removed, even when numbered first
+TEST_F(TestBlurayDirectory, FilterPlaylists_RemovesAPictureInPictureCopyKeepingThePlainOne)
+{
+  std::vector<PlaylistInformation> playlists{
+      MakePlaylist(800u, 2h, {1u}),
+      MakePlaylist(801u, 2h, {1u}),
+  };
+  playlists[0].hasSecondaryVideo = true;
+
+  EXPECT_TRUE(FilterPlaylists(playlists));
+  EXPECT_EQ(PlaylistNumbers(playlists), std::vector<unsigned int>{801u});
+}
+
+// A copy with a Dolby Vision enhancement layer is the one kept, even when numbered second
+TEST_F(TestBlurayDirectory, FilterPlaylists_RemovesDuplicatesKeepingTheDolbyVisionOne)
+{
+  std::vector<PlaylistInformation> playlists{
+      MakePlaylist(800u, 2h, {1u}),
+      MakePlaylist(801u, 2h, {1u}),
+  };
+  playlists[1].hasDolbyVision = true;
+
+  EXPECT_TRUE(FilterPlaylists(playlists));
+  EXPECT_EQ(PlaylistNumbers(playlists), std::vector<unsigned int>{801u});
+}
+
+// Being picture-in-picture outweighs carrying Dolby Vision, as such a copy never leads
+TEST_F(TestBlurayDirectory, FilterPlaylists_RemovesAPictureInPictureCopyEvenWithDolbyVision)
+{
+  std::vector<PlaylistInformation> playlists{
+      MakePlaylist(800u, 2h, {1u}),
+      MakePlaylist(801u, 2h, {1u}),
+  };
+  playlists[1].hasSecondaryVideo = true;
+  playlists[1].hasDolbyVision = true;
+
+  EXPECT_TRUE(FilterPlaylists(playlists));
+  EXPECT_EQ(PlaylistNumbers(playlists), std::vector<unsigned int>{800u});
 }
 
 // Three copies must all collapse to one, not just the adjacent pair

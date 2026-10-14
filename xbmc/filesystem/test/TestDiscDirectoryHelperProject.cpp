@@ -542,6 +542,26 @@ TEST_F(TestDiscDirectoryHelperProject, Movie_SingleTitlePrefersThePlainFeatureOv
   EXPECT_EQ(GetPlaylists(items), std::vector<unsigned int>{800u});
 }
 
+TEST_F(TestDiscDirectoryHelperProject, Movie_SingleTitleIsNotASegmentNamedAsTheFeature)
+{
+  // The feature is only named as an extended cut, and a seconds-long segment is SEG_MainFeature
+  CDiscDirectoryHelper helper;
+  CURL url;
+  CFileItemList items;
+  CFileItemList allTitles;
+
+  PlaylistMap playlists{{800u, MakePlaylist(800u, 130min, {1u})},
+                        {801u, MakePlaylist(801u, 5s, {2u})}};
+  ClipMap clips{{1u, MakeClip(130min, {800u})}, {2u, MakeClip(5s, {801u})}};
+
+  helper.SetPlaylistHints(MakeProject(
+      {MakeNamed(800u, "FPL_MainFeature_EXT", 130min), MakeNamed(801u, "SEG_MainFeature", 5s)}));
+
+  EXPECT_TRUE(
+      helper.GetMoviePlaylists(url, items, allTitles, -1, GetTitle::SINGLE, clips, playlists));
+  EXPECT_EQ(GetPlaylists(items), std::vector<unsigned int>{800u});
+}
+
 TEST_F(TestDiscDirectoryHelperProject, Movie_SingleTitleKeepsTheDiscInfMainPlaylist)
 {
   // disc.inf names playlist 801 as the main title. The project names 800 as the feature
@@ -629,6 +649,27 @@ TEST_F(TestDiscDirectoryHelperProject, Movie_TheNameLeadsTheDescription)
       helper.GetMoviePlaylists(url, items, allTitles, -1, GetTitle::MAIN, clips, playlists));
   ASSERT_EQ(items.Size(), 1);
   EXPECT_TRUE(items[0]->GetLabel2().starts_with("FPL_MainFeature_eng - ")) << items[0]->GetLabel2();
+}
+
+TEST_F(TestDiscDirectoryHelperProject, Movie_SingleTitleKeepsTheHeuristicsCopyOfThePlainFeature)
+{
+  // Seen on Avatar: Fire and Ash, where FPL_MainFeature_eng translates on screen what
+  // FPL_MainFeature leaves out, and the heuristics choose it as the fuller copy
+  CDiscDirectoryHelper helper;
+  CURL url;
+  CFileItemList items;
+  CFileItemList allTitles;
+
+  PlaylistMap playlists{{800u, MakePlaylist(800u, 120min, {1u}, 3)},
+                        {1661u, MakePlaylist(1661u, 120min, {1u}, 2)}};
+  ClipMap clips{{1u, MakeClip(120min, {800u, 1661u})}};
+
+  helper.SetPlaylistHints(MakeProject({MakeNamed(800u, "FPL_MainFeature_eng", 120min),
+                                       MakeNamed(1661u, "FPL_MainFeature", 120min)}));
+
+  EXPECT_TRUE(
+      helper.GetMoviePlaylists(url, items, allTitles, -1, GetTitle::SINGLE, clips, playlists));
+  EXPECT_EQ(GetPlaylists(items), std::vector<unsigned int>{800u});
 }
 
 TEST_F(TestDiscDirectoryHelperProject, NoProjectLeavesTheHeuristicsUntouched)

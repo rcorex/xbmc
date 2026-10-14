@@ -20,6 +20,8 @@
 #include "profiles/ProfileManager.h"
 #include "settings/MediaSourceSettings.h"
 #include "storage/MediaManager.h"
+#include "utils/ArtTypes.h"
+#include "utils/DefaultArt.h"
 #include "utils/FileUtils.h"
 #include "utils/PlaceholderPaths.h"
 #include "utils/URIUtils.h"
@@ -39,12 +41,11 @@ bool CSourcesDirectory::GetDirectory(const CURL& url, CFileItemList &items)
   std::string type(url.GetFileName());
   URIUtils::RemoveSlashAtEnd(type);
 
-  std::vector<CMediaSource> sources;
-  std::vector<CMediaSource>* sourcesFromType = CMediaSourceSettings::GetInstance().GetSources(type);
-  if (!sourcesFromType)
+  const std::optional<KODI::MEDIA::MediaSection> section{KODI::MEDIA::MediaSectionFromName(type)};
+  if (!section)
     return false;
 
-  sources = *sourcesFromType;
+  std::vector<CMediaSource> sources{CMediaSourceSettings::GetInstance().GetSources(*section)};
   CServiceBroker::GetMediaManager().GetRemovableDrives(sources);
 
   return GetDirectory(sources, items);
@@ -67,32 +68,33 @@ bool CSourcesDirectory::GetDirectory(const std::vector<CMediaSource>& sources, C
       // CDetectDVDMedia::SetNewDVDShareUrl() caches disc thumb as special://temp/dvdicon.tbn
       std::string strThumb = "special://temp/dvdicon.tbn";
       if (CFileUtils::Exists(strThumb))
-        pItem->SetArt("thumb", strThumb);
+        pItem->SetArt(ART::TYPE::THUMB, strThumb);
     }
     else if (URIUtils::IsProtocol(pItem->GetPath(), "addons"))
-      strIcon = "DefaultHardDisk.png";
+      strIcon = ART::DEFAULT::HARD_DISK;
     else if (   pItem->IsPath("special://musicplaylists/")
              || pItem->IsPath("special://videoplaylists/"))
-      strIcon = "DefaultPlaylist.png";
+      strIcon = ART::DEFAULT::PLAYLIST;
     else if (VIDEO::IsVideoDb(*pItem) || MUSIC::IsMusicDb(*pItem) || pItem->IsPlugin() ||
-             pItem->IsPath(PLACEHOLDER::MUSIC_SEARCH))
-      strIcon = "DefaultFolder.png";
+             pItem->IsPath(ITEM::PLACEHOLDER::MUSIC_SEARCH))
+      strIcon = ART::DEFAULT::FOLDER;
     else if (NETWORK::IsRemote(*pItem))
-      strIcon = "DefaultNetwork.png";
+      strIcon = ART::DEFAULT::NETWORK;
     else if (pItem->IsISO9660())
-      strIcon = "DefaultDVDRom.png";
+      strIcon = ART::DEFAULT::DVD_ROM;
     else if (pItem->IsDVD())
-      strIcon = "DefaultDVDFull.png";
+      strIcon = ART::DEFAULT::DVD_FULL;
     else if (pItem->IsBluray())
-      strIcon = "DefaultBluray.png";
+      strIcon = ART::DEFAULT::BLURAY;
     else if (MUSIC::IsCDDA(*pItem))
-      strIcon = "DefaultCDDA.png";
-    else if (pItem->IsRemovable() && CServiceBroker::GetGUI()->GetTextureManager().HasTexture("DefaultRemovableDisk.png"))
-      strIcon = "DefaultRemovableDisk.png";
+      strIcon = ART::DEFAULT::CDDA;
+    else if (pItem->IsRemovable() &&
+             CServiceBroker::GetGUI()->GetTextureManager().HasTexture(ART::DEFAULT::REMOVABLE_DISK))
+      strIcon = ART::DEFAULT::REMOVABLE_DISK;
     else
-      strIcon = "DefaultHardDisk.png";
+      strIcon = ART::DEFAULT::HARD_DISK;
 
-    pItem->SetArt("icon", strIcon);
+    pItem->SetArt(ART::TYPE::ICON, strIcon);
     if (share.GetLockInfo().IsLocked() &&
         m_profileManager->GetMasterProfile().getLockMode() != LockMode::EVERYONE)
       pItem->SetOverlayImage(CGUIListItem::ICON_OVERLAY_LOCKED);

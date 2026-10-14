@@ -43,7 +43,6 @@ set(SOURCES ActorProtocol.cpp
             JSONVariantWriter.cpp
             LabelFormatter.cpp
             LangCodeExpander.cpp
-            LanguageTag.cpp
             LegacyPathTranslation.cpp
             Locale.cpp
             log.cpp
@@ -87,6 +86,7 @@ set(HEADERS ActorProtocol.h
             AlarmClock.h
             AliasShortcutUtils.h
             Archive.h
+            ArtTypes.h
             ArtUtils.h
             Artwork.h
             AspectRatioVocabulary.h
@@ -101,10 +101,12 @@ set(HEADERS ActorProtocol.h
             CPUInfo.h
             ColorUtils.h
             ComponentContainer.h
+            ContentNames.h
             ContentUtils.h
             Crc32.h
             CSSUtils.h
             DatabaseUtils.h
+            DefaultArt.h
             Digest.h
             DiscsUtils.h
             EndianSwap.h
@@ -139,11 +141,11 @@ set(HEADERS ActorProtocol.h
             ISerializable.h
             ISortable.h
             IXmlDeserializable.h
+            ItemProperties.h
             JSONVariantParser.h
             JSONVariantWriter.h
             LabelFormatter.h
             LangCodeExpander.h
-            LanguageTag.h
             LegacyPathTranslation.h
             Locale.h
             LockInfo.h
@@ -213,8 +215,10 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL Clang)
 endif()
 
 if(TARGET ${APP_NAME_LC}::OpenGl OR TARGET ${APP_NAME_LC}::OpenGLES)
-  list(APPEND SOURCES GLUtils.cpp)
-  list(APPEND HEADERS GLUtils.h)
+  list(APPEND SOURCES GLBufferObject.cpp
+                      GLUtils.cpp)
+  list(APPEND HEADERS GLBufferObject.h
+                      GLUtils.h)
 endif()
 
 if("gbm" IN_LIST CORE_PLATFORM_NAME_LC OR "wayland" IN_LIST CORE_PLATFORM_NAME_LC)

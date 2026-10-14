@@ -19,7 +19,7 @@
 #include "cores/VideoPlayer/Interface/InputStreamConstants.h"
 #include "cores/VideoPlayer/Interface/TimingConstants.h"
 #include "filesystem/SpecialProtocol.h"
-#include "utils/LanguageTag.h"
+#include "language/LanguageTag.h"
 #include "utils/StringUtils.h"
 #include "utils/URIUtils.h"
 #include "utils/log.h"
@@ -52,7 +52,7 @@ void CInputStreamProvider::GetAddonInstance(InstanceType instance_type,
 /*****************************************************************************************************************/
 
 using namespace ADDON;
-using namespace KODI::UTILS;
+using namespace KODI::LANGUAGE;
 
 CInputStreamAddon::CInputStreamAddon(const AddonInfoPtr& addonInfo,
                                      IVideoPlayer* player,
@@ -511,7 +511,9 @@ KODI_HANDLE CInputStreamAddon::cb_get_stream_transfer(KODI_HANDLE handle,
       videoStream->dovi.bl_present_flag = stream->m_dvccMetadata->m_blPresentFlag;
       videoStream->dovi.dv_bl_signal_compatibility_id =
           stream->m_dvccMetadata->m_dvBlSignalCompatibilityId;
+#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(59, 30, 100)
       videoStream->dovi.dv_md_compression = stream->m_dvccMetadata->m_dvMdCompression;
+#endif
     }
     //@}
 

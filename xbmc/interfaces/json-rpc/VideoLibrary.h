@@ -10,10 +10,12 @@
 
 #include "FileItemHandler.h"
 #include "JSONRPC.h"
+#include "XBDateTime.h"
 #include "utils/Artwork.h"
 #include "utils/DatabaseUtils.h"
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -91,8 +93,23 @@ namespace JSONRPC
     */
     static int GetDetailsFromJsonParameters(const CVariant& parameterObject);
 
+  protected:
+    struct PlaybackUpdate
+    {
+      int playCount;
+      CDateTime lastPlayed;
+    };
+
+    /*! \brief The playback state a show-level update leaves one of its episodes with.
+       \return what to store, or nothing when the episode is left as it is
+      */
+    static std::optional<PlaybackUpdate> EpisodePlaybackUpdate(const CVideoInfoTag& show,
+                                                               bool updatePlaycount,
+                                                               bool updateLastplayed,
+                                                               const CVideoInfoTag& episode);
+
   private:
-    static int RequiresAdditionalDetails(const MediaType& mediaType, const CVariant &parameterObject);
+    static int RequiresAdditionalDetails(KODI::MEDIA::TYPE mediaType, const CVariant &parameterObject);
     static JSONRPC_STATUS HandleItems(const char *idProperty, const char *resultName, CFileItemList &items, const CVariant &parameterObject, CVariant &result, bool limit = true);
     static JSONRPC_STATUS RemoveVideo(const CVariant &parameterObject);
     static void UpdateVideoTag(const CVariant& parameterObject,

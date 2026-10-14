@@ -26,6 +26,7 @@
 #include "utils/Crc32.h"
 #include "utils/Digest.h"
 #include "utils/FileExtensionProvider.h"
+#include "utils/ItemProperties.h"
 #include "utils/Random.h"
 #include "utils/RegExp.h"
 #include "utils/StringUtils.h"
@@ -704,7 +705,7 @@ void CFileItemList::Stack()
   if (IsVirtualDirectoryRoot() || IsLiveTV() || IsSourcesPath() || IsLibraryFolder())
     return;
 
-  SetProperty("isstacked", true);
+  SetProperty(ITEM::PROPERTY::IS_STACKED, true);
 
   // items needs to be sorted for stuff below to work properly
   Sort(SortBy::LABEL, SortOrder::ASCENDING);
@@ -963,7 +964,7 @@ bool CFileItemList::Save(int windowID)
     StringUtils::Replace(cachefile, "special://temp/archive_cache/", "");
     StringUtils::Replace(cachefile, ".fi", "");
     for (const auto& item : m_items)
-      item->SetProperty("cachefilename", cachefile);
+      item->SetProperty(ITEM::PROPERTY::CACHE_FILENAME, cachefile);
 
     CArchive ar(&file, CArchive::store);
     ar << *this;
@@ -1041,7 +1042,7 @@ void CFileItemList::Swap(unsigned int item1, unsigned int item2)
     std::swap(m_items[item1], m_items[item2]);
 }
 
-bool CFileItemList::UpdateItem(const CFileItem* item)
+bool CFileItemList::UpdateItem(const CFileItem* item, bool replaceLabels /* = true */)
 {
   if (!item)
     return false;
@@ -1050,7 +1051,7 @@ bool CFileItemList::UpdateItem(const CFileItem* item)
   const auto it =
       std::ranges::find_if(m_items, [&item](const auto& pItem) { return pItem->IsSamePath(item); });
   if (it != m_items.end())
-    (*it)->UpdateInfo(*item);
+    (*it)->UpdateInfo(*item, replaceLabels);
 
   return it != m_items.end();
 }

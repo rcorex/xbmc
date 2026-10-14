@@ -10,6 +10,7 @@
 
 #include "GameTypes.h"
 
+#include <cstdint>
 #include <mutex>
 #include <set>
 #include <string>
@@ -73,6 +74,15 @@ public:
   static GameClientPtr GetPlayingGameClient();
 
   /*!
+   * \brief Tell the player that hardcore mode withheld what they asked for
+   *
+   * Silently ignoring the request would read as a broken control.
+   *
+   * \param featureStringId The localized name of the feature that was withheld
+   */
+  static void NotifyBlockedByHardcore(uint32_t featureStringId);
+
+  /*!
    * \brief Check if the file extension is supported by an add-on in
    *        a local or remote repository
    *
@@ -86,6 +96,19 @@ public:
    * \brief Get all game extensions
    */
   static std::set<std::string> GetGameExtensions();
+
+  /*!
+   * \brief Get the folder that holds everything kept for one game: its
+   * savestates, in-game saves, disc state and cheat choice
+   *
+   * The folder follows the game's file name and the two folders above it, so
+   * it stays the same when the library moves to another drive or share.
+   *
+   * \param gamePath The path of the game file
+   *
+   * \return The folder, which may not exist yet
+   */
+  static std::string GetGameFolder(const std::string& gamePath);
 
   /*!
    * \brief Check if game script or game add-on can be launched directly

@@ -31,6 +31,8 @@
 #include "resources/ResourcesComponent.h"
 #include "settings/AdvancedSettings.h"
 #include "settings/SettingsComponent.h"
+#include "utils/ArtTypes.h"
+#include "utils/DefaultArt.h"
 #include "utils/URIUtils.h"
 #include "utils/log.h"
 
@@ -65,8 +67,8 @@ bool CMusicGUIInfo::InitCurrentItem(CFileItem* item)
 
         CMusicThumbLoader loader;
         loader.FillThumb(streamingItem);
-        if (streamingItem.HasArt("thumb"))
-          item->SetArt("thumb", streamingItem.GetArt("thumb"));
+        if (streamingItem.HasArt(ART::TYPE::THUMB))
+          item->SetArt(ART::TYPE::THUMB, streamingItem.GetArt(ART::TYPE::THUMB));
       }
     }
     else
@@ -474,8 +476,9 @@ bool CMusicGUIInfo::GetLabel(std::string& value,
       if (appPlayer->IsPlayingAudio())
       {
         if (fallback)
-          *fallback = "DefaultAlbumCover.png";
-        value = item->HasArt("thumb") ? item->GetArt("thumb") : "DefaultAlbumCover.png";
+          *fallback = ART::DEFAULT::ALBUM_COVER;
+        value = item->HasArt(ART::TYPE::THUMB) ? item->GetArt(ART::TYPE::THUMB)
+                                               : ART::DEFAULT::ALBUM_COVER;
         return true;
       }
       break;
@@ -618,15 +621,15 @@ bool CMusicGUIInfo::GetPlaylistInfo(std::string& value, const CGUIInfo& info) co
   if (info.GetInfo() == MUSICPLAYER_COVER)
   {
     // try to set a thumbnail
-    if (!playlistItem->HasArt("thumb"))
+    if (!playlistItem->HasArt(ART::TYPE::THUMB))
     {
       CMusicThumbLoader loader;
       loader.LoadItem(playlistItem.get());
       // still no thumb? then just the set the default cover
-      if (!playlistItem->HasArt("thumb"))
-        playlistItem->SetArt("thumb", "DefaultAlbumCover.png");
+      if (!playlistItem->HasArt(ART::TYPE::THUMB))
+        playlistItem->SetArt(ART::TYPE::THUMB, ART::DEFAULT::ALBUM_COVER);
     }
-    value = playlistItem->GetArt("thumb");
+    value = playlistItem->GetArt(ART::TYPE::THUMB);
     return true;
   }
 

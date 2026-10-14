@@ -21,7 +21,7 @@ public:
   bool LoadLang(const std::string& language) { return Load(language); }
 };
 
-using KODI::UTILS::CLanguageTag;
+using KODI::LANGUAGE::CLanguageTag;
 
 } // namespace
 
@@ -76,4 +76,16 @@ TEST(TestLangInfo, FallsBackWhenTheLanguageSettingNamesNoLanguage)
   langInfo.SetSubtitleLanguage("not a language");
   EXPECT_TRUE(langInfo.GetSubtitleLanguage(false).IsEmpty());
   EXPECT_FALSE(langInfo.GetSubtitleLanguage(true).IsEmpty());
+}
+
+TEST(TestLangInfo, RegionalDateFormatsAreTheRegions)
+{
+  CLangInfoTest langInfo;
+
+  langInfo.SetShortDateFormat("regional");
+
+  langInfo.SetLongDateFormat("regional");
+
+  EXPECT_EQ(langInfo.GetShortDateFormat(), "DD/MM/YYYY");
+  EXPECT_EQ(langInfo.GetLongDateFormat(), "DDDD, D MMMM YYYY");
 }
