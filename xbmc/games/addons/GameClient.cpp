@@ -207,12 +207,6 @@ bool CGameClient::Initialize(void)
   if (!CDirectory::Exists(Profile()))
     CDirectory::Create(Profile());
 
-  // Ensure directory exists for savestates
-  const CGameServices& gameServices = CServiceBroker::GetGameServices();
-  std::string savestatesDir = URIUtils::AddFileToFolder(gameServices.GetSavestatesFolder(), ID());
-  if (!CDirectory::Exists(savestatesDir))
-    CDirectory::Create(savestatesDir);
-
   if (!AddonProperties().InitializeProperties())
     return false;
 
@@ -256,6 +250,7 @@ bool CGameClient::Initialize(void)
   if (CreateInstance(&m_ifc) == ADDON_STATUS_OK)
   {
     Input().Initialize();
+    Cheevos().ObserveSettings();
     LogAddonProperties();
     return true;
   }
@@ -267,6 +262,7 @@ bool CGameClient::Initialize(void)
 
 void CGameClient::Unload()
 {
+  Cheevos().StopObservingSettings();
   CloseFile();
   Streams().Deinitialize();
   Input().Deinitialize();

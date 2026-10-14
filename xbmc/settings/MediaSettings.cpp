@@ -24,6 +24,7 @@
 #include "settings/dialogs/GUIDialogLibExportSettings.h"
 #include "settings/lib/Setting.h"
 #include "storage/MediaManager.h"
+#include "utils/ContentNames.h"
 #include "utils/StringUtils.h"
 #include "utils/Variant.h"
 #include "utils/XBMCTinyXML.h"
@@ -40,6 +41,8 @@
 
 using namespace KODI;
 using namespace KODI::MESSAGING;
+
+namespace CONTENT = KODI::MEDIA::CONTENT;
 
 using KODI::MESSAGING::HELPERS::DialogResponse;
 
@@ -97,6 +100,7 @@ bool CMediaSettings::Load(const TiXmlNode *settings)
     XMLUtils::GetBoolean(pElement, "nonlinstretch", m_defaultVideoSettings.m_CustomNonLinStretch);
     if (!XMLUtils::GetInt(pElement, "stereomode", m_defaultVideoSettings.m_StereoMode))
       m_defaultVideoSettings.m_StereoMode = 0;
+    XMLUtils::GetBoolean(pElement, "stereoinvert", m_defaultVideoSettings.m_StereoInvert);
     if (!XMLUtils::GetInt(pElement, "centermixlevel", m_defaultVideoSettings.m_CenterMixLevel))
       m_defaultVideoSettings.m_CenterMixLevel = 0;
 
@@ -159,13 +163,13 @@ bool CMediaSettings::Load(const TiXmlNode *settings)
   {
     int tmp;
     if (XMLUtils::GetInt(pElement, "watchmodemovies", tmp) && IsValidWatchedMode(tmp))
-      m_watchedModes["movies"] = WatchedMode{tmp};
+      m_watchedModes[CONTENT::MOVIES] = WatchedMode{tmp};
     if (XMLUtils::GetInt(pElement, "watchmodetvshows", tmp) && IsValidWatchedMode(tmp))
-      m_watchedModes["tvshows"] = WatchedMode{tmp};
+      m_watchedModes[CONTENT::TVSHOWS] = WatchedMode{tmp};
     if (XMLUtils::GetInt(pElement, "watchmodemusicvideos", tmp) && IsValidWatchedMode(tmp))
-      m_watchedModes["musicvideos"] = WatchedMode{tmp};
+      m_watchedModes[CONTENT::MUSICVIDEOS] = WatchedMode{tmp};
     if (XMLUtils::GetInt(pElement, "watchmoderecordings", tmp) && IsValidWatchedMode(tmp))
-      m_watchedModes["recordings"] = WatchedMode{tmp};
+      m_watchedModes[CONTENT::RECORDINGS] = WatchedMode{tmp};
 
     const TiXmlElement *pChild = pElement->FirstChildElement("playlist");
     if (pChild)
@@ -219,6 +223,7 @@ bool CMediaSettings::Save(TiXmlNode *settings) const
   XMLUtils::SetFloat(pNode, "subtitledelay", m_defaultVideoSettings.m_SubtitleDelay);
   XMLUtils::SetBoolean(pNode, "nonlinstretch", m_defaultVideoSettings.m_CustomNonLinStretch);
   XMLUtils::SetInt(pNode, "stereomode", m_defaultVideoSettings.m_StereoMode);
+  XMLUtils::SetBoolean(pNode, "stereoinvert", m_defaultVideoSettings.m_StereoInvert);
   XMLUtils::SetInt(pNode, "centermixlevel", m_defaultVideoSettings.m_CenterMixLevel);
   XMLUtils::SetInt(pNode, "tonemapmethod", m_defaultVideoSettings.m_ToneMapMethod);
   XMLUtils::SetFloat(pNode, "tonemapparam", m_defaultVideoSettings.m_ToneMapParam);
@@ -270,13 +275,13 @@ bool CMediaSettings::Save(TiXmlNode *settings) const
   }
 
   XMLUtils::SetInt(pNode, "watchmodemovies",
-                   static_cast<int>(m_watchedModes.find("movies")->second));
+                   static_cast<int>(m_watchedModes.find(CONTENT::MOVIES)->second));
   XMLUtils::SetInt(pNode, "watchmodetvshows",
-                   static_cast<int>(m_watchedModes.find("tvshows")->second));
+                   static_cast<int>(m_watchedModes.find(CONTENT::TVSHOWS)->second));
   XMLUtils::SetInt(pNode, "watchmodemusicvideos",
-                   static_cast<int>(m_watchedModes.find("musicvideos")->second));
+                   static_cast<int>(m_watchedModes.find(CONTENT::MUSICVIDEOS)->second));
   XMLUtils::SetInt(pNode, "watchmoderecordings",
-                   static_cast<int>(m_watchedModes.find("recordings")->second));
+                   static_cast<int>(m_watchedModes.find(CONTENT::RECORDINGS)->second));
 
   TiXmlElement videoPlaylistNode("playlist");
   playlistNode = pNode->InsertEndChild(videoPlaylistNode);
@@ -404,8 +409,8 @@ void CMediaSettings::CycleWatchedMode(WatchedMode& mode)
 
 std::string CMediaSettings::GetWatchedContent(const std::string &content)
 {
-  if (content == "seasons" || content == "episodes")
-    return "tvshows";
+  if (content == MEDIA::CONTENT::SEASONS || content == MEDIA::CONTENT::EPISODES)
+    return MEDIA::CONTENT::TVSHOWS;
 
   return content;
 }

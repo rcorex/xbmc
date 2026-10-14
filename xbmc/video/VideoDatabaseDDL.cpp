@@ -18,6 +18,7 @@
 #include "video/VideoManagerTypes.h"
 
 using namespace KODI::DATABASE;
+using KODI::MEDIA::NameOf;
 
 void CVideoDatabaseDDL::InitializeVideoVersionTypeTable(CDatabase& db)
 {
@@ -68,7 +69,7 @@ void CVideoDatabaseDDL::CreateTables(CDatabase& db)
   db.ExecuteQuery("CREATE TABLE stacktimes (idFile integer, times text)\n");
 
   CLog::Log(LOGINFO, "create genre table");
-  db.ExecuteQuery("CREATE TABLE genre ( genre_id integer primary key, name TEXT)\n");
+  db.ExecuteQuery("CREATE TABLE genre ( genre_id integer primary key AUTOINCREMENT, name TEXT)\n");
   db.ExecuteQuery("CREATE TABLE genre_link (genre_id integer, media_id integer, media_type TEXT)");
 
   CLog::Log(LOGINFO, "create country table");
@@ -77,7 +78,8 @@ void CVideoDatabaseDDL::CreateTables(CDatabase& db)
       "CREATE TABLE country_link (country_id integer, media_id integer, media_type TEXT)");
 
   CLog::Log(LOGINFO, "create movie table");
-  std::string columns = "CREATE TABLE movie ( idMovie integer primary key, idFile integer";
+  std::string columns =
+      "CREATE TABLE movie ( idMovie integer primary key AUTOINCREMENT, idFile integer";
 
   for (int i = 0; i < VIDEODB_MAX_COLUMNS; i++)
     columns += StringUtils::Format(",c{:02} text", i);
@@ -106,7 +108,7 @@ void CVideoDatabaseDDL::CreateTables(CDatabase& db)
       "playCount integer, lastPlayed text, dateAdded text)");
 
   CLog::Log(LOGINFO, "create tvshow table");
-  columns = "CREATE TABLE tvshow ( idShow integer primary key";
+  columns = "CREATE TABLE tvshow ( idShow integer primary key AUTOINCREMENT";
 
   for (int i = 0; i < VIDEODB_MAX_COLUMNS; i++)
     columns += StringUtils::Format(",c{:02} text", i);
@@ -115,7 +117,7 @@ void CVideoDatabaseDDL::CreateTables(CDatabase& db)
   db.ExecuteQuery(columns);
 
   CLog::Log(LOGINFO, "create episode table");
-  columns = "CREATE TABLE episode ( idEpisode integer primary key, idFile integer";
+  columns = "CREATE TABLE episode ( idEpisode integer primary key AUTOINCREMENT, idFile integer";
   for (int i = 0; i < VIDEODB_MAX_COLUMNS; i++)
   {
     std::string column;
@@ -142,7 +144,7 @@ void CVideoDatabaseDDL::CreateTables(CDatabase& db)
       "CREATE TABLE studio_link (studio_id integer, media_id integer, media_type TEXT)");
 
   CLog::Log(LOGINFO, "create musicvideo table");
-  columns = "CREATE TABLE musicvideo ( idMVideo integer primary key, idFile integer";
+  columns = "CREATE TABLE musicvideo ( idMVideo integer primary key AUTOINCREMENT, idFile integer";
   for (int i = 0; i < VIDEODB_MAX_COLUMNS; i++)
     columns += StringUtils::Format(",c{:02} text", i);
 
@@ -159,19 +161,21 @@ void CVideoDatabaseDDL::CreateTables(CDatabase& db)
       "integer, iFlags integer)");
 
   CLog::Log(LOGINFO, "create sets table");
-  db.ExecuteQuery("CREATE TABLE `sets` ( idSet integer primary key, strSet text, strOverview text, "
-                  "strOriginalSet text)");
+  db.ExecuteQuery("CREATE TABLE `sets` ( idSet integer primary key AUTOINCREMENT, strSet text, "
+                  "strOverview text, "
+                  "strOriginalSet text, strSortSet text)");
 
   CLog::Log(LOGINFO, "create seasons table");
-  db.ExecuteQuery("CREATE TABLE seasons ( idSeason integer primary key, idShow integer, season "
-                  "integer, name text, userrating integer, plot TEXT)");
+  db.ExecuteQuery(
+      "CREATE TABLE seasons ( idSeason integer primary key AUTOINCREMENT, idShow integer, season "
+      "integer, name text, userrating integer, plot TEXT)");
 
   CLog::Log(LOGINFO, "create art table");
   db.ExecuteQuery("CREATE TABLE art(art_id INTEGER PRIMARY KEY, media_id INTEGER, media_type TEXT, "
                   "type TEXT, url TEXT)");
 
   CLog::Log(LOGINFO, "create tag table");
-  db.ExecuteQuery("CREATE TABLE tag (tag_id integer primary key, name TEXT)");
+  db.ExecuteQuery("CREATE TABLE tag (tag_id integer primary key AUTOINCREMENT, name TEXT)");
   db.ExecuteQuery("CREATE TABLE tag_link (tag_id integer, media_id integer, media_type TEXT)");
 
   CLog::Log(LOGINFO, "create rating table");
@@ -568,6 +572,7 @@ void CVideoDatabaseDDL::CreateViews(CDatabase& db)
       "  `sets`.`strSet` AS strSet,"
       "  `sets`.`strOverview` AS strSetOverview,"
       "  `sets`.`strOriginalSet` as strOriginalSet,"
+      "  `sets`.`strSortSet` AS strSetSortTitle,"
       "  files.strFileName AS strFileName,"
       "  path.strPath AS strPath,"
       "  files.playCount AS playCount,"
@@ -621,8 +626,9 @@ void CVideoDatabaseDDL::CreateViews(CDatabase& db)
       "    path.idPath = files.idPath"
       "  LEFT JOIN bookmark ON"
       "    bookmark.idFile = vv.idFile AND bookmark.type = 1",
-      MediaTypeMovie, VideoAssetType::VERSION, MediaTypeMovie, VideoAssetType::EXTRA,
-      VideoAssetType::VERSION, VIDEODB_ID_RATING_ID, VIDEODB_ID_IDENT_ID, MediaTypeMovie);
+      NameOf(KODI::MEDIA::TYPE::MOVIE).c_str(), VideoAssetType::VERSION, NameOf(KODI::MEDIA::TYPE::MOVIE).c_str(),
+      VideoAssetType::EXTRA, VideoAssetType::VERSION, VIDEODB_ID_RATING_ID, VIDEODB_ID_IDENT_ID,
+      NameOf(KODI::MEDIA::TYPE::MOVIE).c_str());
 
   db.ExecuteQuery(movieview);
 }

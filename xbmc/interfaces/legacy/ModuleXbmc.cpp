@@ -27,6 +27,7 @@
 #include "guilib/TextureManager.h"
 #include "input/WindowTranslator.h"
 #include "language/LangInfo.h"
+#include "language/LanguageTag.h"
 #include "messaging/ApplicationMessenger.h"
 #include "network/Network.h"
 #include "network/NetworkServices.h"
@@ -44,7 +45,6 @@
 #include "utils/FileExtensionProvider.h"
 #include "utils/FileUtils.h"
 #include "utils/LangCodeExpander.h"
-#include "utils/LanguageTag.h"
 #include "utils/MemUtils.h"
 #include "utils/StringUtils.h"
 #include "utils/SystemInfo.h"
@@ -267,6 +267,7 @@ namespace XBMCAddon
     String getInfoLabel(const char* cLine)
     {
       XBMC_TRACE;
+      DelayedCallGuard dg;
       if (!cLine)
       {
         String ret;
@@ -286,6 +287,7 @@ namespace XBMCAddon
     String getInfoImage(const char * infotag)
     {
       XBMC_TRACE;
+      DelayedCallGuard dg;
       if (!infotag)
         {
           String ret;
@@ -533,15 +535,15 @@ namespace XBMCAddon
           break;
         }
       case CLangCodeExpander::ISO_639_1:
-        if (const auto tag = KODI::UTILS::CLanguageTag::TryParse(language); tag.has_value())
+        if (const auto tag = KODI::LANGUAGE::CLanguageTag::TryParse(language); tag.has_value())
           convertedLanguage = tag->AsIso6391();
         break;
       case CLangCodeExpander::ISO_639_2:
-        if (const auto tag = KODI::UTILS::CLanguageTag::TryParse(language); tag.has_value())
+        if (const auto tag = KODI::LANGUAGE::CLanguageTag::TryParse(language); tag.has_value())
           convertedLanguage = tag->AsIso6392B();
         break;
       case CLangCodeExpander::ISO_NAME:
-        if (const auto tag = KODI::UTILS::CLanguageTag::TryParse(language); tag.has_value())
+        if (const auto tag = KODI::LANGUAGE::CLanguageTag::TryParse(language); tag.has_value())
           convertedLanguage = tag->GetEnglishLanguageName();
         break;
       default:

@@ -8,18 +8,18 @@
 
 #pragma once
 
+#include "BaseRenderer.h"
+#include "FrameBufferObject.h"
+#include "RenderFlags.h"
+#include "RenderInfo.h"
+#include "cores/VideoPlayer/DVDCodecs/Video/DVDVideoCodec.h"
+#include "cores/VideoSettings.h"
+#include "guilib/Shader.h"
+#include "windowing/GraphicContext.h"
+
 #include <vector>
 
 #include "system_gl.h"
-
-#include "BaseRenderer.h"
-#include "cores/VideoPlayer/DVDCodecs/Video/DVDVideoCodec.h"
-#include "cores/VideoSettings.h"
-#include "FrameBufferObject.h"
-#include "guilib/Shader.h"
-#include "RenderFlags.h"
-#include "RenderInfo.h"
-#include "windowing/GraphicContext.h"
 
 extern "C" {
 #include <libavutil/mastering_display_metadata.h>

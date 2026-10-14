@@ -7,6 +7,7 @@ set(SOURCES TestAlarmClock.cpp
             TestBitstreamConverter.cpp
             TestBitstreamStats.cpp
             TestCharsetConverter.cpp
+            TestContentNames.cpp
             TestCPUInfo.cpp
             TestComponentContainer.cpp
             TestContentUtils.cpp
@@ -19,6 +20,7 @@ set(SOURCES TestAlarmClock.cpp
             TestFileOperationJob.cpp
             TestFileUtils.cpp
             TestGlobalsHandling.cpp
+            TestGroupUtils.cpp
             TestGPUInfo.cpp
             TestHTMLUtil.cpp
             TestHttpHeader.cpp
@@ -31,7 +33,6 @@ set(SOURCES TestAlarmClock.cpp
             TestJSONVariantWriter.cpp
             TestLabelFormatter.cpp
             TestLangCodeExpander.cpp
-            TestLanguageTag.cpp
             TestLegacyPathTranslation.cpp
             TestLocale.cpp
             Testlog.cpp
@@ -63,6 +64,11 @@ set(SOURCES TestAlarmClock.cpp
 
 if(TARGET ${APP_NAME_LC}::Bluray)
   list(APPEND SOURCES TestBluray.cpp)
+endif()
+
+# Needs EGL to create a headless GL context; skips itself at runtime when no driver is available.
+if(TARGET ${APP_NAME_LC}::EGL AND (TARGET ${APP_NAME_LC}::OpenGl OR TARGET ${APP_NAME_LC}::OpenGLES))
+  list(APPEND SOURCES TestGLBufferObject.cpp)
 endif()
 
 set(HEADERS TestGlobalsHandlingPattern1.h)

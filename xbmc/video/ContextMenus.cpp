@@ -21,9 +21,11 @@
 #include "resources/ResourcesComponent.h"
 #include "settings/Settings.h"
 #include "settings/SettingsComponent.h"
+#include "utils/ItemProperties.h"
 #include "utils/PlayerUtils.h"
 #include "utils/StringUtils.h"
 #include "utils/URIUtils.h"
+#include "video/VideoDbPaths.h"
 #include "video/VideoDbUrl.h"
 #include "video/VideoFileItemClassify.h"
 #include "video/VideoInfoTag.h"
@@ -42,7 +44,7 @@ using namespace KODI;
 namespace CONTEXTMENU
 {
 
-CVideoInfoBase::CVideoInfoBase(MediaType mediaType)
+CVideoInfoBase::CVideoInfoBase(MEDIA::TYPE mediaType)
   : CStaticContextMenuAction(19033), m_mediaType(std::move(mediaType))
 {
 }
@@ -55,7 +57,7 @@ bool CVideoInfoBase::IsVisible(const CFileItem& item) const
   if (item.IsPVRRecording())
     return false; // pvr recordings have its own implementation for this
 
-  return item.GetVideoInfoTag()->m_type == m_mediaType;
+  return item.GetVideoInfoTag()->GetMediaType() == m_mediaType;
 }
 
 bool CVideoInfoBase::Execute(const std::shared_ptr<CFileItem>& item) const
@@ -76,7 +78,7 @@ bool CVideoInfo::IsVisible(const CFileItem& item) const
     return false; // pvr recordings have its own implementation for this
 
   const auto* tag{item.GetVideoInfoTag()};
-  return tag && tag->m_type == MediaTypeNone && !tag->IsEmpty() && VIDEO::IsVideo(item);
+  return tag && tag->m_type.empty() && !tag->IsEmpty() && VIDEO::IsVideo(item);
 }
 
 bool CVideoRemoveResumePoint::IsVisible(const CFileItem& itemIn) const
@@ -105,10 +107,11 @@ bool CVideoMarkWatched::IsVisible(const CFileItem& item) const
 
   if (item.IsFolder())
   {
-    if (item.HasProperty("watchedepisodes") && item.HasProperty("totalepisodes"))
+    if (item.HasProperty(ITEM::PROPERTY::WATCHED_EPISODES) &&
+        item.HasProperty(ITEM::PROPERTY::TOTAL_EPISODES))
     {
-      return item.GetProperty("watchedepisodes").asInteger() <
-             item.GetProperty("totalepisodes").asInteger();
+      return item.GetProperty(ITEM::PROPERTY::WATCHED_EPISODES).asInteger() <
+             item.GetProperty(ITEM::PROPERTY::TOTAL_EPISODES).asInteger();
     }
     else if (item.HasProperty("watched") && item.HasProperty("total"))
     {
@@ -116,9 +119,9 @@ bool CVideoMarkWatched::IsVisible(const CFileItem& item) const
     }
     else if (VIDEO::IsVideoDb(item))
       return true;
-    else if (StringUtils::StartsWithNoCase(item.GetPath(), LIBRARY::VIDEO))
+    else if (StringUtils::StartsWithNoCase(item.GetPath(), MEDIA::LIBRARY_PATH::VIDEO))
       return true;
-    else if (item.GetProperty("IsVideoFolder").asBoolean())
+    else if (item.GetProperty(ITEM::PROPERTY::IS_VIDEO_FOLDER).asBoolean())
       return true;
     else
       return !item.IsParentFolder() && URIUtils::IsPVRRecordingFileOrFolder(item.GetPath());
@@ -145,9 +148,9 @@ bool CVideoMarkUnWatched::IsVisible(const CFileItem& item) const
 
   if (item.IsFolder())
   {
-    if (item.HasProperty("watchedepisodes"))
+    if (item.HasProperty(ITEM::PROPERTY::WATCHED_EPISODES))
     {
-      return item.GetProperty("watchedepisodes").asInteger() > 0;
+      return item.GetProperty(ITEM::PROPERTY::WATCHED_EPISODES).asInteger() > 0;
     }
     else if (item.HasProperty("watched"))
     {
@@ -155,9 +158,9 @@ bool CVideoMarkUnWatched::IsVisible(const CFileItem& item) const
     }
     else if (VIDEO::IsVideoDb(item))
       return true;
-    else if (StringUtils::StartsWithNoCase(item.GetPath(), LIBRARY::VIDEO))
+    else if (StringUtils::StartsWithNoCase(item.GetPath(), MEDIA::LIBRARY_PATH::VIDEO))
       return true;
-    else if (item.GetProperty("IsVideoFolder").asBoolean())
+    else if (item.GetProperty(ITEM::PROPERTY::IS_VIDEO_FOLDER).asBoolean())
       return true;
     else
       return !item.IsParentFolder() && URIUtils::IsPVRRecordingFileOrFolder(item.GetPath());
@@ -246,7 +249,7 @@ void SetPathAndPlay(const std::shared_ptr<CFileItem>& item, PlayMode mode)
     {
       if (!itemCopy->IsFolder())
       {
-        itemCopy->SetProperty("original_listitem_url", item->GetPath());
+        itemCopy->SetProperty(ITEM::PROPERTY::ORIGINAL_LISTITEM_URL, item->GetPath());
         itemCopy->SetPath(item->GetVideoInfoTag()->m_strFileNameAndPath);
       }
       else if (itemCopy->HasVideoInfoTag() && itemCopy->GetVideoInfoTag()->IsDefaultVideoVersion())
@@ -457,7 +460,7 @@ bool CVideoPlayAndQueue::Execute(const std::shared_ptr<CFileItem>& item) const
 bool CTVShowScanForNewContent::IsVisible(const CFileItem& item) const
 {
   return !item.IsParentFolder() && item.HasVideoInfoTag() &&
-         item.GetVideoInfoTag()->m_type == MediaTypeTvShow;
+         item.GetVideoInfoTag()->GetMediaType() == MEDIA::TYPE::TV_SHOW;
 }
 
 bool CTVShowScanForNewContent::Execute(const std::shared_ptr<CFileItem>& item) const
@@ -487,7 +490,7 @@ bool CVideoShowExtras::Execute(const std::shared_ptr<CFileItem>& item) const
   if (movieId < 0)
     return false;
 
-  const std::string path = StringUtils::Format("videodb://movies/titles/{}/{}/", movieId,
+  const std::string path = StringUtils::Format("{}{}/{}/", VIDEO::DB_PATH::MOVIE_TITLES, movieId,
                                                static_cast<int>(VideoAssetType::EXTRA));
 
   const int target = WINDOW_VIDEO_NAV;

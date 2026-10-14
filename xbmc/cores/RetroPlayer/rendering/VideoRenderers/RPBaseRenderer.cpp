@@ -111,6 +111,12 @@ void CRPBaseRenderer::SetBuffer(IRenderBuffer* buffer)
   }
 }
 
+void CRPBaseRenderer::SetSpeed(double speed)
+{
+  if (m_shaderPreset)
+    m_shaderPreset->SetSpeed(speed);
+}
+
 void CRPBaseRenderer::RenderFrame(bool clear, uint8_t alpha)
 {
   m_lastRender = m_renderFrameCount;
@@ -120,7 +126,7 @@ void CRPBaseRenderer::RenderFrame(bool clear, uint8_t alpha)
 
   PreRender(clear);
   ManageRenderArea(*m_renderBuffer);
-  RenderInternal(clear, alpha);
+  RenderInternal(alpha);
   PostRender();
 
   m_renderBuffer->SetRendered(true);

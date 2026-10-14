@@ -1,4 +1,6 @@
-set(SOURCES TestDVDSubtitlesLibass.cpp
+set(SOURCES TestContentGeometrySampler.cpp
+            TestDVDSubtitlesLibass.cpp
+            TestRadioRDSCountries.cpp
             TestVideoCodecPictureFormat.cpp
             TestVideoPlayer.cpp)
 

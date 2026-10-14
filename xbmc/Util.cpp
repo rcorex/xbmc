@@ -84,6 +84,7 @@
 #include "settings/Settings.h"
 #include "settings/SettingsComponent.h"
 #include "storage/MediaManager.h"
+#include "utils/DefaultArt.h"
 #include "utils/Digest.h"
 #include "utils/FileExtensionProvider.h"
 #include "utils/RegExp.h"
@@ -91,6 +92,7 @@
 #include "video/FilenameAttributes.h"
 #include "video/VideoDatabase.h"
 #include "video/VideoFileItemClassify.h"
+#include "video/VideoInfoTag.h"
 #include "windowing/GraphicContext.h"
 #include "windowing/WinSystem.h"
 
@@ -400,7 +402,11 @@ std::string CUtil::GetTitleFromPath(const CURL& url, bool bIsFolder /* = false *
     strFilename = CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(136);
 
   else if (URIUtils::HasParentInHostname(url) && strFilename.empty())
-    strFilename = URIUtils::GetFileName(url.GetHostName());
+  {
+    const std::string& parent = url.GetHostName();
+    strFilename = URIUtils::IsURL(parent) ? URIUtils::GetDecodedFileName(parent)
+                                          : URIUtils::GetFileName(parent);
+  }
 
   // now remove the extension if needed
   if (!CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
@@ -684,7 +690,7 @@ void CUtil::GetDVDDriveIcon(const std::string& strPath, std::string& strIcon)
 {
   if (!CServiceBroker::GetMediaManager().IsDiscInDrive(strPath))
   {
-    strIcon = "DefaultDVDEmpty.png";
+    strIcon = ART::DEFAULT::DVD_EMPTY;
     return ;
   }
 
@@ -692,13 +698,13 @@ void CUtil::GetDVDDriveIcon(const std::string& strPath, std::string& strIcon)
 
   if (item.IsBluray())
   {
-    strIcon = "DefaultBluray.png";
+    strIcon = ART::DEFAULT::BLURAY;
     return;
   }
 
   if ( URIUtils::IsDVD(strPath) )
   {
-    strIcon = "DefaultDVDFull.png";
+    strIcon = ART::DEFAULT::DVD_FULL;
     return ;
   }
 
@@ -708,17 +714,17 @@ void CUtil::GetDVDDriveIcon(const std::string& strPath, std::string& strIcon)
     const std::shared_ptr<CCdInfo> pInfo{CServiceBroker::GetMediaManager().GetCdInfo()};
     if (pInfo && pInfo->IsVideoCd(1))
     {
-      strIcon = "DefaultVCD.png";
+      strIcon = ART::DEFAULT::VCD;
       return ;
     }
 #endif
-    strIcon = "DefaultDVDRom.png";
+    strIcon = ART::DEFAULT::DVD_ROM;
     return ;
   }
 
   if ( URIUtils::IsCDDA(strPath) )
   {
-    strIcon = "DefaultCDDA.png";
+    strIcon = ART::DEFAULT::CDDA;
     return ;
   }
 }
@@ -1353,9 +1359,11 @@ std::string CUtil::TranslateSpecialSource(const std::string &strSpecial)
     else if (StringUtils::StartsWithNoCase(strSpecial, "$screenshots"))
       return URIUtils::AddFileToFolder("special://screenshots/", strSpecial.substr(12));
     else if (StringUtils::StartsWithNoCase(strSpecial, "$musicplaylists"))
-      return URIUtils::AddFileToFolder("special://musicplaylists/", strSpecial.substr(15));
+      return URIUtils::AddFileToFolder(PlaylistsPathOf(KODI::MEDIA::MediaSection::MUSIC),
+                                       strSpecial.substr(15));
     else if (StringUtils::StartsWithNoCase(strSpecial, "$videoplaylists"))
-      return URIUtils::AddFileToFolder("special://videoplaylists/", strSpecial.substr(15));
+      return URIUtils::AddFileToFolder(PlaylistsPathOf(KODI::MEDIA::MediaSection::VIDEO),
+                                       strSpecial.substr(15));
     else if (StringUtils::StartsWithNoCase(strSpecial, "$cdrips"))
       return URIUtils::AddFileToFolder("special://cdrips/", strSpecial.substr(7));
     // this one will be removed post 2.0
@@ -1365,22 +1373,58 @@ std::string CUtil::TranslateSpecialSource(const std::string &strSpecial)
   return strSpecial;
 }
 
-std::string CUtil::MusicPlaylistsLocation()
+namespace
+{
+//! The folders holding the playlists of \p section: its own, and the mixed one
+std::vector<std::string> PlaylistsFoldersOf(KODI::MEDIA::MediaSection section)
 {
   const std::string path = CServiceBroker::GetSettingsComponent()->GetSettings()->GetString(CSettings::SETTING_SYSTEM_PLAYLISTSPATH);
-  std::vector<std::string> vec;
-  vec.push_back(URIUtils::AddFileToFolder(path, "music"));
-  vec.push_back(URIUtils::AddFileToFolder(path, "mixed"));
-  return XFILE::CMultiPathDirectory::ConstructMultiPath(vec);
+  return {URIUtils::AddFileToFolder(path, section == KODI::MEDIA::MediaSection::MUSIC ? "music"
+                                                                                      : "video"),
+          URIUtils::AddFileToFolder(path, "mixed")};
+}
+} // namespace
+
+std::string CUtil::MusicPlaylistsLocation()
+{
+  return XFILE::CMultiPathDirectory::ConstructMultiPath(
+      PlaylistsFoldersOf(KODI::MEDIA::MediaSection::MUSIC));
 }
 
 std::string CUtil::VideoPlaylistsLocation()
 {
-  const std::string path = CServiceBroker::GetSettingsComponent()->GetSettings()->GetString(CSettings::SETTING_SYSTEM_PLAYLISTSPATH);
-  std::vector<std::string> vec;
-  vec.push_back(URIUtils::AddFileToFolder(path, "video"));
-  vec.push_back(URIUtils::AddFileToFolder(path, "mixed"));
-  return XFILE::CMultiPathDirectory::ConstructMultiPath(vec);
+  return XFILE::CMultiPathDirectory::ConstructMultiPath(
+      PlaylistsFoldersOf(KODI::MEDIA::MediaSection::VIDEO));
+}
+
+std::string CUtil::PlaylistsPathOf(KODI::MEDIA::MediaSection section)
+{
+  switch (section)
+  {
+    case KODI::MEDIA::MediaSection::MUSIC:
+      return "special://musicplaylists/";
+    case KODI::MEDIA::MediaSection::VIDEO:
+      return "special://videoplaylists/";
+    default:
+      return {};
+  }
+}
+
+bool CUtil::IsInPlaylistsFolder(const std::string& path, KODI::MEDIA::MediaSection section)
+{
+  const std::string playlists{PlaylistsPathOf(section)};
+  if (playlists.empty())
+    return false;
+  if (URIUtils::PathHasParent(path, playlists))
+    return true;
+  // With no playlists path set the folders are relative paths, which name no place
+  if (CServiceBroker::GetSettingsComponent()
+          ->GetSettings()
+          ->GetString(CSettings::SETTING_SYSTEM_PLAYLISTSPATH)
+          .empty())
+    return false;
+  return std::ranges::any_of(PlaylistsFoldersOf(section), [&path](const std::string& folder)
+                             { return URIUtils::PathHasParent(path, folder); });
 }
 
 void CUtil::DeleteMusicDatabaseDirectoryCache()
@@ -2070,8 +2114,20 @@ void CUtil::ScanForExternalSubtitles(const std::string& strMovie, std::vector<st
   auto start = std::chrono::steady_clock::now();
 
   CFileItem item(strMovie, false);
-  if ((NETWORK::IsInternetStream(item) && !URIUtils::IsOnLAN(item.GetDynPath())) ||
-      PLAYLIST::IsPlayList(item) || item.IsPVR() || !VIDEO::IsVideo(item))
+  // A local .strm is the anchor we want to scan around, not the playlist/stream we want to reject.
+  const bool isStrmAnchor = item.IsStrm() && !item.IsPlugin();
+  const bool isInternetStream = NETWORK::IsInternetStream(item);
+  const bool isOnLAN = URIUtils::IsOnLAN(item.GetDynPath());
+  const bool isPlayList = PLAYLIST::IsPlayList(item);
+  const bool isVideo = VIDEO::IsVideo(item);
+  const bool isPvr = item.IsPVR();
+  CLog::Log(LOGDEBUG,
+            "STRM-SUBS scan anchor path='{}' dyn='{}' isStrm={} isPlaylist={} isVideo={} "
+            "isInternetStream={} isOnLAN={} isPvr={}",
+            CURL::GetRedacted(item.GetPath()), CURL::GetRedacted(item.GetDynPath()), isStrmAnchor,
+            isPlayList, isVideo, isInternetStream, isOnLAN, isPvr);
+  if ((isInternetStream && !isOnLAN) || (!isStrmAnchor && isPlayList) || isPvr ||
+      (!isStrmAnchor && !isVideo))
     return;
 
   CLog::Log(LOGDEBUG, "{}: Searching for subtitles...", __FUNCTION__);
@@ -2197,13 +2253,14 @@ std::optional<StreamFlags> ExternalStreamFlagFromToken(std::string_view token)
  * \param[in] token One token of the filename.
  * \return The language, or nullopt where the token states none.
  */
-std::optional<KODI::UTILS::CLanguageTag> ExternalStreamLanguageFromToken(const std::string& token)
+std::optional<KODI::LANGUAGE::CLanguageTag> ExternalStreamLanguageFromToken(
+    const std::string& token)
 {
   // _ stands in for the BCP 47 subtag separator, since - separates the filename's own tokens
   std::string langCode{token};
   std::ranges::replace(langCode, '_', '-');
 
-  return KODI::UTILS::CLanguageTag::TryParse(langCode);
+  return KODI::LANGUAGE::CLanguageTag::TryParse(langCode);
 }
 } // namespace
 
@@ -2514,13 +2571,19 @@ std::string CUtil::GetHexString(const std::span<const uint8_t>& buf, int count)
 
 bool CUtil::UseDynPathForAddOrUpdate(const CFileItem& item)
 {
-  if (item.IsStack() ||
-      (URIUtils::IsBlurayPath(item.GetDynPath()) &&
-       (item.GetVideoContentType() == VideoDbContentType::MOVIES ||
-        item.GetVideoContentType() == VideoDbContentType::EPISODES ||
-        item.GetVideoContentType() == VideoDbContentType::UNKNOWN /* Removable bluray */)))
-  {
+  if (item.IsStack())
     return true;
+
+  if (URIUtils::IsBlurayPath(item.GetDynPath()))
+  {
+    // A disc image played from outside the library keeps its state against the image, as the
+    // image is what is looked up when it is played or listed again
+    const VideoDbContentType type{item.GetVideoContentType()};
+    const bool isLibraryItem{item.HasVideoInfoTag() && item.GetVideoInfoTag()->m_iDbId >= 0};
+    if (((type == VideoDbContentType::MOVIES || type == VideoDbContentType::EPISODES) &&
+         isLibraryItem) ||
+        type == VideoDbContentType::UNKNOWN /* Removable bluray */)
+      return true;
   }
 
   return URIUtils::IsArchive(CURL(item.GetDynPath()));

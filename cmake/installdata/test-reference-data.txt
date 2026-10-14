@@ -58,6 +58,9 @@ xbmc/playlists/test/test.xspf
 xbmc/settings/test/test-MediaSources.xml
 xbmc/cores/VideoPlayer/test/testdata/av1_10bit_320x240.mkv
 xbmc/cores/VideoPlayer/test/testdata/h264_8bit_320x240.mkv
+xbmc/cores/VideoPlayer/test/testdata/letterbox_320x240_bars40.mp4
+xbmc/cores/VideoPlayer/test/testdata/letterbox_320x240_bars40_12bit.mkv
+xbmc/cores/VideoPlayer/test/testdata/sbs_640x240_bars40.mkv
 xbmc/video/test/testdata/moviestack_ab/Movie-(2001)/Movie-(2001)A.mp4
 xbmc/video/test/testdata/moviestack_ab/Movie-(2001)/Movie-(2001)B.mp4
 xbmc/video/test/testdata/moviestack_part/Movie_(2001)/Movie_(2001)_part1.mkv
@@ -91,6 +94,9 @@ xbmc/language/i18n/Bcp47Registry/test/test-language-subtag-registry-strings.txt
 xbmc/language/i18n/Bcp47Registry/test/test-language-subtag-registry-type.txt
 xbmc/utils/test/CXBMCTinyXML-test.xml
 xbmc/utils/test/rss.xml
+xbmc/utils/test/data/bluray/BDMV/PLAYLIST/00888.mpls
+xbmc/utils/test/data/bluray/BDMV/PLAYLIST/00889.mpls
+xbmc/utils/test/data/bluray/BDMV/PLAYLIST/00890.mpls
 xbmc/utils/test/data/bluray/BDMV/STREAM/00001.m2ts
 xbmc/utils/test/data/language/Spanish/strings.po
 xbmc/utils/test/resources/sample_chpl.mp4

@@ -9,8 +9,9 @@
 #pragma once
 
 #include "MediaSource.h" // Definition of std::vector<CMediaSource>
+#include "language/LanguageTag.h"
+#include "media/MediaSection.h"
 #include "utils/Digest.h"
-#include "utils/LanguageTag.h"
 #include "utils/RegExp.h"
 
 #include <cstdint>
@@ -37,7 +38,7 @@ class CURL;
 struct ExternalStreamInfo
 {
   std::string name;
-  KODI::UTILS::CLanguageTag language;
+  KODI::LANGUAGE::CLanguageTag language;
   unsigned int flag = 0;
 };
 
@@ -165,6 +166,14 @@ public:
   static void DeleteVideoDatabaseDirectoryCache();
   static std::string MusicPlaylistsLocation();
   static std::string VideoPlaylistsLocation();
+
+  //! \brief The path listing the playlists of \p section: special://musicplaylists/ or
+  //! special://videoplaylists/. Empty for a section without playlists of its own.
+  static std::string PlaylistsPathOf(KODI::MEDIA::MediaSection section);
+
+  //! \brief Whether \p path lies in the playlists folder of \p section, under its special:// path or
+  //! the folders that path resolves to, wherever the user keeps playlists.
+  static bool IsInPlaylistsFolder(const std::string& path, KODI::MEDIA::MediaSection section);
 
   static void GetSkinThemes(std::vector<std::string>& vecTheme);
   static void GetRecursiveListing(const std::string& strPath, CFileItemList& items, const std::string& strMask, unsigned int flags = 0 /* DIR_FLAG_DEFAULTS */);

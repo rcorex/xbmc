@@ -29,6 +29,7 @@
 #include "settings/lib/Setting.h"
 #include "settings/lib/SettingDefinitions.h"
 #include "threads/Timer.h"
+#include "utils/AspectRatioVocabulary.h"
 #include "utils/FileUtils.h"
 #include "utils/StringUtils.h"
 #include "utils/URIUtils.h"
@@ -80,6 +81,7 @@ public:
 private:
   CAddon &m_addon;
   CTimer m_timer;
+  CCriticalSection m_critical;
 };
 
 bool CSkinSetting::Serialize(TiXmlElement* parent) const
@@ -161,6 +163,45 @@ bool CSkinSettingBool::SerializeSetting(TiXmlElement* element) const
   return true;
 }
 
+//! \brief The ratio a layout's aspect attribute declares; zero when nothing usable is stated.
+static float ParseDeclaredAspect(const std::string& strAspect, const std::string& skinId)
+{
+  float aspect = 0;
+
+  if (strAspect.find(':') != std::string::npos)
+  {
+    const std::vector<std::string> fracs = StringUtils::Split(strAspect, ':');
+    if (fracs.size() == 2)
+    {
+      const float w = StringUtils::ToFloat(fracs[0]);
+      const float h = StringUtils::ToFloat(fracs[1]);
+      if (h > 0.0f)
+        aspect = w / h;
+    }
+
+    if (aspect > 0.0f)
+      CLog::Log(LOGDEBUG, "Skin {}: aspect \"{}\" is a fraction, use \"{:.2f}\"", skinId, strAspect,
+                aspect);
+  }
+  else if (!strAspect.empty())
+  {
+    aspect = StringUtils::ToFloat(strAspect);
+
+    const float canonical = KODI::UTILS::CAspectRatioVocabulary::RatioForKey(
+        KODI::UTILS::CAspectRatioVocabulary::Key(aspect));
+    if (canonical > 0.0f)
+      aspect = canonical;
+  }
+
+  if (aspect > 0.0f)
+    return aspect;
+
+  if (!strAspect.empty())
+    CLog::Log(LOGDEBUG, "Skin {}: aspect \"{}\" is not a ratio", skinId, strAspect);
+
+  return 0.0f;
+}
+
 CSkinInfo::CSkinInfo(const AddonInfoPtr& addonInfo,
                      const RESOLUTION_INFO& resolution /* = RESOLUTION_INFO() */)
   : CAddon(addonInfo, AddonType::SKIN),
@@ -183,11 +224,8 @@ CSkinInfo::CSkinInfo(const AddonInfoPtr& addonInfo) : CAddon(addonInfo, AddonTyp
     const bool defRes = values.GetValue("res@default").asBoolean();
     const std::string folder = values.GetValue("res@folder").asString();
     const std::string strAspect = values.GetValue("res@aspect").asString();
-    float aspect = 0;
+    const float aspect = ParseDeclaredAspect(strAspect, ID());
 
-    const std::vector<std::string> fracs = StringUtils::Split(strAspect, ':');
-    if (fracs.size() == 2)
-      aspect = static_cast<float>(std::atof(fracs[0].c_str()) / std::atof(fracs[1].c_str()));
     if (width > 0 && height > 0)
     {
       RESOLUTION_INFO res(width, height, aspect, folder);
@@ -664,6 +702,7 @@ void CSkinInfo::ToggleDebug()
 
 int CSkinInfo::TranslateString(const std::string &setting)
 {
+  std::unique_lock lock(m_settingsCritical);
   // run through and see if we have this setting
   for (const auto& [id, settingstring] : m_strings)
   {
@@ -693,21 +732,24 @@ int CSkinInfo::GetInt(int setting) const
   return settingValueInt;
 }
 
-const std::string& CSkinInfo::GetString(int setting) const
+std::string CSkinInfo::GetString(int setting) const
 {
+  std::unique_lock lock(m_settingsCritical);
   const auto& it = m_strings.find(setting);
   if (it != m_strings.end())
     return it->second->value;
 
-  return StringUtils::Empty;
+  return {};
 }
 
 void CSkinInfo::SetString(int setting, std::string_view label)
 {
+  std::unique_lock lock(m_settingsCritical);
   auto&& it = m_strings.find(setting);
   if (it != m_strings.end())
   {
     it->second->value = label;
+    lock.unlock();
     m_settingsUpdateHandler->TriggerSave();
     return;
   }
@@ -718,6 +760,7 @@ void CSkinInfo::SetString(int setting, std::string_view label)
 
 int CSkinInfo::TranslateBool(const std::string &setting)
 {
+  std::unique_lock lock(m_settingsCritical);
   // run through and see if we have this setting
   for (const auto& [id, settingbool] : m_bools)
   {
@@ -731,6 +774,7 @@ int CSkinInfo::TranslateBool(const std::string &setting)
 
   const auto number = static_cast<int>(m_bools.size() + m_strings.size());
   m_bools.try_emplace(number, skinBool);
+  lock.unlock();
   m_settingsUpdateHandler->TriggerSave();
 
   return number;
@@ -738,6 +782,7 @@ int CSkinInfo::TranslateBool(const std::string &setting)
 
 bool CSkinInfo::GetBool(int setting) const
 {
+  std::unique_lock lock(m_settingsCritical);
   const auto& it = m_bools.find(setting);
   if (it != m_bools.end())
     return it->second->value;
@@ -748,10 +793,12 @@ bool CSkinInfo::GetBool(int setting) const
 
 void CSkinInfo::SetBool(int setting, bool set)
 {
+  std::unique_lock lock(m_settingsCritical);
   auto&& it = m_bools.find(setting);
   if (it != m_bools.end())
   {
     it->second->value = set;
+    lock.unlock();
     m_settingsUpdateHandler->TriggerSave();
     return;
   }
@@ -762,6 +809,7 @@ void CSkinInfo::SetBool(int setting, bool set)
 
 std::set<CSkinSettingPtr> CSkinInfo::GetSkinSettings() const
 {
+  std::unique_lock lock(m_settingsCritical);
   std::set<CSkinSettingPtr> settings;
 
   for (const auto& [_, skinsetting] : m_settings)
@@ -772,6 +820,7 @@ std::set<CSkinSettingPtr> CSkinInfo::GetSkinSettings() const
 
 CSkinSettingPtr CSkinInfo::GetSkinSetting(const std::string& settingId)
 {
+  std::unique_lock lock(m_settingsCritical);
   const auto& it = m_settings.find(settingId);
   if (it != m_settings.end())
     return it->second;
@@ -781,6 +830,7 @@ CSkinSettingPtr CSkinInfo::GetSkinSetting(const std::string& settingId)
 
 std::shared_ptr<const CSkinSetting> CSkinInfo::GetSkinSetting(const std::string& settingId) const
 {
+  std::unique_lock lock(m_settingsCritical);
   const auto& it = m_settings.find(settingId);
   if (it != m_settings.end())
     return it->second;
@@ -790,12 +840,14 @@ std::shared_ptr<const CSkinSetting> CSkinInfo::GetSkinSetting(const std::string&
 
 void CSkinInfo::Reset(const std::string &setting)
 {
+  std::unique_lock lock(m_settingsCritical);
   // run through and see if we have this setting as a string
   for (const auto& [_, settingstring] : m_strings)
   {
     if (StringUtils::EqualsNoCase(setting, settingstring->name))
     {
       settingstring->value.clear();
+      lock.unlock();
       m_settingsUpdateHandler->TriggerSave();
       return;
     }
@@ -807,6 +859,7 @@ void CSkinInfo::Reset(const std::string &setting)
     if (StringUtils::EqualsNoCase(setting, settingbool->name))
     {
       settingbool->value = false;
+      lock.unlock();
       m_settingsUpdateHandler->TriggerSave();
       return;
     }
@@ -815,6 +868,7 @@ void CSkinInfo::Reset(const std::string &setting)
 
 void CSkinInfo::Reset()
 {
+  std::unique_lock lock(m_settingsCritical);
   // clear all the settings and strings from this skin.
   for (const auto& [_, settingbool] : m_bools)
     settingbool->value = false;
@@ -822,6 +876,7 @@ void CSkinInfo::Reset()
   for (const auto& [_, settingstring] : m_strings)
     settingstring->value.clear();
 
+  lock.unlock();
   m_settingsUpdateHandler->TriggerSave();
 }
 
@@ -867,6 +922,7 @@ bool CSkinInfo::SettingsLoaded(AddonInstanceId id /* = ADDON_SETTINGS_ID */) con
   if (id != ADDON_SETTINGS_ID)
     return false;
 
+  std::unique_lock lock(m_settingsCritical);
   return !m_strings.empty() || !m_bools.empty();
 }
 
@@ -881,6 +937,7 @@ bool CSkinInfo::SettingsFromXML(const CXBMCTinyXML& doc,
     return false;
   }
 
+  std::unique_lock lock(m_settingsCritical);
   m_settings.clear();
   m_strings.clear();
   m_bools.clear();
@@ -921,6 +978,7 @@ bool CSkinInfo::SettingsToXML(CXBMCTinyXML& doc, AddonInstanceId id /* = ADDON_S
   }
 
   TiXmlElement* settingsElement = settingsNode->ToElement();
+  std::unique_lock lock(m_settingsCritical);
   for (const auto& [_, settingbool] : m_bools)
   {
     if (!settingbool->Serialize(settingsElement))
@@ -943,6 +1001,7 @@ void CSkinSettingUpdateHandler::OnTimeout()
 
 void CSkinSettingUpdateHandler::TriggerSave()
 {
+  std::unique_lock lock(m_critical);
   if (m_timer.IsRunning())
     m_timer.Restart();
   else

@@ -273,12 +273,14 @@ bool CDVDFileInfo::CanExtract(const CFileItem& fileItem)
   if (URIUtils::IsDiscImageStack(fileItem.GetDynPath()))
     return false;
 
-  // For HTTP/FTP we only allow extraction when on a LAN
-  if (URIUtils::IsRemote(fileItem.GetPath()) && !URIUtils::IsOnLAN(fileItem.GetPath()) &&
-      (URIUtils::IsFTP(fileItem.GetPath()) || URIUtils::IsHTTP(fileItem.GetPath())))
-    return false;
+  return IsExtractableLocation(fileItem.GetPath());
+}
 
-  return true;
+bool CDVDFileInfo::IsExtractableLocation(const std::string& path)
+{
+  // For HTTP/FTP we only allow extraction when on a LAN
+  return !URIUtils::IsRemote(path) || URIUtils::IsOnLAN(path) ||
+         (!URIUtils::IsFTP(path) && !URIUtils::IsHTTP(path));
 }
 
 /**
@@ -520,7 +522,7 @@ bool CDVDFileInfo::DemuxerToStreamDetails(const std::shared_ptr<CDVDInputStream>
 void CDVDFileInfo::ProcessExternalSubtitles(CFileItem* item)
 {
   std::vector<std::string> externalSubtitles;
-  const std::string videoPath = item->GetDynPath();
+  const std::string videoPath = item->GetSubtitleAnchorPath();
 
   CUtil::ScanForExternalSubtitles(videoPath, externalSubtitles);
 

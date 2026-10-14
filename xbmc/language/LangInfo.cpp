@@ -50,7 +50,7 @@ std::string GetDateStringWithFormat(const CDateTime& date, const std::string& fo
 } // namespace
 
 using namespace KODI::LANGINFO;
-using namespace KODI::UTILS;
+using namespace KODI::LANGUAGE;
 using namespace KODI::LANGUAGE::I18N;
 
 static std::string shortDateFormats[] = {
@@ -1054,7 +1054,7 @@ void CLangInfo::SetLongDateFormat(const std::string& longDateFormat)
 {
   std::string newLongDateFormat = longDateFormat;
   if (longDateFormat == SETTING_REGIONAL_DEFAULT)
-    newLongDateFormat = m_currentRegion->m_strDateFormatShort;
+    newLongDateFormat = m_currentRegion->m_strDateFormatLong;
 
   m_longDateFormat = newLongDateFormat;
 }

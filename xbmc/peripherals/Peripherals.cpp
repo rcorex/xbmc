@@ -141,7 +141,7 @@ void CPeripherals::Initialise()
   m_eventScanner->Start();
 
   CServiceBroker::GetAppMessenger()->RegisterReceiver(this);
-  CServiceBroker::GetAnnouncementManager()->AddAnnouncer(this, ANNOUNCEMENT::Player);
+  CServiceBroker::GetAnnouncementManager()->AddAnnouncer(this, ANNOUNCEMENT::System);
 
   // Register for GUI messages
   CGUIComponent* gui = CServiceBroker::GetGUI();
@@ -616,7 +616,10 @@ void CPeripherals::GetSettingsFromMappingsFile(
     SettingPtr setting;
     std::string strKey = XMLUtils::GetAttribute(currentNode, "key");
     if (strKey.empty())
+    {
+      currentNode = currentNode->NextSiblingElement("setting");
       continue;
+    }
 
     std::string strSettingsType = XMLUtils::GetAttribute(currentNode, "type");
     int iLabelId = currentNode->Attribute("label") ? atoi(currentNode->Attribute("label")) : -1;
@@ -683,7 +686,7 @@ void CPeripherals::GetSettingsFromMappingsFile(
 
       /* set the order */
       int iOrder = 0;
-      currentNode->Attribute("order", std::to_string(iOrder).c_str());
+      currentNode->QueryIntAttribute("order", &iOrder);
       /* if the order attribute is invalid or 0, then the setting will be added at the end */
       if (iOrder < 0)
         iOrder = 0;

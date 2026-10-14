@@ -864,6 +864,12 @@ TEST_P(TestFileItemMovieName, GetMovieName)
 
 INSTANTIATE_TEST_SUITE_P(NameMovies, TestFileItemMovieName, ValuesIn(BaseNames));
 
+TEST(TestFileItemMovieNamePlus, ScannerSeesAPlusAsASpace)
+{
+  const CFileItem item{"smb://server/Movies/The+Matrix+1999.mkv", false};
+  EXPECT_EQ("The Matrix 1999", item.GetMovieName());
+}
+
 const TestFileData BasePaths[] = {
     // Linux path tests
     {"/home/user/movies/movie/", true, "/home/user/movies/movie/"},
@@ -1046,6 +1052,24 @@ TEST(TestFileItem, UpdateInfoKeepsAResolvedDynPath)
   EXPECT_EQ("/resolved/real-stream.mkv", target.GetDynPath());
 }
 
+TEST(TestFileItem, UpdateInfoUpdatesLabelForResolvedStrm)
+{
+  CFileItem target;
+  target.SetPath("/library/movie.strm");
+  target.SetDynPath("https://example.com/movie.mp4");
+  target.SetLabel("Library title");
+
+  CFileItem source;
+  source.SetPath("/library/movie.strm");
+  source.SetDynPath("https://example.com/movie.mp4");
+  source.SetLabel("Updated title");
+
+  target.UpdateInfo(source);
+
+  EXPECT_EQ("Updated title", target.GetLabel());
+  EXPECT_EQ("https://example.com/movie.mp4", target.GetDynPath());
+}
+
 TEST(TestFileItem, UpdateInfoTakesADynPathTheSourceActuallyHas)
 {
   CFileItem target = MakeResolvedPluginItem();
@@ -1065,6 +1089,33 @@ TEST(TestFileItem, MergeInfoKeepsAResolvedDynPath)
   target.MergeInfo(MakeAddonUpdateItem());
 
   EXPECT_EQ("/resolved/real-stream.mkv", target.GetDynPath());
+}
+
+TEST(TestFileItem, GetSubtitleAnchorPathUsesDynPathForRegularFiles)
+{
+  CFileItem item;
+  item.SetPath("/local/path/video.mkv");
+  item.SetDynPath("smb://server/share/video.mkv");
+
+  EXPECT_EQ("smb://server/share/video.mkv", item.GetSubtitleAnchorPath());
+}
+
+TEST(TestFileItem, GetSubtitleAnchorPathUsesPathForStrmFiles)
+{
+  CFileItem item;
+  item.SetPath("/local/path/video.strm");
+  item.SetDynPath("https://example.com/video.m3u8");
+
+  EXPECT_EQ("/local/path/video.strm", item.GetSubtitleAnchorPath());
+}
+
+TEST(TestFileItem, GetSubtitleAnchorPathUsesDynPathForPluginStrmRoutes)
+{
+  CFileItem item;
+  item.SetPath("plugin://plugin.video.example/play/video.strm");
+  item.SetDynPath("https://example.com/video.m3u8");
+
+  EXPECT_EQ("https://example.com/video.m3u8", item.GetSubtitleAnchorPath());
 }
 
 TEST(TestFileItem, TestLabel)
@@ -1149,7 +1200,7 @@ struct EpisodeLabelTestCase
 CFileItem MakeEpisodeItem()
 {
   const auto tag = std::make_unique<CVideoInfoTag>();
-  tag->m_type = MediaTypeEpisode;
+  tag->SetMediaType(KODI::MEDIA::TYPE::EPISODE);
   return CFileItem(*tag);
 }
 
@@ -1314,14 +1365,14 @@ CFileItem MakeItem(const std::string& path, const std::string& dynPath = "")
 CFileItem MakeLibraryItem(const std::string& path,
                           const std::string& dynPath,
                           int dbId,
-                          const std::string& type = MediaTypeEpisode,
+                          KODI::MEDIA::TYPE type = KODI::MEDIA::TYPE::EPISODE,
                           int fileId = -1,
                           bool hasVersions = false)
 {
   CFileItem item{MakeItem(path, dynPath)};
   CVideoInfoTag* tag{item.GetVideoInfoTag()};
   tag->m_iDbId = dbId;
-  tag->m_type = type;
+  tag->SetMediaType(type);
   tag->m_iFileId = fileId;
   tag->SetHasVideoVersions(hasVersions);
   return item;
@@ -1376,15 +1427,15 @@ TEST(TestFileItemIsSamePath, BlurayDifferentEpisodesOnOneDiscDiffer)
 {
   EXPECT_FALSE(Same(MakeLibraryItem(DISC, PLAYLIST_1, 7), MakeLibraryItem(DISC, PLAYLIST_1, 8)));
   EXPECT_FALSE(Same(MakeLibraryItem(DISC, PLAYLIST_1, 7), MakeLibraryItem(DISC, PLAYLIST_2, 8)));
-  EXPECT_FALSE(Same(MakeLibraryItem(DISC, PLAYLIST_1, 7, MediaTypeEpisode),
-                    MakeLibraryItem(DISC, PLAYLIST_1, 7, MediaTypeMovie)));
+  EXPECT_FALSE(Same(MakeLibraryItem(DISC, PLAYLIST_1, 7, KODI::MEDIA::TYPE::EPISODE),
+                    MakeLibraryItem(DISC, PLAYLIST_1, 7, KODI::MEDIA::TYPE::MOVIE)));
 }
 
 TEST(TestFileItemIsSamePath, BlurayMovieVersionsAreToldApartByFile)
 {
-  const CFileItem theatrical{MakeLibraryItem(DISC, PLAYLIST_1, 3, MediaTypeMovie, 10, true)};
-  const CFileItem extended{MakeLibraryItem(DISC, PLAYLIST_2, 3, MediaTypeMovie, 11, true)};
-  const CFileItem theatricalMoved{MakeLibraryItem(DISC, PLAYLIST_2, 3, MediaTypeMovie, 10, true)};
+  const CFileItem theatrical{MakeLibraryItem(DISC, PLAYLIST_1, 3, KODI::MEDIA::TYPE::MOVIE, 10, true)};
+  const CFileItem extended{MakeLibraryItem(DISC, PLAYLIST_2, 3, KODI::MEDIA::TYPE::MOVIE, 11, true)};
+  const CFileItem theatricalMoved{MakeLibraryItem(DISC, PLAYLIST_2, 3, KODI::MEDIA::TYPE::MOVIE, 10, true)};
 
   EXPECT_FALSE(Same(theatrical, extended));
   EXPECT_TRUE(Same(theatrical, theatricalMoved));
@@ -1393,8 +1444,8 @@ TEST(TestFileItemIsSamePath, BlurayMovieVersionsAreToldApartByFile)
 // Replacing a version's file gives it a new file id, so an update for it names the file it replaced
 TEST(TestFileItemIsSamePath, BlurayMovieVersionMatchesAcrossReplacedFile)
 {
-  const CFileItem queued{MakeLibraryItem(DISC, PLAYLIST_1, 3, MediaTypeMovie, 10, true)};
-  CFileItem update{MakeLibraryItem(DISC, PLAYLIST_2, 3, MediaTypeMovie, 12, true)};
+  const CFileItem queued{MakeLibraryItem(DISC, PLAYLIST_1, 3, KODI::MEDIA::TYPE::MOVIE, 10, true)};
+  CFileItem update{MakeLibraryItem(DISC, PLAYLIST_2, 3, KODI::MEDIA::TYPE::MOVIE, 12, true)};
   EXPECT_FALSE(Same(queued, update));
 
   update.SetProperty("replaced_file_id", 10);
@@ -1402,36 +1453,36 @@ TEST(TestFileItemIsSamePath, BlurayMovieVersionMatchesAcrossReplacedFile)
   EXPECT_TRUE(Same(update, queued));
 
   // Another version of the movie is still not it
-  const CFileItem other{MakeLibraryItem(DISC, PLAYLIST_1, 3, MediaTypeMovie, 11, true)};
+  const CFileItem other{MakeLibraryItem(DISC, PLAYLIST_1, 3, KODI::MEDIA::TYPE::MOVIE, 11, true)};
   EXPECT_FALSE(Same(other, update));
 }
 
 // Items listed by the version manager are typed as versions and carry the file id as their db id
 TEST(TestFileItemIsSamePath, VersionTypedItemMatchesAcrossReplacedFile)
 {
-  const CFileItem listed{MakeLibraryItem(DISC, PLAYLIST_1, 10, MediaTypeVideoVersion, 10)};
-  CFileItem update{MakeLibraryItem(DISC, PLAYLIST_2, 12, MediaTypeVideoVersion, 12)};
+  const CFileItem listed{MakeLibraryItem(DISC, PLAYLIST_1, 10, KODI::MEDIA::TYPE::VIDEO_VERSION, 10)};
+  CFileItem update{MakeLibraryItem(DISC, PLAYLIST_2, 12, KODI::MEDIA::TYPE::VIDEO_VERSION, 12)};
   EXPECT_FALSE(Same(listed, update));
 
   update.SetProperty("replaced_file_id", 10);
   EXPECT_TRUE(Same(listed, update));
   EXPECT_TRUE(Same(update, listed));
 
-  const CFileItem other{MakeLibraryItem(DISC, PLAYLIST_1, 11, MediaTypeVideoVersion, 11)};
+  const CFileItem other{MakeLibraryItem(DISC, PLAYLIST_1, 11, KODI::MEDIA::TYPE::VIDEO_VERSION, 11)};
   EXPECT_FALSE(Same(other, update));
 }
 
 TEST(TestFileItemIsSamePath, VersionTypeFolderIsNotAnAsset)
 {
   const CFileItem folder{
-      MakeLibraryItem("videodb://movies/videoversions/10", "", 10, MediaTypeVideoVersion)};
-  CFileItem update{MakeLibraryItem(DISC, PLAYLIST_2, 12, MediaTypeVideoVersion, 12)};
+      MakeLibraryItem("videodb://movies/videoversions/10", "", 10, KODI::MEDIA::TYPE::VIDEO_VERSION)};
+  CFileItem update{MakeLibraryItem(DISC, PLAYLIST_2, 12, KODI::MEDIA::TYPE::VIDEO_VERSION, 12)};
   update.SetProperty("replaced_file_id", 10);
   EXPECT_FALSE(Same(folder, update));
   EXPECT_FALSE(Same(update, folder));
 
   const CFileItem sameFolder{
-      MakeLibraryItem("videodb://movies/videoversions/10/", "", 10, MediaTypeVideoVersion)};
+      MakeLibraryItem("videodb://movies/videoversions/10/", "", 10, KODI::MEDIA::TYPE::VIDEO_VERSION)};
   EXPECT_TRUE(Same(folder, sameFolder));
 }
 
@@ -1446,8 +1497,8 @@ TEST(TestFileItemIsSamePath, LibraryIdentityAcrossDifferentPaths)
 {
   EXPECT_TRUE(Same(MakeLibraryItem("/a.mkv", "", 7), MakeLibraryItem("/b.mkv", "", 7)));
   EXPECT_FALSE(Same(MakeLibraryItem("/a.mkv", "", 7), MakeLibraryItem("/b.mkv", "", 8)));
-  EXPECT_FALSE(Same(MakeLibraryItem("/a.mkv", "", 7, MediaTypeEpisode),
-                    MakeLibraryItem("/b.mkv", "", 7, MediaTypeMovie)));
+  EXPECT_FALSE(Same(MakeLibraryItem("/a.mkv", "", 7, KODI::MEDIA::TYPE::EPISODE),
+                    MakeLibraryItem("/b.mkv", "", 7, KODI::MEDIA::TYPE::MOVIE)));
 }
 
 TEST(TestFileItemIsSamePath, VideoDbItemResolvesThroughItsFile)
