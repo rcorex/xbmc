@@ -131,6 +131,7 @@ public:
   void* stream; // pointer or integer, identifying stream playing. if it changes stream changed
   int changes; // remembered counter from stream to track codec changes
   bool inited;
+  bool demuxDisabled; // disabled in the demuxer since it was opened
   unsigned int packets;
   IDVDStreamPlayer::ESyncState syncState;
   double starttime;
@@ -169,6 +170,7 @@ public:
     stream = NULL;
     changes = 0;
     inited = false;
+    demuxDisabled = false;
     packets = 0;
     syncState = IDVDStreamPlayer::SYNC_STARTING;
     starttime = DVD_NOPTS_VALUE;
@@ -220,6 +222,11 @@ struct SelectionStream
   AVDOVIDecoderConfigurationRecord dovi{};
   uint32_t fpsScale{0};
   uint32_t fpsRate{0};
+
+  bool IsCurrent(const CCurrentStream& current) const
+  {
+    return demuxerId == current.demuxerId && id == current.id && source == current.source;
+  }
 };
 
 class CSelectionStreams
@@ -558,6 +565,17 @@ protected:
   void ExecuteTimeSeek(int64_t target, Direction direction, bool accurate);
   bool EvaluateIsStreaming() const;
 
+  struct SpeedChangeNotifications
+  {
+    bool resumed{false};
+    bool speedChanged{false};
+  };
+  // Callbacks to raise for a PLAYER_SETSPEED transition. Unpausing to normal or tempo
+  // speed is excluded because SetSpeed() already raises OnPlayBackResumed.
+  static SpeedChangeNotifications GetSpeedChangeNotifications(int previousSpeed,
+                                                              int newSpeed,
+                                                              bool isTempo);
+
   bool m_players_created;
 
   CFileItem m_item;
@@ -602,7 +620,6 @@ protected:
     double lastpts{0.0}; // holds last display pts during ff/rw operations
     int64_t lasttime{0};
     double lastseekpts{0.0};
-    double lastabstime{0.0};
 
     void Reset(double pts)
     {
