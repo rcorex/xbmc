@@ -266,6 +266,15 @@ macro(BUILD_DEP_TARGET)
     # We can disable adding them with WIN_DISABLE_PROJECT_FLAGS. This is potentially required
     # for host build tools (eg flatc) that may be a different arch to the core app
     if(WIN32 OR WINDOWS_STORE)
+      if(CCACHE_FOUND AND CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" AND
+         CMAKE_GENERATOR MATCHES "Visual Studio")
+        list(APPEND CMAKE_ARGS "-DCCACHE_PROGRAM=${CCACHE_PROGRAM}"
+                               "-DCMAKE_PROJECT_INCLUDE=${PROJECTSOURCE}/cmake/scripts/windows/CCache.cmake"
+                               -DCMAKE_POLICY_DEFAULT_CMP0141=NEW)
+      elseif(CMAKE_GENERATOR MATCHES "Visual Studio")
+        # External projects retain their CMake cache when ccache is disabled.
+        list(APPEND CMAKE_ARGS -UCMAKE_PROJECT_INCLUDE -UCCACHE_PROGRAM)
+      endif()
       if(NOT (DEFINED WIN_DISABLE_PROJECT_FLAGS OR
          ${${CMAKE_FIND_PACKAGE_NAME}_MODULE_LC}_LIB_TYPE STREQUAL "native"))
         list(APPEND CMAKE_ARGS "-DCMAKE_C_FLAGS=${CMAKE_C_FLAGS} $<$<CONFIG:Debug>:${CMAKE_C_FLAGS_DEBUG}> $<$<CONFIG:Release>:${CMAKE_C_FLAGS_RELEASE}> ${${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_C_FLAGS}"
@@ -512,13 +521,25 @@ macro(BUILD_DEP_TARGET)
     set(INSTALL_DIR ${DEP_LOCATION})
   endif()
 
+  set(_download_dir "${TARBALL_DIR}")
+  unset(_download_cache)
+  if(NOT ${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_SOURCE_DIR
+     AND ${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_HASH
+     AND ${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_URL MATCHES "^[A-Za-z][A-Za-z0-9+.-]*://")
+    get_filename_component(_download_cache "${TARBALL_DIR}/${${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_ARCHIVE}"
+                           ABSOLUTE BASE_DIR "${CMAKE_CURRENT_BINARY_DIR}")
+    # ExternalProject may also download or remove archives, so give it a private copy.
+    get_filename_component(_download_dir "${CORE_BUILD_DIR}/${${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_BUILD_NAME}/download"
+                           ABSOLUTE BASE_DIR "${CMAKE_CURRENT_BINARY_DIR}")
+  endif()
+
   # Allow a target to supply in-tree source location. eg TexturePacker, JsonSchemaBuilder
   if(${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_SOURCE_DIR)
     set(BUILD_DOWNLOAD_STEPS SOURCE_DIR "${${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_SOURCE_DIR}")
   else()
     set(BUILD_DOWNLOAD_STEPS URL ${${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_URL}
                              URL_HASH ${${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_HASH}
-                             DOWNLOAD_DIR ${TARBALL_DIR}
+                             DOWNLOAD_DIR "${_download_dir}"
                              DOWNLOAD_NAME ${${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_ARCHIVE})
   endif()
 
@@ -541,9 +562,7 @@ macro(BUILD_DEP_TARGET)
   # Pointless for local tarballs, and without a hash the download step re-downloads
   # regardless. INDEPENDENT like the download step itself, which CMP0114 requires of
   # anything that step depends on.
-  if(NOT ${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_SOURCE_DIR
-     AND ${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_HASH
-     AND ${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_URL MATCHES "^[A-Za-z][A-Za-z0-9+.-]*://")
+  if(_download_cache)
     # ExternalProject bakes these into its download script; a cmake -P process would
     # not see them otherwise
     set(_download_retry_settings)
@@ -555,14 +574,18 @@ macro(BUILD_DEP_TARGET)
     externalproject_add_step(${${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_BUILD_NAME} download-retry
                              COMMAND ${CMAKE_COMMAND} ${_download_retry_settings}
                                      -DARCHIVE_URL=${${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_URL}
-                                     -DARCHIVE_DEST=${TARBALL_DIR}/${${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_ARCHIVE}
+                                     -DARCHIVE_DEST=${_download_dir}/${${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_ARCHIVE}
+                                     -DARCHIVE_CACHE=${_download_cache}
                                      -DARCHIVE_HASH=${${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_HASH}
                                      -P ${PROJECTSOURCE}/cmake/scripts/common/DownloadWithRetry.cmake
                              DEPENDERS download
+                             DEPENDEES mkdir
                              INDEPENDENT TRUE
                              COMMENT "Fetching ${${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_ARCHIVE}")
     unset(_download_retry_settings)
   endif()
+  unset(_download_dir)
+  unset(_download_cache)
 
   set_target_properties(${${${CMAKE_FIND_PACKAGE_NAME}_MODULE}_BUILD_NAME} PROPERTIES FOLDER "External Projects")
 
@@ -855,8 +878,14 @@ function(create_mesonbinaries)
     set(input "${${cmake_binary_name}}")
     string(STRIP "${input}" input)
 
-    string(PREPEND input "${meson_label_name} = '")
-    string(APPEND input "'")
+    if(CCACHE_FOUND AND CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" AND
+       CMAKE_GENERATOR MATCHES "Visual Studio" AND
+       (meson_label_name STREQUAL "c" OR meson_label_name STREQUAL "cpp"))
+      set(input "${meson_label_name} = ['${CCACHE_PROGRAM}', '${input}']")
+    else()
+      string(PREPEND input "${meson_label_name} = '")
+      string(APPEND input "'")
+    endif()
     string(APPEND output_string "${input}\n")
   endforeach()
 
