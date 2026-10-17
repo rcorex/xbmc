@@ -43,6 +43,9 @@ public:
     PLAYER_SET_STATE,               // restore the VideoPlayer to a certain state
     PLAYER_SET_PROGRAM,
     PLAYER_SET_UPDATE_STREAM_DETAILS, // player should update file item stream details with its current streams
+#if defined(TARGET_WEBOS)
+    PLAYER_RESTART_AUDIO_STREAM,   // restart media streams manually via seek-close-reopen logic
+#endif
     PLAYER_SEEK,                    //
     PLAYER_SEEK_CHAPTER,            //
     PLAYER_SETSPEED,                // set the playback speed
@@ -144,6 +147,22 @@ typedef CDVDMsgType<double> CDVDMsgDouble;
 ////// PLAYER_ Messages
 //////
 ////////////////////////////////////////////////////////////////////////////////
+
+class CDVDMsgPlayerRestartAudioStream : public CDVDMsg
+{
+public:
+  CDVDMsgPlayerRestartAudioStream(int demuxerId, int streamId, int source)
+    : CDVDMsg(PLAYER_RESTART_AUDIO_STREAM), m_demuxerId(demuxerId), m_streamId(streamId), m_source(source) {}
+  ~CDVDMsgPlayerRestartAudioStream() override = default;
+
+  int GetDemuxerId() { return m_demuxerId; }
+  int GetStreamId() { return m_streamId; }
+  int GetSource() { return m_source; }
+private:
+  int m_demuxerId;
+  int m_streamId;
+  int m_source;
+};
 
 class CDVDMsgPlayerSetAudioStream : public CDVDMsg
 {

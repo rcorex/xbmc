@@ -2375,6 +2375,14 @@ void CApplication::Restart(bool bSamePosition)
     return ;
   }
 
+#if defined(TARGET_WEBOS)
+  if (appPlayer->IsPlayingVideo())
+  {
+    appPlayer->RestartAudioStream();
+    return;
+  }
+#endif
+
   // else get current position
   double time = GetTime();
 

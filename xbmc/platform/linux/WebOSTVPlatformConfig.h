@@ -31,6 +31,7 @@ public:
   static void LoadARCStatus();
   static int GetWebOSVersion();
   static bool SupportsDTS();
+  static bool SupportsDTSHD();
   static bool SupportsHDR();
   static bool SupportsEAC3();
 };
