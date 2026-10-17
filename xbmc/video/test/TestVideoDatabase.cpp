@@ -26,6 +26,7 @@
 #include "utils/DatabaseUtils.h"
 #include "utils/StreamDetails.h"
 #include "utils/URIUtils.h"
+#include "utils/Variant.h"
 #include "utils/XBMCTinyXML.h"
 #include "utils/XMLUtils.h"
 #include "video/Bookmark.h"
@@ -35,6 +36,7 @@
 #include "video/VideoInfoTag.h"
 #include "video/VideoManagerTypes.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <memory>
 #include <set>
@@ -134,6 +136,33 @@ protected:
     tag.m_iSeason = 1;
     tag.m_iEpisode = episode;
     return m_db.SetDetailsForEpisode(tag, KODI::ART::Artwork{}, idShow);
+  }
+
+  // A movie with the given art, and a second movie with the given art converted into a version
+  // of it
+  struct MovieWithVersion
+  {
+    int movieId{-1};
+    int movieFileId{-1};
+    int versionFileId{-1};
+  };
+
+  MovieWithVersion AddMovieWithVersion(const KODI::ART::Artwork& movieArt,
+                                       const KODI::ART::Artwork& versionArt)
+  {
+    CVideoInfoTag movieTag{Tag("/movies/Movie (2010)/Movie (2010) Extended Edition.mkv")};
+    CVideoInfoTag versionTag{Tag("/movies/Movie (2010)/Movie (2010) Standard Edition.mkv")};
+    const int movieId{m_db.SetDetailsForMovie(movieTag, movieArt)};
+    const int sourceId{m_db.SetDetailsForMovie(versionTag, versionArt)};
+    if (movieId <= 0 || sourceId <= 0)
+      return {};
+
+    const MovieWithVersion result{movieId, m_db.GetFileIdByMovie(movieId),
+                                  m_db.GetFileIdByMovie(sourceId)};
+    if (!m_db.ConvertVideoToVersion(VideoDbContentType::MOVIES, sourceId, movieId, -1,
+                                    VideoAssetType::VERSION))
+      return {};
+    return result;
   }
 
   DatabaseSettings m_settings;
@@ -783,6 +812,34 @@ TEST_F(TestVideoDatabase, SetDefaultVideoVersionDropsAFrameNoneCanBeTakenFor)
   EXPECT_EQ((KODI::ART::Artwork{{"fanart", "movie-fanart"}}), art);
 }
 
+// A frame of the old default's file is not kept for a new default that has no thumb of its own,
+// one of the new default's file is taken instead
+TEST_F(TestVideoDatabase, SetDefaultVideoVersionTakesAFrameOfTheNewDefault)
+{
+  const std::string original{"/movies/Movie (2010)/Movie (2010).mkv"};
+  const int idMovie{AddMovie(original)};
+  ASSERT_GT(idMovie, 0);
+  ASSERT_TRUE(m_db.SetArtForItem(
+      idMovie, KODI::MEDIA::TYPE::MOVIE,
+      {{"fanart", "movie-fanart"}, {"thumb", IMAGE_FILES::URLFromFile(original, "video")}}));
+
+  const std::string extended{"/movies/Movie (2010)/Movie (2010) Extended Edition.mkv"};
+  CFileItem item{extended, false};
+  const int idType{
+      m_db.AddVideoVersionType("Extended", VideoAssetTypeOwner::USER, VideoAssetType::VERSION)};
+  ASSERT_TRUE(m_db.AddVideoAsset(VideoDbContentType::MOVIES, idMovie, idType,
+                                 VideoAssetType::VERSION, item));
+
+  ASSERT_TRUE(
+      m_db.SetDefaultVideoVersion(VideoDbContentType::MOVIES, idMovie, m_db.AddFile(extended)));
+
+  KODI::ART::Artwork art;
+  ASSERT_TRUE(m_db.GetArtForItem(idMovie, KODI::MEDIA::TYPE::MOVIE, art));
+  EXPECT_EQ((KODI::ART::Artwork{{"fanart", "movie-fanart"},
+                                {"thumb", IMAGE_FILES::URLFromFile(extended, "video")}}),
+            art);
+}
+
 TEST_F(TestVideoDatabase, GetSubPathsLeavesOutDiscStructuresWhateverTheirCase)
 {
   ASSERT_GT(m_db.AddPath("/movies/"), 0);
@@ -1108,6 +1165,109 @@ TEST_F(TestVideoDatabaseClean, PromotingAVersionKeepsTheArtOfTheMovie)
             art);
 }
 
+// The versions of one movie share its id, and each has gone
+TEST_F(TestVideoDatabaseClean, RemovesEveryVersionOfAMovieThatHasGone)
+{
+  const std::string movies{Folder(m_root, "movies")};
+  AddSource(movies, "movies");
+  const std::string film{Folder(movies, "Film (2010)")};
+  const int idMovie{AddMovie(File(film, "Film (2010).mkv"))};
+  ASSERT_GT(idMovie, 0);
+  const std::string extended{File(film, "Film (2010) Extended.mkv")};
+  const std::string finalCut{File(film, "Film (2010) Final Cut.mkv")};
+  ASSERT_GT(AddAsset(idMovie, extended), 0);
+  ASSERT_GT(AddAsset(idMovie, finalCut), 0);
+
+  ASSERT_TRUE(XFILE::CFile::Delete(extended));
+  ASSERT_TRUE(XFILE::CFile::Delete(finalCut));
+  Clean();
+
+  EXPECT_EQ(-1, m_db.GetMovieId(extended));
+  EXPECT_EQ(-1, m_db.GetMovieId(finalCut));
+}
+
+// The episodes of a multi-episode file share its file, and each has gone
+TEST_F(TestVideoDatabaseClean, RemovesEveryEpisodeOfAFileThatHasGone)
+{
+  const std::string shows{Folder(m_root, "shows")};
+  AddSource(shows, "tvshows");
+  const std::string show{Folder(shows, "Show")};
+  const int idShow{AddTvShow(show)};
+  ASSERT_GT(idShow, 0);
+  const std::string gone{File(show, "Show S01E01E02.mkv")};
+  // as a scan adds each episode of one file
+  for (const int episode : {1, 2})
+  {
+    CVideoInfoTag tag{Tag(gone)};
+    tag.m_iSeason = 1;
+    tag.m_iEpisode = episode;
+    const int idEpisode{m_db.AddNewEpisode(idShow, tag)};
+    ASSERT_GT(m_db.SetDetailsForEpisode(tag, KODI::ART::Artwork{}, idShow, idEpisode), 0);
+  }
+  const int idKept{AddEpisode(idShow, File(show, "Show S01E03.mkv"), 3)};
+  ASSERT_GT(idKept, 0);
+  ASSERT_EQ(3, m_db.GetSingleValueInt(
+                   m_db.PrepareSQL("SELECT COUNT(*) FROM episode WHERE idShow=%i", idShow)));
+
+  ASSERT_TRUE(XFILE::CFile::Delete(gone));
+  Clean();
+
+  EXPECT_EQ(1, m_db.GetSingleValueInt(
+                   m_db.PrepareSQL("SELECT COUNT(*) FROM episode WHERE idShow=%i", idShow)));
+  EXPECT_EQ(idKept, m_db.GetSingleValueInt(
+                        m_db.PrepareSQL("SELECT idEpisode FROM episode WHERE idShow=%i", idShow)));
+}
+
+namespace
+{
+// Never started, so it keeps every announcement made in its queue
+class CQueuedAnnouncements : public ANNOUNCEMENT::CAnnouncementManager
+{
+public:
+  long CountRemoved(const std::string& type, int id) const
+  {
+    return std::ranges::count_if(m_announcementQueue,
+                                 [&type, id](const CAnnounceData& announcement)
+                                 {
+                                   return announcement.message == "OnRemove" &&
+                                          announcement.data["type"].asString() == type &&
+                                          announcement.data["id"].asInteger() == id;
+                                 });
+  }
+};
+} // namespace
+
+// The clean finds an episode's source through each folder of its show
+TEST_F(TestVideoDatabaseClean, AnnouncesAnEpisodeOfAShowWithTwoFoldersRemovedOnce)
+{
+  const std::string shows{Folder(m_root, "shows")};
+  AddSource(shows, "tvshows");
+  const std::string first{Folder(shows, "Show")};
+  const std::string second{Folder(shows, "Show (more)")};
+
+  CVideoInfoTag tag;
+  tag.m_strTitle = "Show";
+  tag.m_strPath = first;
+  const int idShow{m_db.SetDetailsForTvShow({first, second}, tag, KODI::ART::Artwork{},
+                                            KODI::ART::SeasonsArtwork{})};
+  ASSERT_GT(idShow, 0);
+  const std::string gone{File(first, "Show S01E01.mkv")};
+  const int idEpisode{AddEpisode(idShow, gone, 1)};
+  ASSERT_GT(idEpisode, 0);
+  ASSERT_GT(AddEpisode(idShow, File(second, "Show S01E02.mkv"), 2), 0);
+
+  const auto announcements{std::make_shared<CQueuedAnnouncements>()};
+  CServiceBroker::UnregisterAnnouncementManager();
+  CServiceBroker::RegisterAnnouncementManager(announcements);
+
+  ASSERT_TRUE(XFILE::CFile::Delete(gone));
+  Clean();
+
+  EXPECT_EQ(0, m_db.GetSingleValueInt(
+                   m_db.PrepareSQL("SELECT COUNT(*) FROM episode WHERE idEpisode=%i", idEpisode)));
+  EXPECT_EQ(1, announcements->CountRemoved("episode", idEpisode));
+}
+
 TEST_F(TestVideoDatabaseClean, KeepsAVersionOutsideTheSourcesWhileItExists)
 {
   const std::string movies{Folder(m_root, "movies")};
@@ -1372,4 +1532,57 @@ TEST_F(TestVideoDatabaseClean, KeepsPlayedFilesThatMayNotHaveGone)
     EXPECT_EQ(1, m_db.GetSingleValueInt(
                      m_db.PrepareSQL("SELECT COUNT(*) FROM files WHERE idFile=%i", idFile)))
         << idFile;
+}
+
+// A new default version lacking an art type must not take that art away from the movie
+TEST_F(TestVideoDatabase, SetDefaultVideoVersionKeepsArtTheVersionLacks)
+{
+  const auto [movieId, movieFileId, versionFileId] = AddMovieWithVersion(
+      {{"poster", "old-poster.jpg"}, {"fanart", "old-fanart.jpg"}}, {{"poster", "new-poster.jpg"}});
+  ASSERT_GT(versionFileId, 0);
+
+  ASSERT_TRUE(m_db.SetDefaultVideoVersion(VideoDbContentType::MOVIES, movieId, versionFileId));
+
+  KODI::ART::Artwork movieArt;
+  ASSERT_TRUE(m_db.GetArtForItem(movieId, KODI::MEDIA::TYPE::MOVIE, movieArt));
+  EXPECT_EQ((KODI::ART::Artwork{{"poster", "new-poster.jpg"}, {"fanart", "old-fanart.jpg"}}),
+            movieArt);
+
+  // The previous default version keeps all of its own art
+  KODI::ART::Artwork previousVersionArt;
+  ASSERT_TRUE(
+      m_db.GetArtForItem(movieFileId, KODI::MEDIA::TYPE::VIDEO_VERSION, previousVersionArt));
+  EXPECT_EQ((KODI::ART::Artwork{{"poster", "old-poster.jpg"}, {"fanart", "old-fanart.jpg"}}),
+            previousVersionArt);
+}
+
+// An empty version art url (art type set to none) falls back to the movie art, so it must not
+// replace that art when the version becomes the default
+TEST_F(TestVideoDatabase, SetDefaultVideoVersionKeepsArtTheVersionHasNoneOf)
+{
+  const auto [movieId, movieFileId, versionFileId] = AddMovieWithVersion(
+      {{"poster", "old-poster.jpg"}, {"fanart", "old-fanart.jpg"}}, {{"poster", "new-poster.jpg"}});
+  ASSERT_GT(versionFileId, 0);
+  ASSERT_TRUE(m_db.SetArtForItem(versionFileId, KODI::MEDIA::TYPE::VIDEO_VERSION, "fanart", ""));
+
+  ASSERT_TRUE(m_db.SetDefaultVideoVersion(VideoDbContentType::MOVIES, movieId, versionFileId));
+
+  EXPECT_EQ("old-fanart.jpg", m_db.GetArtForItem(movieId, KODI::MEDIA::TYPE::MOVIE, "fanart"));
+}
+
+// Art of the previous default version itself is not movie art and must not be kept as such
+TEST_F(TestVideoDatabase, SetDefaultVideoVersionKeepsOnlyTheMovieArt)
+{
+  const auto [movieId, movieFileId, versionFileId] = AddMovieWithVersion(
+      {{"poster", "old-poster.jpg"}, {"fanart", "old-fanart.jpg"}}, {{"poster", "new-poster.jpg"}});
+  ASSERT_GT(versionFileId, 0);
+  ASSERT_TRUE(m_db.SetArtForItem(movieFileId, KODI::MEDIA::TYPE::VIDEO_VERSION, "fanart",
+                                 "version-fanart.jpg"));
+
+  ASSERT_TRUE(m_db.SetDefaultVideoVersion(VideoDbContentType::MOVIES, movieId, versionFileId));
+
+  EXPECT_EQ(1, m_db.GetSingleValueInt(
+                   "SELECT COUNT(*) FROM art WHERE media_id = " + std::to_string(movieId) +
+                   " AND media_type = 'movie' AND type = 'fanart'"));
+  EXPECT_EQ("old-fanart.jpg", m_db.GetArtForItem(movieId, KODI::MEDIA::TYPE::MOVIE, "fanart"));
 }

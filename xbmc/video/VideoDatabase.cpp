@@ -10993,6 +10993,8 @@ std::vector<int> CVideoDatabase::CleanMediaType(MEDIA::TYPE mediaType,
   std::map<int, std::pair<bool, bool> > sourcePathsDeleteDecisions;
   // Each source path is checked once, as loose assets don't share their decisions
   std::map<int, bool> sourcePathsExist;
+  // An episode is listed once for each folder of its show
+  std::set<int> cleaned;
   m_pDS2->query(sql);
   while (!m_pDS2->eof())
   {
@@ -11081,7 +11083,7 @@ std::vector<int> CVideoDatabase::CleanMediaType(MEDIA::TYPE mediaType,
         pathsDeleteDecisions.insert(std::make_pair(m_pDS2->fv(2).get_asInt(), del));
     }
 
-    if (del)
+    if (del && (!isEpisode || cleaned.insert(m_pDS2->fv(0).get_asInt()).second))
     {
       deletedFileIDs += m_pDS2->fv(1).get_asString() + ",";
       cleanedIDs.emplace_back(m_pDS2->fv(0).get_asInt());
@@ -13469,6 +13471,24 @@ bool CVideoDatabase::SetDefaultVideoVersion(VideoDbContentType itemType, int dbI
         m_pDS->exec(PrepareSQL(
             "UPDATE movie SET idFile = %i, c%02d = '%s', c%02d = %i WHERE idMovie = %i", idFile,
             VIDEODB_ID_BASEPATH, path.c_str(), VIDEODB_ID_PARENTPATHID, idParentPath, dbId));
+
+        // The selected version falls back to the movie art for any type it has none of, or has
+        // an empty url for, so give it that art before it becomes the movie art. Images taken
+        // from a video file are left out, for those of the new default to be taken below
+        m_pDS->exec(PrepareSQL("DELETE FROM art WHERE media_id = %i AND media_type = '%s' "
+                               "AND url = ''",
+                               idFile, NameOf(MEDIA::TYPE::VIDEO_VERSION).c_str()));
+        m_pDS->exec(PrepareSQL("INSERT INTO art (media_id, media_type, type, url) "
+                               "SELECT %i, '%s', movieart.type, movieart.url FROM art movieart "
+                               "  LEFT JOIN art versionart ON versionart.media_id = %i "
+                               "    AND versionart.media_type = '%s' "
+                               "    AND versionart.type = movieart.type "
+                               "WHERE movieart.media_id = %i AND movieart.media_type = '%s' "
+                               "AND versionart.art_id IS NULL "
+                               "AND movieart.url NOT LIKE 'image://video%%'",
+                               idFile, NameOf(MEDIA::TYPE::VIDEO_VERSION).c_str(), idFile,
+                               NameOf(MEDIA::TYPE::VIDEO_VERSION).c_str(), dbId,
+                               NameOf(MEDIA::TYPE::MOVIE).c_str()));
 
         // Swap art
         // media_id is idMovie for movies and idFile for videoversions

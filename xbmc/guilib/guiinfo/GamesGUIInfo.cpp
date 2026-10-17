@@ -111,6 +111,78 @@ bool CGamesGUIInfo::GetLabel(std::string& value,
   switch (info.GetInfo())
   {
     ///////////////////////////////////////////////////////////////////////////////////////////////
+    // LISTITEM_*
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+    case LISTITEM_TITLE:
+    case LISTITEM_YEAR:
+    case LISTITEM_GENRE:
+    case LISTITEM_PLOT:
+    case LISTITEM_PLATFORM:
+    case LISTITEM_DEVELOPER:
+    case LISTITEM_PUBLISHER:
+    case LISTITEM_ORIGINALTITLE:
+    case LISTITEM_RATING:
+    case LISTITEM_PLAYERS:
+    case LISTITEM_AGERATING:
+    case LISTITEM_TRAILER:
+    case LISTITEM_TAG:
+    {
+      if (item == nullptr || !item->HasGameInfoTag())
+        break;
+
+      const CGameInfoTag* tag = item->GetGameInfoTag();
+
+      switch (info.GetInfo())
+      {
+        case LISTITEM_TITLE:
+          value = tag->GetTitle();
+          break;
+        case LISTITEM_YEAR:
+          if (tag->GetYear() > 0)
+            value = std::to_string(tag->GetYear());
+          break;
+        case LISTITEM_GENRE:
+          value =
+              StringUtils::Join(tag->GetGenres(), info.GetData3().empty() ? ", " : info.GetData3());
+          break;
+        case LISTITEM_PLOT:
+          value = tag->GetOverview();
+          break;
+        case LISTITEM_PLATFORM:
+          value = tag->GetPlatform();
+          break;
+        case LISTITEM_DEVELOPER:
+          value = tag->GetDeveloper();
+          break;
+        case LISTITEM_PUBLISHER:
+          value = tag->GetPublisher();
+          break;
+        case LISTITEM_ORIGINALTITLE:
+          value = tag->GetOriginalTitle();
+          break;
+        case LISTITEM_RATING:
+          if (tag->GetRating() > 0.0f)
+            value = StringUtils::FormatNumber(tag->GetRating());
+          break;
+        case LISTITEM_PLAYERS:
+          if (tag->GetPlayers() > 0)
+            value = std::to_string(tag->GetPlayers());
+          break;
+        case LISTITEM_AGERATING:
+          value = tag->GetAgeRating();
+          break;
+        case LISTITEM_TRAILER:
+          value = tag->GetTrailer();
+          break;
+        case LISTITEM_TAG:
+          value = StringUtils::Join(tag->GetTags(), ", ");
+          break;
+        default:
+          break;
+      }
+      return !value.empty();
+    }
+    ///////////////////////////////////////////////////////////////////////////////////////////////
     // RETROPLAYER_*
     ///////////////////////////////////////////////////////////////////////////////////////////////
     case RETROPLAYER_VIDEO_FILTER:
