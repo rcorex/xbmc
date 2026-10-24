@@ -1180,14 +1180,6 @@ void CMediaPipelineWebOS::Unload(const bool sync)
   m_osPlayState.store(OSPlayState::Unloaded, std::memory_order_release);
   m_apiPlayState.store(APIPlayState::Unknown, std::memory_order_release);
 
-  const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
-  if (buffer && buffer->GetAcbHandle())
-  {
-    CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_UNLOADED)", buffer->GetAcbHandle()->Id(), buffer->GetAcbHandle()->TaskId());
-    AcbAPI_setState(buffer->GetAcbHandle()->Id(), APPSTATE_FOREGROUND, PLAYSTATE_UNLOADED,
-                    &buffer->GetAcbHandle()->TaskId());
-  }
-
   CThread::StopThread(true);
   if (m_audioThread.joinable())
     m_audioThread.join();
@@ -1196,6 +1188,14 @@ void CMediaPipelineWebOS::Unload(const bool sync)
   {
     std::lock_guard<std::mutex> lock(m_taskMutex);
     m_tasks.clear();
+  }
+
+  const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
+  if (buffer && buffer->GetAcbHandle())
+  {
+    CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_UNLOADED)", buffer->GetAcbHandle()->Id(), buffer->GetAcbHandle()->TaskId());
+    AcbAPI_setState(buffer->GetAcbHandle()->Id(), APPSTATE_FOREGROUND, PLAYSTATE_UNLOADED,
+                    &buffer->GetAcbHandle()->TaskId());
   }
 
   if (!m_mediaAPIs->Unload())
@@ -2230,7 +2230,6 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       StopThread(true);
       if (m_audioThread.joinable())
         m_audioThread.join();
-      m_loaded = false;
       m_pipeline = nullptr;
       RequestAudioDevice(false);
       m_osPlayState.store(OSPlayState::Unloaded, std::memory_order_release);
@@ -2243,6 +2242,11 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
         std::this_thread::sleep_for(std::chrono::milliseconds(50)); // wait for acbcallback for PLAYSTATE_UNLOADED 5-20ms
         CLog::LogF(LOGINFO, "Delete ACB handle (UnloadCompleted)");
         buffer->ResetAcbHandle();
+      }
+
+      {
+        std::lock_guard<std::mutex> lock(m_eventMutex);
+        m_loaded = false;
       }
       break;
     }
