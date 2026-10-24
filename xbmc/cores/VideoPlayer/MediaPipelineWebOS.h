@@ -499,15 +499,6 @@ private:
   void ProcessTasks();
 
   /**
-   * @brief Updates the @ref m_pts member variable with the current presentation timestamp from the
-   * media pipeline, and processes any overlays that need to be displayed at that time. Also adds a
-   * video picture to the render manager and updates the DVD clock with the new PTS. This should be
-   * called regularly during playback to keep the video output and timing in sync with the media
-   * pipeline.
-   */
-  void UpdatePlayTime();
-
-  /**
    * @brief Gets the custom pipeline pointer
    * @return Pointer to the custom pipeline, or nullptr if not available.
    */

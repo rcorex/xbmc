@@ -1812,9 +1812,6 @@ void CMediaPipelineWebOS::Process()
     int priority = 0;
     m_messageQueueVideo.Get(msg, 10ms, priority);
 
-    UpdatePlayTime();
-
-
     if (msg)
     {
       if (msg->IsType(CDVDMsg::DEMUXER_PACKET))
@@ -2114,31 +2111,6 @@ bool CMediaPipelineWebOS::GetMaxVideoResolution(const std::string& codec,
   return fn(codec, &width, &height, &framerate);
 }
 
-void CMediaPipelineWebOS::UpdatePlayTime()
-{
-  if (!m_started)
-    return;
-
-  int64_t nanoPts;
-  mediapipeline::CustomPipeline* pipeline = GetPipeline();
-  if (!pipeline)
-  {
-    CLog::LogF(LOGDEBUG, "pipeline is nullptr");
-    return;
-  }
-
-  pipeline->GetPlayInfo(&nanoPts);
-  m_pts = std::chrono::nanoseconds(nanoPts);
-
-  const double pts = GetCurrentPts();
-  ProcessOverlays(pts);
-  m_picture.dts = pts;
-  m_picture.pts = pts;
-  // Pass the thread's native stop flag to allow Display Resolution teardowns to abort the lock
-  m_renderManager.AddVideoPicture(m_picture, m_bStop, VS_INTERLACEMETHOD_AUTO, false);
-  m_clock.Discontinuity(pts);
-}
-
 mediapipeline::CustomPipeline* CMediaPipelineWebOS::GetPipeline() const
 {
   if (!m_mediaAPIs || !m_mediaAPIs->player)
@@ -2183,8 +2155,16 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
         m_isSeeking.store(false, std::memory_order_release);
       }
 
+      m_pts = std::chrono::nanoseconds(numValue);
+      const double pts = GetCurrentPts();
+      ProcessOverlays(pts);
       if (!m_flushed)
         m_started = true;
+      m_picture.dts = pts;
+      m_picture.pts = pts;
+      std::atomic<bool> stop(false);
+      m_renderManager.AddVideoPicture(m_picture, stop, VS_INTERLACEMETHOD_AUTO, false);
+      m_clock.Discontinuity(pts);
       break;
     }
     case PF_EVENT_TYPE_STR_AUDIO_INFO:
