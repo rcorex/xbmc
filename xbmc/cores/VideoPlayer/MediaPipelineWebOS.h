@@ -134,11 +134,6 @@ private:
  * @class CMediaPipelineWebOS
  * @brief WebOS media pipeline for audio/video playback.
  */
-namespace mediapipeline
-{
-class CustomPipeline;
-} // namespace mediapipeline
-
 class CMediaPipelineWebOS final : public CThread, public ISettingCallback
 {
 public:

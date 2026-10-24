@@ -2135,7 +2135,6 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
   if (m_webOSVersion < 5 && type > PF_EVENT_TYPE_STR_STATE_UPDATE__ENDOFSTREAM)
     type += 2;
 
-  const std::unique_ptr<AcbHandle>& acb = buffer->GetAcbHandle();
   switch (type)
   {
     case PF_EVENT_TYPE_FRAMEREADY:
