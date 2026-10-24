@@ -498,7 +498,7 @@ void CMediaPipelineWebOS::RequestAudioDevice(const bool pipelineOwns)
   if (!m_hasAudio || m_ownsAudioDevice == pipelineOwns)
     return;
 
-  if (m_guiSoundMode.load() != AE_SOUND_IDLE)
+  if (pipelineOwns && m_guiSoundMode.load() == AE_SOUND_ALWAYS)
     return;
 
   IAE* const activeAE = CServiceBroker::GetActiveAE();
@@ -749,6 +749,7 @@ void CMediaPipelineWebOS::Flush(bool sync)
   m_fedVideoPts = NO_PTS;
   m_started = false;
   m_flushed = true;
+  m_isSeeking.store(false, std::memory_order_release);
 }
 
 bool CMediaPipelineWebOS::AcceptsAudioData() const
@@ -1204,6 +1205,7 @@ void CMediaPipelineWebOS::Unload(const bool sync)
   m_fedAudioPts = NO_PTS;
   m_fedVideoPts = NO_PTS;
   m_started = false;
+  m_isSeeking.store(false, std::memory_order_release);
 
   if (sync)
   {
