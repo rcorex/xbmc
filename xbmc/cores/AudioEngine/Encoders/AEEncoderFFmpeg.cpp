@@ -102,16 +102,23 @@ bool CAEEncoderFFmpeg::Initialize(AEAudioFormat& format, bool allow_planar_input
     const int bitrateSetting = CServiceBroker::GetSettingsComponent()->GetSettings()->GetInt(
         CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHEAC3BITRATE);
 
-    if (bitrateSetting == 1) // High
-      m_BitRate = 1536000;
-    else if (bitrateSetting == 2) // Max
+    if (bitrateSetting == 1) // Medium
     {
       if (format.m_sampleRate == 32000)
-        m_BitRate = 4096000;
+        m_BitRate = 960000;
       else if (format.m_sampleRate == 44100)
-        m_BitRate = 5644800;
+        m_BitRate = 1381800;
       else
-        m_BitRate = 6144000;
+        m_BitRate = 1504000;
+    }
+    else if (bitrateSetting == 2) // High
+    {
+      if (format.m_sampleRate == 32000)
+        m_BitRate = 4032000;
+      else if (format.m_sampleRate == 44100)
+        m_BitRate = 5615400;
+      else
+        m_BitRate = 6112000;
     }
 #endif
 
