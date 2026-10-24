@@ -432,7 +432,6 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
   m_bypassDialnorm = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM);
   m_bypassDialnormAtmos = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS);
   m_resampleAudio48k = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSRESAMPLE48K);
-  m_guiSoundMode = settings->GetInt(CSettings::SETTING_AUDIOOUTPUT_GUISOUNDMODE);
 
   settings->RegisterCallback(this, {CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH,
                                     CSettings::SETTING_AUDIOOUTPUT_PROCESSQUALITY,
@@ -443,8 +442,7 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
                                     CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71,
                                     CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM,
                                     CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS,
-                                    CSettings::SETTING_AUDIOOUTPUT_WEBOSRESAMPLE48K,
-                                    CSettings::SETTING_AUDIOOUTPUT_GUISOUNDMODE});
+                                    CSettings::SETTING_AUDIOOUTPUT_WEBOSRESAMPLE48K});
 }
 
 CMediaPipelineWebOS::~CMediaPipelineWebOS()
@@ -482,8 +480,6 @@ void CMediaPipelineWebOS::OnSettingChanged(const std::shared_ptr<const CSetting>
     m_bypassDialnormAtmos = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS);
   else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSRESAMPLE48K)
     m_resampleAudio48k = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSRESAMPLE48K);
-  else if (settingId == CSettings::SETTING_AUDIOOUTPUT_GUISOUNDMODE)
-    m_guiSoundMode = settings->GetInt(CSettings::SETTING_AUDIOOUTPUT_GUISOUNDMODE);
 }
 
 int CMediaPipelineWebOS::GetVideoBitrate() const
@@ -496,9 +492,6 @@ void CMediaPipelineWebOS::RequestAudioDevice(const bool pipelineOwns)
   std::unique_lock lock(m_audioDeviceMutex);
 
   if (!m_hasAudio || m_ownsAudioDevice == pipelineOwns)
-    return;
-
-  if (pipelineOwns && m_guiSoundMode.load() == AE_SOUND_ALWAYS)
     return;
 
   IAE* const activeAE = CServiceBroker::GetActiveAE();
