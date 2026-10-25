@@ -6445,10 +6445,25 @@ bool CVideoPlayer::RestartAudioStream()
 
 void CVideoPlayer::WebOSRestartAudioStream(int64_t audioDemuxerId, int audioStreamId, int audioSource)
 {
-  int time = (int)GetUpdatedTime();
+  if (m_CurrentAudio.source != STREAM_SOURCE_NONE)
+    CloseStream(m_CurrentAudio, false);
+
+  OpenStream(m_CurrentAudio, audioDemuxerId, audioStreamId, audioSource, false);
+
+  AdaptForcedSubtitles();
+
+  FlushBuffers(DVD_NOPTS_VALUE, true, true);
+
+  if (!m_State.canseek)
+    return;
+
+  double time = GetUpdatedTime();
+  time = m_Edl.GetTimeAfterRestoringCuts(std::chrono::milliseconds(std::lround(time))).count();
+
+  if (m_pInputStream && m_pInputStream->GetIPosTime() == nullptr)
+    time -= m_State.time_offset / 1000l;
 
   double start = DVD_NOPTS_VALUE;
-  FlushBuffers(DVD_NOPTS_VALUE, true, true);
   if (m_pDemuxer && m_pDemuxer->SeekTime(time, true, &start))
   {
     if (m_pSubtitleDemuxer)
@@ -6459,14 +6474,8 @@ void CVideoPlayer::WebOSRestartAudioStream(int64_t audioDemuxerId, int audioStre
 
     m_State.dts = start;
     m_State.lastSeek = m_clock.GetAbsoluteClock();
+    m_clock.Discontinuity(start);
   }
-
-  if (m_CurrentAudio.source != STREAM_SOURCE_NONE)
-    CloseStream(m_CurrentAudio, false);
-
-  OpenStream(m_CurrentAudio, audioDemuxerId, audioStreamId, audioSource, false);
-
-  AdaptForcedSubtitles();
 }
 #endif
 
