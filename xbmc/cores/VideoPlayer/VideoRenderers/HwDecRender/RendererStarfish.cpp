@@ -115,29 +115,30 @@ void CRendererStarfish::ManageRenderArea()
   }
 
   bool rectsChanged = m_exportedDestRect != m_destRect || m_exportedSourceRect != m_sourceRect;
-  // Retain shared ownership on stack to prevent use-after-free during render
-  const std::shared_ptr<AcbHandle> acbHandle =
-      m_videoBuffer ? m_videoBuffer->GetAcbHandle() : nullptr;
-  long currentAcbId = acbHandle ? acbHandle->Id() : 0;
 
-  if ((rectsChanged || (currentAcbId && currentAcbId != m_lastAcbId)) &&
-      !m_sourceRect.IsEmpty() && !m_destRect.IsEmpty())
+  using namespace KODI::WINDOWING::WAYLAND;
+  auto winSystem = static_cast<CWinSystemWaylandWebOS*>(CServiceBroker::GetWinSystem());
+
+  if (winSystem->SupportsExportedWindow())
   {
-    const auto origRect =
-        CRect{0, 0, static_cast<float>(m_sourceWidth), static_cast<float>(m_sourceHeight)};
-    using namespace KODI::WINDOWING::WAYLAND;
-    auto winSystem = static_cast<CWinSystemWaylandWebOS*>(CServiceBroker::GetWinSystem());
-
-    if (winSystem->SupportsExportedWindow())
+    if (rectsChanged && !m_sourceRect.IsEmpty() && !m_destRect.IsEmpty())
     {
-      if (rectsChanged)
-      {
-        winSystem->SetExportedWindow(origRect, m_sourceRect, m_destRect);
-        m_exportedSourceRect = m_sourceRect;
-        m_exportedDestRect = m_destRect;
-      }
+      const auto origRect =
+          CRect{0, 0, static_cast<float>(m_sourceWidth), static_cast<float>(m_sourceHeight)};
+      winSystem->SetExportedWindow(origRect, m_sourceRect, m_destRect);
+      m_exportedSourceRect = m_sourceRect;
+      m_exportedDestRect = m_destRect;
     }
-    else if (currentAcbId && acbHandle)
+  }
+  else
+  {
+    // Retain shared ownership on stack to prevent use-after-free during render
+    const std::shared_ptr<AcbHandle> acbHandle =
+        m_videoBuffer ? m_videoBuffer->GetAcbHandle() : nullptr;
+    long currentAcbId = acbHandle ? acbHandle->Id() : 0;
+
+    if ((rectsChanged || (currentAcbId && currentAcbId != m_lastAcbId)) &&
+        !m_sourceRect.IsEmpty() && !m_destRect.IsEmpty() && currentAcbId && acbHandle)
     {
       CLog::LogF(LOGINFO, "AcbAPI_setCustomDisplayWindow - AcbId: {}, TaskId: {}, "
                           "SourceRect: [x:{}, y:{}, w:{}, h:{}], "
