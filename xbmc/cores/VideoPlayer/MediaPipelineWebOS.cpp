@@ -897,6 +897,7 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
   m_fedAudioPts = NO_PTS;
   m_fedVideoPts = NO_PTS;
   m_started = false;
+  m_convertDovi = false;
   m_isSeeking.store(false, std::memory_order_release);
   m_seekIgnoredFrames.store(0, std::memory_order_relaxed);
   CLog::LogF(LOGINFO, "Resetting internal play state tracking variables (Load)");
@@ -1208,6 +1209,7 @@ void CMediaPipelineWebOS::Unload(const bool sync)
   m_fedAudioPts = NO_PTS;
   m_fedVideoPts = NO_PTS;
   m_started = false;
+  m_convertDovi = false;
   m_isSeeking.store(false, std::memory_order_release);
   m_seekIgnoredFrames.store(0, std::memory_order_relaxed);
 
@@ -1391,7 +1393,7 @@ void CMediaPipelineWebOS::SetupBitstreamConverter(CDVDStreamInfo& hint)
 
           // Only set for profile 7, container hint allows to skip parsing unnecessarily
           // set profile 8 and single layer when converting
-          if (!removeDovi && convertDovi && (hint.dovi.dv_profile == 7 || m_convertDovi))
+          if (!removeDovi && (m_convertDovi || (hint.dovi.dv_profile == 7 && convertDovi)))
           {
             m_convertDovi = true;
             m_bitstream->SetConvertDovi(true);
