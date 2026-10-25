@@ -64,6 +64,7 @@
 extern "C"
 {
 #include <libavcodec/defs.h>
+#include <libavutil/channel_layout.h>
 #include <libavutil/opt.h>
 }
 
@@ -427,6 +428,7 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
 
   m_downmixStereo = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO);
   m_downmixStereoOnly71 = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71);
+  m_downmixStereoDPLII = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREODPLII);
   m_bypassDialnorm = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM);
   m_bypassDialnormAtmos = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS);
   m_resampleAudio48k = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSRESAMPLE48K);
@@ -438,6 +440,7 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
                                     CSettings::SETTING_AUDIOOUTPUT_MAINTAINORIGINALVOLUME,
                                     CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO,
                                     CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71,
+                                    CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREODPLII,
                                     CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM,
                                     CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS,
                                     CSettings::SETTING_AUDIOOUTPUT_WEBOSRESAMPLE48K});
@@ -473,6 +476,8 @@ void CMediaPipelineWebOS::OnSettingChanged(const std::shared_ptr<const CSetting>
     m_downmixStereo = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO);
   else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71)
     m_downmixStereoOnly71 = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71);
+  else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREODPLII)
+    m_downmixStereoDPLII = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREODPLII);
   else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM)
     m_bypassDialnorm = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM);
   else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS)
@@ -1948,9 +1953,12 @@ void CMediaPipelineWebOS::ProcessAudio()
               volumeAmplification += boost;
               m_audioLimiter.SetAmplification(std::pow(10.0f, volumeAmplification / 20.0f));
               const double sublevel = m_mixSubLevel.load() / 100.0;
+              const bool dplii = m_downmixStereo.load() && m_downmixStereoDPLII.load();
+              const int matrixEncoding = dplii ? AV_MATRIX_ENCODING_DPLII : 0;
               m_audioResample->Create(0, false, m_stereoUpmix.load(),
                                       !m_maintainOriginalVolume.load(),
-                                      static_cast<float>(sublevel));
+                                      static_cast<float>(sublevel),
+                                      matrixEncoding);
               m_audioResample->FillBuffer();
 
               AEAudioFormat input = m_audioCodec->GetFormat();

@@ -35,7 +35,8 @@ public:
             CAEChannelInfo* remapLayout,
             AEQuality quality,
             bool force_resample,
-            float sublevel) override;
+            float sublevel,
+            int matrixEncoding = 0) override;
   int Resample(uint8_t **dst_buffer, int dst_samples, uint8_t **src_buffer, int src_samples, double ratio) override;
   int64_t GetDelay(int64_t base) override;
   int GetBufferedSamples() override;

@@ -556,6 +556,7 @@ private:
   std::atomic<bool> m_maintainOriginalVolume{false};
   std::atomic<bool> m_downmixStereo{false};
   std::atomic<bool> m_downmixStereoOnly71{false};
+  std::atomic<bool> m_downmixStereoDPLII{false};
   std::atomic<bool> m_bypassDialnorm{false};
   std::atomic<bool> m_bypassDialnormAtmos{true};
   std::atomic<bool> m_resampleAudio48k{true};
