@@ -1327,17 +1327,6 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
     setAC3PlusInfo(audioHint, optInfo);
   }
 
-    if (m_downmixStereo)
-    {
-      bool only71 = m_downmixStereoOnly71;
-      if (!only71 || audioHint.channels > 6)
-      {
-        if (codecName == "AC3 PLUS")
-          optInfo["ac3PlusInfo"]["channels"] = 2;
-        else if (codecName == "AC3")
-          optInfo["ac3Info"]["channels"] = 2;
-      }
-    }
   if (audioHint.codec == AV_CODEC_ID_AC4)
   {
     optInfo["ac4Info"]["channels"] = audioHint.channels;
