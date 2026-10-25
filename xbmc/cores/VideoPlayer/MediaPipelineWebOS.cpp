@@ -207,7 +207,7 @@ void DefeatDialnorm(uint8_t* data, size_t size)
           offset = GetDialnormOffsetAC3(acmod);
         }
       }
-      else
+      else if (bsid == 16)
       {
         uint16_t frmsiz = ((data[i + 2] & 0x07) << 8) | data[i + 3];
         frame_size = (frmsiz + 1) * 2;
