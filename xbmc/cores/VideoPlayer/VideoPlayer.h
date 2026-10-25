@@ -403,7 +403,6 @@ public:
   void GetVideoResolution(unsigned int &width, unsigned int &height) override;
 
 #if defined(TARGET_WEBOS)
-  virtual bool NeedsFullMediaRestartOnAudioChange() const { return false; }
   void RestartAudioStream();
   void WebOSRestartAudioStream(int64_t audioDemuxerId, int audioStreamId, int audioSource);
 #endif
