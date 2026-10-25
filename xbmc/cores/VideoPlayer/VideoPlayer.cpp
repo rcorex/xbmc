@@ -6445,20 +6445,29 @@ bool CVideoPlayer::RestartAudioStream()
 
 void CVideoPlayer::WebOSRestartAudioStream(int64_t audioDemuxerId, int audioStreamId, int audioSource)
 {
-  int time = (int)GetUpdatedTime();
-
-  double start = DVD_NOPTS_VALUE;
   FlushBuffers(DVD_NOPTS_VALUE, true, true);
-  if (m_pDemuxer && m_pDemuxer->SeekTime(time, true, &start))
+
+  if (m_State.canseek)
   {
-    if (m_pSubtitleDemuxer)
-      m_pSubtitleDemuxer->SeekTime(time, true);
+    double time = GetUpdatedTime();
+    time = m_Edl.GetTimeAfterRestoringCuts(std::chrono::milliseconds(std::lround(time))).count();
 
-    if (start == DVD_NOPTS_VALUE)
-      start = DVD_MSEC_TO_TIME(time) - m_State.time_offset;
+    if (m_pInputStream && m_pInputStream->GetIPosTime() == nullptr)
+      time -= m_State.time_offset / 1000l;
 
-    m_State.dts = start;
-    m_State.lastSeek = m_clock.GetAbsoluteClock();
+    double start = DVD_NOPTS_VALUE;
+    if (m_pDemuxer && m_pDemuxer->SeekTime(time, true, &start))
+    {
+      if (m_pSubtitleDemuxer)
+        m_pSubtitleDemuxer->SeekTime(time, true);
+
+      if (start == DVD_NOPTS_VALUE)
+        start = DVD_MSEC_TO_TIME(time) - m_State.time_offset;
+
+      m_State.dts = start;
+      m_State.lastSeek = m_clock.GetAbsoluteClock();
+      m_clock.Discontinuity(start);
+    }
   }
 
   if (m_CurrentAudio.source != STREAM_SOURCE_NONE)
