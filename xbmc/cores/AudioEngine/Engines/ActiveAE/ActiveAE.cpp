@@ -3153,7 +3153,7 @@ bool CActiveAE::IsSettingVisible(const std::string &settingId)
         settings->GetInt(CSettings::SETTING_AUDIOOUTPUT_CONFIG) != AE_CONFIG_FIXED)
       return true;
   }
-  else if (settingId == "audiooutput.webosdtshdpassthrough")
+  else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSDTSHDPASSTHROUGH)
   {
 #if !defined(TARGET_WEBOS)
     return false;
@@ -3161,7 +3161,7 @@ bool CActiveAE::IsSettingVisible(const std::string &settingId)
     return true;
 #endif
   }
-  else if (settingId == "audiooutput.webosdtspassthrough")
+  else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSDTSPASSTHROUGH)
   {
 #if !defined(TARGET_WEBOS)
     return false;

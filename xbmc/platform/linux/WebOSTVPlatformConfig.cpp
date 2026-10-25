@@ -79,7 +79,7 @@ bool WebOSTVPlatformConfig::SupportsDTS()
 {
   const bool edidSupportsDTS = ms_config[EDID_TYPE].asString().find(DTS) != std::string::npos;
   const bool overrideDTS = CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
-      "audiooutput.webosdtspassthrough");
+      CSettings::SETTING_AUDIOOUTPUT_WEBOSDTSPASSTHROUGH);
 
   if (edidSupportsDTS && !overrideDTS)
   {
@@ -101,7 +101,7 @@ bool WebOSTVPlatformConfig::SupportsDTSHD()
   // DTS-HD defaults to false unless explicitly enabled by the user or
   // via a future EDID check if needed.
   return CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
-      "audiooutput.webosdtshdpassthrough");
+      CSettings::SETTING_AUDIOOUTPUT_WEBOSDTSHDPASSTHROUGH);
 }
 
 bool WebOSTVPlatformConfig::SupportsHDR()
@@ -148,7 +148,7 @@ void WebOSTVPlatformConfig::LoadARCStatus()
 bool WebOSTVPlatformConfig::SupportsEAC3()
 {
   const bool overrideEAC3 = CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
-      "audiooutput.webosstarfisheac3");
+      CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHEAC3);
 
   if (overrideEAC3)
   {
