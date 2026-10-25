@@ -1890,7 +1890,8 @@ void CMediaPipelineWebOS::ProcessAudio()
 
         if (packet->iStreamId != RESAMPLED_STREAM_ID && packet->iStreamId != CONVERTED_STREAM_ID)
         {
-          if (m_audioHint.codec == AV_CODEC_ID_AC3 || m_audioHint.codec == AV_CODEC_ID_EAC3)
+          if (!m_audioHint.cryptoSession &&
+              (m_audioHint.codec == AV_CODEC_ID_AC3 || m_audioHint.codec == AV_CODEC_ID_EAC3))
           {
             if (m_bypassDialnorm)
             {
