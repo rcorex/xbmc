@@ -568,6 +568,7 @@ private:
   enum class APIPlayState { Unknown, Playing, Paused };
   std::atomic<APIPlayState> m_apiPlayState{APIPlayState::Unknown};
   std::atomic<bool> m_osMediaLoadedEmitted{false};
+  std::atomic<int> m_speed{DVD_PLAYSPEED_NORMAL};
 
   BitstreamStats m_audioStats{};
   BitstreamStats m_videoStats{};

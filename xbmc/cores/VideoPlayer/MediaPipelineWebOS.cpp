@@ -584,8 +584,6 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
   {
     m_fedAudioPts = NO_PTS;
     m_started = false;
-    m_osPlayState.store(OSPlayState::Unloaded, std::memory_order_release);
-    m_apiPlayState.store(APIPlayState::Unknown, std::memory_order_release);
 
     bool altMethod = CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
         CSettings::SETTING_AUDIOOUTPUT_WEBOS_ALT_AUDIOTRACK_CHANGE);
@@ -660,8 +658,6 @@ bool CMediaPipelineWebOS::OpenVideoStream(CDVDStreamInfo hint)
     m_fedVideoPts = NO_PTS;
     m_started = false;
     m_videoClosed = false;
-    m_osPlayState.store(OSPlayState::Unloaded, std::memory_order_release);
-    m_apiPlayState.store(APIPlayState::Unknown, std::memory_order_release);
     if (m_videoHint.codec == hint.codec && m_videoHint.hdrType == hint.hdrType)
     {
       CWorkerGate::Lock videoLock(m_videoGate);
@@ -813,7 +809,13 @@ void CMediaPipelineWebOS::SendVideoMessage(const std::shared_ptr<CDVDMsg>& msg, 
 
 void CMediaPipelineWebOS::SetSpeed(const int speed)
 {
+  const int prevSpeed = m_speed.exchange(speed, std::memory_order_acq_rel);
+
   if (!m_loaded)
+    return;
+
+  // Deduplicate redundant consecutive calls with the same speed (e.g. audio + video from VideoPlayer)
+  if (prevSpeed == speed && m_apiPlayState.load(std::memory_order_acquire) != APIPlayState::Unknown)
     return;
 
   if (speed == DVD_PLAYSPEED_PAUSE)
@@ -2219,7 +2221,17 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       });
 
       m_renderManager.ShowVideo(true);
-      if (m_apiPlayState.load(std::memory_order_acquire) != APIPlayState::Playing)
+      if (m_speed.load(std::memory_order_acquire) == DVD_PLAYSPEED_PAUSE)
+      {
+        if (m_apiPlayState.load(std::memory_order_acquire) != APIPlayState::Paused)
+        {
+          if (!m_mediaAPIs->Pause())
+            CLog::LogF(LOGERROR, "Failed to pause");
+          else
+            m_apiPlayState.store(APIPlayState::Paused, std::memory_order_release);
+        }
+      }
+      else if (m_apiPlayState.load(std::memory_order_acquire) != APIPlayState::Playing)
       {
         if (!m_mediaAPIs->Play())
           CLog::LogF(LOGERROR, "Failed to play");

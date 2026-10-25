@@ -31,6 +31,7 @@ void CVideoPlayerAudioWebOS::CloseStream(const bool waitForBuffers)
 
 void CVideoPlayerAudioWebOS::SetSpeed(const int speed)
 {
+  m_mediaPipeline.SetSpeed(speed);
 }
 
 void CVideoPlayerAudioWebOS::Flush(const bool sync)
