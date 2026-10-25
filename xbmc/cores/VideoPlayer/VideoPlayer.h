@@ -405,7 +405,7 @@ public:
 #if defined(TARGET_WEBOS)
   virtual bool NeedsFullMediaRestartOnAudioChange() const { return false; }
   void RestartAudioStream();
-  void WebOSRestartAudioStream(int audioDemuxerId, int audioStreamId, int audioSource);
+  void WebOSRestartAudioStream(int64_t audioDemuxerId, int audioStreamId, int audioSource);
 #endif
 
   CVideoSettings GetVideoSettings() const override;
