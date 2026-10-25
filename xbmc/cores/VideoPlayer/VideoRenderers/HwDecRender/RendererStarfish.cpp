@@ -115,7 +115,9 @@ void CRendererStarfish::ManageRenderArea()
   }
 
   bool rectsChanged = m_exportedDestRect != m_destRect || m_exportedSourceRect != m_sourceRect;
-  auto* acbHandle = (m_videoBuffer && m_videoBuffer->GetAcbHandle()) ? m_videoBuffer->GetAcbHandle().get() : nullptr;
+  // Retain shared ownership on stack to prevent use-after-free during render
+  const std::shared_ptr<AcbHandle> acbHandle =
+      m_videoBuffer ? m_videoBuffer->GetAcbHandle() : nullptr;
   long currentAcbId = acbHandle ? acbHandle->Id() : 0;
 
   if ((rectsChanged || (currentAcbId && currentAcbId != m_lastAcbId)) &&
