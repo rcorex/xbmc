@@ -738,6 +738,7 @@ void CMediaPipelineWebOS::Flush(bool sync)
     m_bitstream->ResetStartDecode();
   m_fedAudioPts = NO_PTS;
   m_fedVideoPts = NO_PTS;
+  m_pts = NO_PTS;
   m_started = false;
   m_flushed = true;
   m_isSeeking.store(false, std::memory_order_release);
@@ -1500,6 +1501,10 @@ bool CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
   // Wait for the video pipeline to successfully feed its first packet, don't use m_flushed which is cleared before that
   if (m_fedVideoPts.load() == NO_PTS)
   {
+    // Discard packets older than skipped video frames or when queue is nearing capacity to prevent demuxer deadlock
+    if ((m_pts.load() != NO_PTS && pts < m_pts.load()) || m_messageQueueAudio.GetLevel() > 75)
+      return true;
+
     return false;
   }
 
@@ -1567,6 +1572,7 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
 
     if (!m_bitstream->CanStartDecode())
     {
+      m_pts = pts;
       CLog::LogF(LOGDEBUG, "Waiting for keyframe (bitstream)");
       return true;
     }
