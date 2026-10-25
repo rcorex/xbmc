@@ -742,6 +742,7 @@ void CMediaPipelineWebOS::Flush(bool sync)
   m_started = false;
   m_flushed = true;
   m_isSeeking.store(false, std::memory_order_release);
+  m_seekIgnoredFrames.store(0, std::memory_order_relaxed);
 }
 
 bool CMediaPipelineWebOS::AcceptsAudioData() const
@@ -888,6 +889,8 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
   m_fedAudioPts = NO_PTS;
   m_fedVideoPts = NO_PTS;
   m_started = false;
+  m_isSeeking.store(false, std::memory_order_release);
+  m_seekIgnoredFrames.store(0, std::memory_order_relaxed);
   CLog::LogF(LOGINFO, "Resetting internal play state tracking variables (Load)");
 
   CWorkerGate::Lock videoLock(m_videoGate);
@@ -1198,6 +1201,7 @@ void CMediaPipelineWebOS::Unload(const bool sync)
   m_fedVideoPts = NO_PTS;
   m_started = false;
   m_isSeeking.store(false, std::memory_order_release);
+  m_seekIgnoredFrames.store(0, std::memory_order_relaxed);
 
   if (sync)
   {
@@ -1581,11 +1585,14 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
     data = m_bitstream->GetConvertBuffer();
   }
 
+  const auto feedPts = pts - std::chrono::milliseconds(m_renderManager.GetDelay());
+
   if (m_flushed)
   {
     // Prepare all state variables FIRST
     m_pts = pts;
-    m_seekTargetPts.store(pts.count(), std::memory_order_relaxed);
+    m_seekTargetPts.store(feedPts.count(), std::memory_order_relaxed);
+    m_seekIgnoredFrames.store(0, std::memory_order_relaxed);
     m_isSeeking.store(true, std::memory_order_release);
     m_fedVideoPts = NO_PTS;
     m_fedAudioPts = NO_PTS;
@@ -1636,7 +1643,6 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
 
   if (data && size)
   {
-    const auto feedPts = pts - std::chrono::milliseconds(m_renderManager.GetDelay());
     CVariant payload;
     payload["bufferAddr"] = fmt::format("{:#x}", reinterpret_cast<std::uintptr_t>(data));
     payload["bufferSize"] = size;
@@ -2140,11 +2146,13 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
     {
       if (m_isSeeking.load(std::memory_order_acquire))
       {
-        const uint64_t target = m_seekTargetPts.load(std::memory_order_relaxed);
-        const int64_t delta = std::abs(static_cast<int64_t>(numValue) - static_cast<int64_t>(target));
-        const int64_t MAX_ACCEPTABLE_GAP = 250000000LL; // 250ms seconds in nanoseconds
+        const int64_t target = m_seekTargetPts.load(std::memory_order_relaxed);
+        const int64_t delta = std::abs(numValue - target);
+        constexpr int64_t MAX_ACCEPTABLE_GAP = 250000000LL; // 250ms in nanoseconds
+        constexpr unsigned int MAX_IGNORED_FRAMES = 3;
 
-        if (delta > MAX_ACCEPTABLE_GAP)
+        if (delta > MAX_ACCEPTABLE_GAP &&
+            m_seekIgnoredFrames.fetch_add(1, std::memory_order_relaxed) < MAX_IGNORED_FRAMES)
         {
           CLog::LogF(LOGINFO, "Ignored stale FRAMEREADY event (backward/forward seek guard). Stale PTS: {}, Target PTS: {}", numValue, target);
           break;

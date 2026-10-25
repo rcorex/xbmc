@@ -399,7 +399,8 @@ private:
    */
   void Unload(bool sync);
   std::atomic<bool> m_isSeeking{false};
-  std::atomic<uint64_t> m_seekTargetPts{0};
+  std::atomic<int64_t> m_seekTargetPts{0};
+  std::atomic<unsigned int> m_seekIgnoredFrames{0};
 
   /**
    * @brief Sets up audio stream parameters and transcoding if necessary.
