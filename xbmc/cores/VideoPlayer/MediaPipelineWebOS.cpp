@@ -416,8 +416,6 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
   m_picture.videoBuffer = new CStarfishVideoBuffer();
 
   m_webOSVersion = WebOSTVPlatformConfig::GetWebOSVersion();
-  if (WebOSTVPlatformConfig::SupportsDTS())
-    ms_codecMap.emplace(AV_CODEC_ID_DTS, "DTS");
   m_processInfo.GetVideoBufferManager().ReleasePools();
 
   const std::shared_ptr<CSettings> settings = CServiceBroker::GetSettingsComponent()->GetSettings();
