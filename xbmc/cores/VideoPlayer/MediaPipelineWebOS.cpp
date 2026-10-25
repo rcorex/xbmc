@@ -2286,25 +2286,10 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       {
         m_osPlayState.store(OSPlayState::Paused, std::memory_order_release);
 
-        // Atomically check and set the flag. emitLoaded will be true ONLY on the first pass.
-        bool emitLoaded = !m_osMediaLoadedEmitted.exchange(true, std::memory_order_acq_rel);
-
-        QueueTask([this, emitLoaded]() {
+        QueueTask([this]() {
           const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
           if (const auto acb = buffer ? buffer->GetAcbHandle() : nullptr)
           {
-            // Only send the initialization commands once per load cycle
-            if (emitLoaded)
-            {
-              CLog::LogF(LOGINFO, "AcbAPI_setMediaId(acbId={}, taskId={}, mediaId={})", acb->Id(), acb->TaskId(), m_mediaAPIs->getMediaID());
-              AcbAPI_setMediaId(acb->Id(), m_mediaAPIs->getMediaID());
-
-              CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_LOADED)", acb->Id(), acb->TaskId());
-              AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_LOADED,
-                              &acb->TaskId());
-            }
-
-            // Always send the PAUSED state command
             CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_PAUSED)", acb->Id(), acb->TaskId());
             AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PAUSED,
                             &acb->TaskId());
