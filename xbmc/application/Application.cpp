@@ -2383,9 +2383,8 @@ void CApplication::Restart(bool bSamePosition)
   }
 
 #if defined(TARGET_WEBOS)
-  if (appPlayer->IsPlayingVideo())
+  if (appPlayer->IsPlayingVideo() && appPlayer->RestartAudioStream())
   {
-    appPlayer->RestartAudioStream();
     return;
   }
 #endif

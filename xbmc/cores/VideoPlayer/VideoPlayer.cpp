@@ -3340,20 +3340,25 @@ void CVideoPlayer::HandleMessages()
         else if (!st.IsCurrent(m_CurrentAudio))
         {
 #if defined(TARGET_WEBOS)
-          WebOSRestartAudioStream(st.demuxerId, st.id, st.source);
-#else
-          CloseStream(m_CurrentAudio, false);
-          OpenStream(m_CurrentAudio, st.demuxerId, st.id, st.source);
-          AdaptForcedSubtitles();
-
-          CDVDMsgPlayerSeek::CMode mode;
-          mode.time = (int)GetUpdatedTime();
-          mode.backward = true;
-          mode.accurate = true;
-          mode.trickplay = true;
-          mode.sync = true;
-          m_messenger.Put(std::make_shared<CDVDMsgPlayerSeek>(mode));
+          if (HasStarfish())
+          {
+            WebOSRestartAudioStream(st.demuxerId, st.id, st.source);
+          }
+          else
 #endif
+          {
+            CloseStream(m_CurrentAudio, false);
+            OpenStream(m_CurrentAudio, st.demuxerId, st.id, st.source);
+            AdaptForcedSubtitles();
+
+            CDVDMsgPlayerSeek::CMode mode;
+            mode.time = (int)GetUpdatedTime();
+            mode.backward = true;
+            mode.accurate = true;
+            mode.trickplay = true;
+            mode.sync = true;
+            m_messenger.Put(std::make_shared<CDVDMsgPlayerSeek>(mode));
+          }
         }
       }
     }
@@ -6429,9 +6434,13 @@ void CVideoPlayer::SetAudioStream(int iStream)
 }
 
 #if defined(TARGET_WEBOS)
-void CVideoPlayer::RestartAudioStream()
+bool CVideoPlayer::RestartAudioStream()
 {
+  if (!HasStarfish())
+    return false;
+
   m_messenger.Put(std::make_shared<CDVDMsg>(CDVDMsg::PLAYER_RESTART_AUDIO_STREAM));
+  return true;
 }
 
 void CVideoPlayer::WebOSRestartAudioStream(int64_t audioDemuxerId, int audioStreamId, int audioSource)

@@ -99,3 +99,8 @@ bool CVideoPlayerWebOS::CanTempo()
 {
   return m_mediaPipelineWebOS || CVideoPlayer::CanTempo();
 }
+
+bool CVideoPlayerWebOS::HasStarfish() const
+{
+  return m_mediaPipelineWebOS != nullptr;
+}

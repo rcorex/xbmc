@@ -403,8 +403,9 @@ public:
   void GetVideoResolution(unsigned int &width, unsigned int &height) override;
 
 #if defined(TARGET_WEBOS)
-  void RestartAudioStream();
+  bool RestartAudioStream();
   void WebOSRestartAudioStream(int64_t audioDemuxerId, int audioStreamId, int audioSource);
+  virtual bool HasStarfish() const { return false; }
 #endif
 
   CVideoSettings GetVideoSettings() const override;

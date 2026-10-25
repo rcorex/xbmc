@@ -893,16 +893,17 @@ void CApplicationPlayer::SetAudioStream(int iStream)
 }
 
 #if defined(TARGET_WEBOS)
-void CApplicationPlayer::RestartAudioStream()
+bool CApplicationPlayer::RestartAudioStream()
 {
   std::shared_ptr<IPlayer> player = GetInternal();
   if (player)
   {
     if (auto vp = dynamic_cast<CVideoPlayer*>(player.get()))
     {
-      vp->RestartAudioStream();
+      return vp->RestartAudioStream();
     }
   }
+  return false;
 }
 #endif
 
