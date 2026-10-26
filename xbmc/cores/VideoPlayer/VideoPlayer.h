@@ -404,7 +404,6 @@ public:
 
 #if defined(TARGET_WEBOS)
   bool RestartAudioStream();
-  void WebOSRestartAudioStream(int64_t audioDemuxerId, int audioStreamId, int audioSource);
   virtual bool HasStarfish() const { return false; }
 #endif
 

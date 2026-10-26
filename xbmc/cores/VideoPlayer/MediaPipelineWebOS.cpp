@@ -640,6 +640,8 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
     }
     // API introduced in webOS 6.0, so we need to handle older versions differently
     Unload(true);
+    FlushAudioMessages();
+    FlushVideoMessages();
 
     m_mediaAPIs = std::make_unique<StarfishMediaAPIs>();
     m_audioClosed = false;
@@ -733,7 +735,7 @@ void CMediaPipelineWebOS::Flush(bool sync)
   // Directly execute any pending ACB commands on this thread.
   ProcessTasks();
 
-  if (!m_mediaAPIs->flush())
+  if (!m_flushed && !m_mediaAPIs->flush())
     CLog::LogF(LOGDEBUG, "Failed to flush media APIs");
   FlushAudioMessages();
   FlushVideoMessages();
