@@ -35,6 +35,7 @@ class CActiveAEBufferPoolResample;
 
 namespace mediapipeline
 {
+class CustomPipeline;
 struct PipelineGStreamerElements;
 } // namespace mediapipeline
 
@@ -402,6 +403,9 @@ private:
    * @param sync If true, wait for unload to complete.
    */
   void Unload(bool sync);
+  std::atomic<bool> m_isSeeking{false};
+  std::atomic<int64_t> m_seekTargetPts{0};
+  std::atomic<unsigned int> m_seekIgnoredFrames{0};
 
   /**
    * @brief Sets up audio stream parameters and transcoding if necessary.
@@ -496,6 +500,12 @@ private:
    */
   void ProcessTasks();
 
+  /**
+   * @brief Gets the custom pipeline pointer
+   * @return Pointer to the custom pipeline, or nullptr if not available.
+   */
+  mediapipeline::CustomPipeline* GetPipeline() const;
+
   static constexpr std::chrono::nanoseconds NO_PTS{-1};
 
   std::condition_variable m_eventCondition;
@@ -537,6 +547,7 @@ private:
   CDVDClock& m_clock;
   CDVDOverlayContainer& m_overlayContainer;
   std::atomic<bool> m_hasAudio{true};
+  std::atomic<bool> m_convertDovi{false};
 
   std::mutex m_audioDeviceMutex;
   bool m_ownsAudioDevice{false};
@@ -547,6 +558,12 @@ private:
   std::atomic<std::chrono::nanoseconds> m_fedAudioPts{NO_PTS};
   std::atomic<std::chrono::nanoseconds> m_fedVideoPts{NO_PTS};
   std::atomic<bool> m_started{false};
+  enum class OSPlayState { Unloaded, Playing, Paused };
+  std::atomic<OSPlayState> m_osPlayState{OSPlayState::Unloaded};
+  enum class APIPlayState { Unknown, Playing, Paused };
+  std::atomic<APIPlayState> m_apiPlayState{APIPlayState::Unknown};
+  std::atomic<bool> m_osMediaLoadedEmitted{false};
+  std::atomic<int> m_speed{DVD_PLAYSPEED_NORMAL};
 
   BitstreamStats m_audioStats{};
   BitstreamStats m_videoStats{};
