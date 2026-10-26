@@ -28,7 +28,8 @@ public:
                     CAEChannelInfo* remapLayout,
                     AEQuality quality,
                     bool force_resample,
-                    float sublevel) = 0;
+                    float sublevel,
+                    int matrixEncoding = 0) = 0;
   virtual int Resample(uint8_t **dst_buffer, int dst_samples, uint8_t **src_buffer, int src_samples, double ratio) = 0;
   virtual int64_t GetDelay(int64_t base) = 0;
   virtual int GetBufferedSamples() = 0;
