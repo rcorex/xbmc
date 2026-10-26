@@ -25268,6 +25268,18 @@ msgctxt "#39219"
 msgid "Use the system Dolby Vision extensions to correctly display Dolby Vision profile 5, 7 (excludes FEL reconstruction), 8 and 10 video."
 msgstr ""
 
+# Use alternate method for audio track change
+#: system/settings/settings.xml
+msgctxt "#39318"
+msgid "Use alternate method for audio track change"
+msgstr ""
+
+# Description of setting with label #39318 "Use alternate method for audio track change"
+#: system/settings/settings.xml
+msgctxt "#39319"
+msgid "Does a full player restart when changing audio tracks. Enable this if you have issues changing audio tracks."
+msgstr ""
+
 #empty strings from id 39220 to 39899
 
 #. List formatting: pattern used to join a list of exactly two items, e.g. "A and B"

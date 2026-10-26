@@ -11,6 +11,9 @@
         </setting>
       </group>
       <group id="3">
+        <setting id="audiooutput.webosaltaudiotrackchange">
+          <visible>true</visible>
+        </setting>
         <setting id="videoplayer.usestarfishdecoder" type="boolean" label="39207" help="39208">
           <visible>true</visible>
           <level>2</level>
