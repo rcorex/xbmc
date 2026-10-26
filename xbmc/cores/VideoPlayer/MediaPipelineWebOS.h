@@ -23,6 +23,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <deque>
 #include <thread>
 
 #include <starfish-media-pipeline/StarfishMediaAPIs.h>
@@ -491,22 +492,27 @@ private:
                              int& width,
                              int& height,
                              int& framerate) const;
-  /**
-   * @brief Queues a task to be safely executed on the main video Process() thread.
-   */
-  void QueueTask(std::function<void()> task);
+  struct PipelineEvent
+  {
+    int32_t type{0};
+    int64_t numValue{0};
+    std::string strValue;
+  };
 
-  /**
-   * @brief Executes all pending queued tasks.
-   */
-  void ProcessTasks();
+  void EventLoop();
+  void HandleLifecycleEvent(const PipelineEvent& event);
+  void HandleFrameReady(int64_t numValue);
 
   static constexpr std::chrono::nanoseconds NO_PTS{-1};
 
   std::condition_variable m_eventCondition;
   std::mutex m_eventMutex;
-  std::mutex m_taskMutex;
-  std::vector<std::function<void()>> m_tasks;
+
+  std::thread m_eventThread;
+  std::mutex m_eventQueueMutex;
+  std::condition_variable m_eventQueueCv;
+  std::deque<PipelineEvent> m_eventQueue;
+  std::atomic<bool> m_stopEventThread{false};
 
   mediapipeline::PipelineGStreamerElements* m_pipeline{nullptr};
   unsigned int m_webOSVersion{4};
