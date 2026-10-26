@@ -145,13 +145,14 @@ CActiveAEBufferPoolResample::~CActiveAEBufferPoolResample()
 }
 
 bool CActiveAEBufferPoolResample::Create(
-    unsigned int totaltime, bool remap, bool upmix, bool normalize, float sublevel)
+    unsigned int totaltime, bool remap, bool upmix, bool normalize, float sublevel, int matrixEncoding)
 {
   CActiveAEBufferPool::Create(totaltime);
 
   m_remap = remap;
   m_stereoUpmix = upmix;
   m_mixSubLevel = sublevel;
+  m_matrixEncoding = matrixEncoding;
 
   m_normalize = true;
   if ((m_format.m_channelLayout.Count() < m_inputFormat.m_channelLayout.Count() && !normalize))
@@ -188,7 +189,7 @@ void CActiveAEBufferPoolResample::ChangeResampler()
 
   m_resampler->Init(dstConfig, srcConfig, m_stereoUpmix, m_normalize, m_centerMixLevel,
                     m_remap ? &m_format.m_channelLayout : nullptr, m_resampleQuality,
-                    m_forceResampler, m_mixSubLevel);
+                    m_forceResampler, m_mixSubLevel, m_matrixEncoding);
 
   m_changeResampler = false;
 }
