@@ -213,11 +213,18 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
   m_stereoUpmix = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_STEREOUPMIX);
   m_maintainOriginalVolume = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_MAINTAINORIGINALVOLUME);
 
+  m_downmixStereo = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO);
+  m_downmixStereoOnly71 = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71);
+  m_downmixStereoDPLII = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREODPLII);
+
   settings->RegisterCallback(this, {CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH,
                                     CSettings::SETTING_AUDIOOUTPUT_PROCESSQUALITY,
                                     CSettings::SETTING_AUDIOOUTPUT_MIXSUBLEVEL,
                                     CSettings::SETTING_AUDIOOUTPUT_STEREOUPMIX,
-                                    CSettings::SETTING_AUDIOOUTPUT_MAINTAINORIGINALVOLUME});
+                                    CSettings::SETTING_AUDIOOUTPUT_MAINTAINORIGINALVOLUME,
+                                    CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO,
+                                    CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71,
+                                    CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREODPLII});
 }
 
 CMediaPipelineWebOS::~CMediaPipelineWebOS()
@@ -246,6 +253,12 @@ void CMediaPipelineWebOS::OnSettingChanged(const std::shared_ptr<const CSetting>
     m_stereoUpmix = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_STEREOUPMIX);
   else if (settingId == CSettings::SETTING_AUDIOOUTPUT_MAINTAINORIGINALVOLUME)
     m_maintainOriginalVolume = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_MAINTAINORIGINALVOLUME);
+  else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO)
+    m_downmixStereo = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO);
+  else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71)
+    m_downmixStereoOnly71 = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71);
+  else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREODPLII)
+    m_downmixStereoDPLII = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREODPLII);
 }
 
 int CMediaPipelineWebOS::GetVideoBitrate() const
@@ -1035,6 +1048,15 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
     if (transcodedChannels == 0)
       transcodedChannels = audioHint.channels;
 
+    if (m_downmixStereo)
+    {
+      bool only71 = m_downmixStereoOnly71;
+      if (!only71 || transcodedChannels > 6)
+      {
+        transcodedChannels = 2;
+      }
+    }
+
     const unsigned int sampleRate = m_audioCodec->GetFormat().m_sampleRate > 0
                                         ? m_audioCodec->GetFormat().m_sampleRate
                                         : audioHint.samplerate;
@@ -1540,7 +1562,8 @@ unsigned int CMediaPipelineWebOS::GetQueueLevel(const StreamType type) const
 
 void CMediaPipelineWebOS::SetDynamicRangeCompression(const long drc)
 {
-  m_audioLimiter.SetAmplification(std::pow(10.0f, static_cast<float>(drc) / 2000.0f));
+  m_audioLimiter.SetAmplification(std::pow(
+      10.0f, (static_cast<float>(drc) / 100.0f + m_volumeAmplificationBoost.load()) / 20.0f));
 }
 
 void CMediaPipelineWebOS::QueueTask(std::function<void()> task)
@@ -1649,16 +1672,37 @@ void CMediaPipelineWebOS::ProcessAudio()
               dstFormat.m_streamInfo.m_type = WebOSTVPlatformConfig::SupportsEAC3()
                                                   ? CAEStreamInfo::DataType::STREAM_TYPE_EAC3
                                                   : CAEStreamInfo::DataType::STREAM_TYPE_AC3;
+              if (m_downmixStereo)
+              {
+                bool only71 = m_downmixStereoOnly71;
+                if (!only71 || dstFormat.m_channelLayout.Count() > 6)
+                  dstFormat.m_channelLayout = CAEChannelInfo(AE_CH_LAYOUT_2_0);
+              }
               m_audioEncoder->Initialize(dstFormat, true);
               auto quality = static_cast<AEQuality>(m_processQuality.load());
               m_audioResample = std::make_unique<ActiveAE::CActiveAEBufferPoolResample>(
                   m_audioCodec->GetFormat(), dstFormat, quality);
               m_audioLimiter.SetSamplerate(dstFormat.m_sampleRate);
+              float volumeAmplification = m_processInfo.GetVideoSettings().m_VolumeAmplification;
+              float boost = 0.0f;
+
+              if ((m_audioHint.codec == AV_CODEC_ID_AC3 || m_audioHint.codec == AV_CODEC_ID_EAC3) &&
+                  m_audioCodec->GetFormat().m_channelLayout.Count() > 2 &&
+                  dstFormat.m_channelLayout == CAEChannelInfo(AE_CH_LAYOUT_2_0))
+              {
+                boost = 6.0f; //boost for AC3 & EAC3
+              }
+
+              m_volumeAmplificationBoost.store(boost);
+              volumeAmplification += boost;
+              m_audioLimiter.SetAmplification(std::pow(10.0f, volumeAmplification / 20.0f));
               const double sublevel = m_mixSubLevel.load() / 100.0;
-              m_audioResample->Create(
-                  0, false, m_stereoUpmix.load(),
-                  !m_maintainOriginalVolume.load(),
-                  static_cast<float>(sublevel));
+              const bool dplii = m_downmixStereo.load() && m_downmixStereoDPLII.load();
+              const int matrixEncoding = dplii ? AV_MATRIX_ENCODING_DPLII : 0;
+              m_audioResample->Create(0, false, m_stereoUpmix.load(),
+                                      !m_maintainOriginalVolume.load(),
+                                      static_cast<float>(sublevel),
+                                      matrixEncoding);
               m_audioResample->FillBuffer();
 
               AEAudioFormat input = m_audioCodec->GetFormat();
@@ -1670,9 +1714,11 @@ void CMediaPipelineWebOS::ProcessAudio()
               m_processInfo.SetAudioDecoderName((m_audioEncoder->GetCodecID() == AV_CODEC_ID_EAC3)
                                                     ? "starfish-EAC3 (transcoding)"
                                                     : "starfish-AC3 (transcoding)");
-              m_processInfo.SetAudioChannels(frame.format.m_channelLayout);
-              m_processInfo.SetAudioSampleRate(frame.format.m_sampleRate);
-              m_processInfo.SetAudioBitsPerSample(frame.bits_per_sample);
+              m_processInfo.SetAudioChannels(dstFormat.m_channelLayout);
+              m_processInfo.SetAudioSampleRate(dstFormat.m_sampleRate);
+              m_processInfo.SetAudioBitsPerSample(
+                  m_audioEncoder ? m_audioEncoder->GetBitRate()
+                                 : CAEUtil::DataFormatToBits(dstFormat.m_dataFormat));
             }
 
             using dvdTime = std::ratio<1, DVD_TIME_BASE>;
@@ -1718,7 +1764,8 @@ void CMediaPipelineWebOS::ProcessAudio()
                 auto p = std::make_shared<CDVDMsgDemuxerPacket>(
                     CDVDDemuxUtils::AllocateDemuxPacket(maxSize));
 
-                const bool passthrough = m_allowPassthrough;
+                const bool passthrough =
+                    m_allowPassthrough && !(m_audioEncoder && buf->pkt->config.channels == 2);
                 if (!passthrough && buf->pkt->config.fmt == AV_SAMPLE_FMT_FLTP)
                 {
                   float volume = CServiceBroker::GetAppComponents()

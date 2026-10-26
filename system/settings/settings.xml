@@ -3688,6 +3688,30 @@
           </dependencies>
           <control type="toggle" />
         </setting>
+        <setting id="audiooutput.webosstarfishdownmixstereo" type="boolean" label="39308" help="39309">
+          <visible>false</visible>
+          <level>1</level>
+          <default>false</default>
+          <control type="toggle" />
+        </setting>
+        <setting id="audiooutput.webosstarfishdownmixstereoonly71" type="boolean" parent="audiooutput.webosstarfishdownmixstereo" label="39310" help="39311">
+          <visible>false</visible>
+          <level>1</level>
+          <default>true</default>
+          <dependencies>
+             <dependency type="enable" setting="audiooutput.webosstarfishdownmixstereo" operator="is">true</dependency>
+          </dependencies>
+          <control type="toggle" />
+        </setting>
+        <setting id="audiooutput.webosstarfishdownmixstereodplii" type="boolean" parent="audiooutput.webosstarfishdownmixstereo" label="39312" help="39313">
+          <visible>false</visible>
+          <level>1</level>
+          <default>false</default>
+          <dependencies>
+             <dependency type="enable" setting="audiooutput.webosstarfishdownmixstereo" operator="is">true</dependency>
+          </dependencies>
+          <control type="toggle" />
+        </setting>
         <setting id="audiooutput.dtspassthrough" type="boolean" label="254" help="36366">
           <level>1</level>
           <default>true</default>

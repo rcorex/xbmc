@@ -536,6 +536,7 @@ private:
   std::unique_ptr<ActiveAE::CActiveAEBufferPoolResample> m_audioResample{nullptr};
   std::unique_ptr<CAEEncoderFFmpeg> m_audioEncoder{nullptr};
   CAELimiter m_audioLimiter;
+  std::atomic<float> m_volumeAmplificationBoost{0.0f};
   std::atomic<unsigned long> m_droppedFrames{0};
   std::chrono::duration<double, std::ratio<1, DVD_TIME_BASE>> m_audioClock{0.0};
 
@@ -563,6 +564,9 @@ private:
   std::atomic<double> m_mixSubLevel{0.0};
   std::atomic<bool> m_stereoUpmix{false};
   std::atomic<bool> m_maintainOriginalVolume{false};
+  std::atomic<bool> m_downmixStereo{false};
+  std::atomic<bool> m_downmixStereoOnly71{false};
+  std::atomic<bool> m_downmixStereoDPLII{false};
 
   std::atomic<std::chrono::nanoseconds> m_fedAudioPts{NO_PTS};
   std::atomic<std::chrono::nanoseconds> m_fedVideoPts{NO_PTS};

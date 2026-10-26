@@ -25322,7 +25322,37 @@ msgctxt "#39307"
 msgid "Changes the encoding bitrate for EAC3. Requires EAC3 transcoding to be enabled."
 msgstr ""
 
-#empty strings from id 39308 to 39899
+#. Title of Downmix transcoding for Starfish to stereo
+msgctxt "#39308"
+msgid "Downmix transcoding for Starfish to stereo"
+msgstr ""
+
+#. Help text for setting "Downmix transcoding for Starfish to stereo" of label #39308
+msgctxt "#39309"
+msgid "Forces downmixing of multichannel audio to stereo when transcoding for Starfish."
+msgstr ""
+
+#. Title of Downmix only for 7.1 ch sources
+msgctxt "#39310"
+msgid "Downmix only for 7.1 ch sources"
+msgstr ""
+
+#. Help text for setting "Downmix only for 7.1 ch sources" of label #39310
+msgctxt "#39311"
+msgid "When enabled, stereo downmixing will only occur if the source has more than 6 channels (e.g., 7.1). Sources with 5.1 or fewer channels will not be downmixed."
+msgstr ""
+
+#. Title of Downmix to Dolby Pro Logic II
+msgctxt "#39312"
+msgid "Downmix to Dolby Pro Logic II"
+msgstr ""
+
+#. Help text for setting "Downmix to Dolby Pro Logic II" of label #39312
+msgctxt "#39313"
+msgid "When enabled, multichannel audio will be downmixed to stereo using Dolby Pro Logic II matrix encoding."
+msgstr ""
+
+#empty strings from id 39314 to 39899
 
 #. List formatting: pattern used to join a list of exactly two items, e.g. "A and B"
 #. STR_LIST_AND_TWO
