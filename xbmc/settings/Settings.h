@@ -429,6 +429,8 @@ public:
   static constexpr auto SETTING_AUDIOOUTPUT_DTSHDPASSTHROUGH = "audiooutput.dtshdpassthrough";
   static constexpr auto SETTING_AUDIOOUTPUT_WEBOSDTSPASSTHROUGH = "audiooutput.webosdtspassthrough";
   static constexpr auto SETTING_AUDIOOUTPUT_WEBOSDTSHDPASSTHROUGH = "audiooutput.webosdtshdpassthrough";
+  static constexpr auto SETTING_AUDIOOUTPUT_WEBOSSTARFISHEAC3 = "audiooutput.webosstarfisheac3";
+  static constexpr auto SETTING_AUDIOOUTPUT_WEBOSSTARFISHEAC3BITRATE = "audiooutput.webosstarfisheac3bitrate";
   static constexpr auto SETTING_AUDIOOUTPUT_DTSHDCOREFALLBACK = "audiooutput.dtshdcorefallback";
   static constexpr auto SETTING_AUDIOOUTPUT_VOLUMESTEPS = "audiooutput.volumesteps";
   static constexpr auto SETTING_AUDIOOUTPUT_LOWLATENCY = "audiooutput.lowlatency";
