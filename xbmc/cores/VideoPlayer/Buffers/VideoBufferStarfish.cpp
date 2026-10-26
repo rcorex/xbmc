@@ -49,18 +49,25 @@ AVPixelFormat CStarfishVideoBuffer::GetFormat()
   return AV_PIX_FMT_NONE;
 }
 
-std::unique_ptr<AcbHandle>& CStarfishVideoBuffer::GetAcbHandle() noexcept
+std::shared_ptr<AcbHandle> CStarfishVideoBuffer::GetAcbHandle() const
 {
+  std::lock_guard<std::mutex> lock(m_acbMutex);
   return m_acbHandle;
 }
 
-std::unique_ptr<AcbHandle>& CStarfishVideoBuffer::CreateAcbHandle()
+std::shared_ptr<AcbHandle> CStarfishVideoBuffer::CreateAcbHandle()
 {
-  m_acbHandle = std::make_unique<AcbHandle>();
+  std::lock_guard<std::mutex> lock(m_acbMutex);
+  m_acbHandle = std::make_shared<AcbHandle>();
   return m_acbHandle;
 }
 
 void CStarfishVideoBuffer::ResetAcbHandle()
 {
-  m_acbHandle = nullptr;
+  std::shared_ptr<AcbHandle> oldHandle;
+  {
+    std::lock_guard<std::mutex> lock(m_acbMutex);
+    oldHandle = std::move(m_acbHandle);
+  }
+  // Destroy old handle outside lock to avoid blocking during AcbAPI teardown
 }

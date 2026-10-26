@@ -25,6 +25,7 @@
 #include <thread>
 
 #include <starfish-media-pipeline/StarfishMediaAPIs.h>
+#include <functional>
 
 namespace ActiveAE
 {
@@ -485,10 +486,23 @@ private:
                              int& height,
                              int& framerate) const;
 
+  /**
+   * @brief Queues a task to be safely executed on the main video Process() thread.
+   */
+  void QueueTask(std::function<void()> task);
+
+  /**
+   * @brief Executes all pending queued tasks.
+   */
+  void ProcessTasks();
+
   static constexpr std::chrono::nanoseconds NO_PTS{-1};
 
   std::condition_variable m_eventCondition;
   std::mutex m_eventMutex;
+  std::mutex m_taskMutex;
+  std::vector<std::function<void()>> m_tasks;
+
 
   mediapipeline::PipelineGStreamerElements* m_pipeline{nullptr};
   unsigned int m_webOSVersion{4};
