@@ -25352,7 +25352,27 @@ msgctxt "#39313"
 msgid "When enabled, multichannel audio will be downmixed to stereo using Dolby Pro Logic II matrix encoding."
 msgstr ""
 
-#empty strings from id 39314 to 39899
+#. Setting "Restore Volume / Bypass Dialog Normalization for AC3 & EAC3"
+msgctxt "#39314"
+msgid "Restore Volume / Bypass Dialog Normalization for AC3 & EAC3"
+msgstr ""
+
+#. Help text for setting "Restore Volume / Bypass Dialog Normalization for AC3 & EAC3" of label #39314
+msgctxt "#39315"
+msgid "Restores original volume for AC-3 and E-AC-3 streams, by overriding the dialog normalization metadata."
+msgstr ""
+
+#. Setting "Restore Volume / Bypass Dialog Normalization for EAC3 Atmos"
+msgctxt "#39316"
+msgid "Restore Volume / Bypass Dialog Normalization for EAC3 Atmos"
+msgstr ""
+
+#. Help text for setting "Restore Volume / Bypass Dialog Normalization for EAC3 Atmos" of label #39316
+msgctxt "#39317"
+msgid "Restores original volume for E-AC-3 Atmos streams, but may cause Atmos to be disabled."
+msgstr ""
+
+#empty strings from id 39318 to 39899
 
 #. List formatting: pattern used to join a list of exactly two items, e.g. "A and B"
 #. STR_LIST_AND_TWO
