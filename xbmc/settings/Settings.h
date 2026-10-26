@@ -427,6 +427,8 @@ public:
   static constexpr auto SETTING_AUDIOOUTPUT_DTSPASSTHROUGH = "audiooutput.dtspassthrough";
   static constexpr auto SETTING_AUDIOOUTPUT_TRUEHDPASSTHROUGH = "audiooutput.truehdpassthrough";
   static constexpr auto SETTING_AUDIOOUTPUT_DTSHDPASSTHROUGH = "audiooutput.dtshdpassthrough";
+  static constexpr auto SETTING_AUDIOOUTPUT_WEBOSDTSPASSTHROUGH = "audiooutput.webosdtspassthrough";
+  static constexpr auto SETTING_AUDIOOUTPUT_WEBOSDTSHDPASSTHROUGH = "audiooutput.webosdtshdpassthrough";
   static constexpr auto SETTING_AUDIOOUTPUT_DTSHDCOREFALLBACK = "audiooutput.dtshdcorefallback";
   static constexpr auto SETTING_AUDIOOUTPUT_VOLUMESTEPS = "audiooutput.volumesteps";
   static constexpr auto SETTING_AUDIOOUTPUT_LOWLATENCY = "audiooutput.lowlatency";

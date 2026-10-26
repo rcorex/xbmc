@@ -25280,7 +25280,29 @@ msgctxt "#39319"
 msgid "Does a full player restart when changing audio tracks. Enable this if you have issues changing audio tracks."
 msgstr ""
 
-#empty strings from id 39220 to 39899
+#empty strings from id 39220 to 39299
+
+#. Title of webOS DTS passthrough setting
+msgctxt "#39300"
+msgid "Enable DTS Passthrough"
+msgstr ""
+
+#. Help text for setting "Enable DTS Passthrough" of label #39300
+msgctxt "#39301"
+msgid "Enable DTS audio passthrough on webOS. Turn this off if your TV or receiver does not support DTS."
+msgstr ""
+
+#. Title of webOS DTS-HD passthrough setting
+msgctxt "#39304"
+msgid "Enable DTS-HD Passthrough"
+msgstr ""
+
+#. Help text for setting "Enable DTS-HD Passthrough" of label #39304
+msgctxt "#39305"
+msgid "Enable DTS-HD audio passthrough on webOS. Turn this off if your TV or receiver does not support DTS-HD."
+msgstr ""
+
+#empty strings from id 39306 to 39899
 
 #. List formatting: pattern used to join a list of exactly two items, e.g. "A and B"
 #. STR_LIST_AND_TWO

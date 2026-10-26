@@ -3647,6 +3647,24 @@
           </dependencies>
           <control type="toggle" />
         </setting>
+        <setting id="audiooutput.webosdtspassthrough" type="boolean" label="39300" help="39301">
+          <visible>false</visible>
+          <level>1</level>
+          <default>false</default>
+          <dependencies>
+            <dependency type="enable" setting="audiooutput.passthrough" operator="is">true</dependency>
+          </dependencies>
+          <control type="toggle" />
+        </setting>
+        <setting id="audiooutput.webosdtshdpassthrough" type="boolean" label="39304" help="39305">
+          <visible>false</visible>
+          <level>1</level>
+          <default>false</default>
+          <dependencies>
+            <dependency type="enable" setting="audiooutput.passthrough" operator="is">true</dependency>
+          </dependencies>
+          <control type="toggle" />
+        </setting>
         <setting id="audiooutput.dtspassthrough" type="boolean" label="254" help="36366">
           <level>1</level>
           <default>true</default>

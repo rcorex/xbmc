@@ -98,6 +98,7 @@ auto ms_codecMap = std::map<AVCodecID, std::string_view>({{AV_CODEC_ID_VP8, "VP8
                                                           {AV_CODEC_ID_AC3, "AC3"},
                                                           {AV_CODEC_ID_EAC3, "AC3 PLUS"},
                                                           {AV_CODEC_ID_AC4, "AC4"},
+                                                          {AV_CODEC_ID_DTS, "DTS"},
                                                           {AV_CODEC_ID_OPUS, "OPUS"},
                                                           {AV_CODEC_ID_MP3, "MP3"},
                                                           {AV_CODEC_ID_AAC, "AAC"},
@@ -203,8 +204,6 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
   m_picture.videoBuffer = new CStarfishVideoBuffer();
 
   m_webOSVersion = WebOSTVPlatformConfig::GetWebOSVersion();
-  if (WebOSTVPlatformConfig::SupportsDTS())
-    ms_codecMap.emplace(AV_CODEC_ID_DTS, "DTS");
   m_processInfo.GetVideoBufferManager().ReleasePools();
 
   const std::shared_ptr<CSettings> settings = CServiceBroker::GetSettingsComponent()->GetSettings();
@@ -312,6 +311,16 @@ bool CMediaPipelineWebOS::Supports(const AVCodecID codec, const int profile)
   if ((codec == AV_CODEC_ID_H264 || codec == AV_CODEC_ID_AVS || codec == AV_CODEC_ID_CAVS) &&
       profile == AV_PROFILE_H264_HIGH_10)
     return false;
+
+  if (codec == AV_CODEC_ID_DTS)
+  {
+    if (profile == AV_PROFILE_DTS_HD_HRA || profile == AV_PROFILE_DTS_HD_MA ||
+        profile == AV_PROFILE_DTS_HD_MA_X || profile == AV_PROFILE_DTS_HD_MA_X_IMAX)
+      return WebOSTVPlatformConfig::SupportsDTSHD();
+
+    return WebOSTVPlatformConfig::SupportsDTS();
+  }
+
   return ms_codecMap.contains(codec);
 }
 
@@ -1022,11 +1031,8 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
     optInfo["dtsInfo"]["channels"] = audioHint.channels;
     optInfo["dtsInfo"]["frequency"] = audioHint.samplerate / 1000.0;
 
-    if (audioHint.profile == AV_PROFILE_DTS_ES)
+    if (audioHint.profile == AV_PROFILE_DTS_EXPRESS)
       codecName = "DTSE";
-    if (audioHint.profile == AV_PROFILE_DTS_HD_MA_X ||
-        audioHint.profile == AV_PROFILE_DTS_HD_MA_X_IMAX)
-      codecName = "DTSX";
   }
   else if (audioHint.codec == AV_CODEC_ID_OPUS)
   {
