@@ -79,7 +79,7 @@ public:
   ~CActiveAEBufferPoolResample() override;
   using CActiveAEBufferPool::Create;
   bool Create(
-      unsigned int totaltime, bool remap, bool upmix, bool normalize = true, float sublevel = 0.0);
+      unsigned int totaltime, bool remap, bool upmix, bool normalize = true, float sublevel = 0.0, int matrixEncoding = 0);
   bool ResampleBuffers(int64_t timestamp = 0);
   void ConfigureResampler(bool normalizelevels,
                           bool stereoupmix,
@@ -112,6 +112,7 @@ protected:
   bool m_fillPackets = false;
   bool m_normalize = true;
   float m_mixSubLevel = 0.0f;
+  int m_matrixEncoding = 0;
   bool m_changeResampler = false;
   bool m_forceResampler = false;
   AEQuality m_resampleQuality;
