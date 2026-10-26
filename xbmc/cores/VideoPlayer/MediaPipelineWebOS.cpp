@@ -1618,21 +1618,21 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
     std::string payload;
     CJSONVariantWriter::Write(time, payload, true);
 
-    if (mediapipeline::CustomPipeline* pipeline = GetPipeline())
+    auto player = static_cast<mediapipeline::CustomPlayer*>(m_mediaAPIs->player.get());
+    auto pipeline = static_cast<mediapipeline::CustomPipeline*>(player->getPipeline().get());
+    if (!m_mediaAPIs->setTimeToDecode(payload.c_str()))
     {
-      if (!m_mediaAPIs->setTimeToDecode(payload.c_str()))
+      CLog::LogF(LOGERROR, "setTimeToDecode failed");
+      if (m_webOSVersion < 11)
       {
-        CLog::LogF(LOGERROR, "setTimeToDecode failed");
-        if (m_webOSVersion < 11)
-        {
-          MEDIA_CUSTOM_CONTENT_INFO_T contentInfo;
-          pipeline->loadSpi_getInfo(&contentInfo);
-          contentInfo.ptsToDecode = pts.count();
-          pipeline->setContentInfo(MEDIA_CUSTOM_SRC_TYPE_ES, &contentInfo);
-        }
+        MEDIA_CUSTOM_CONTENT_INFO_T contentInfo;
+        pipeline->loadSpi_getInfo(&contentInfo);
+        contentInfo.ptsToDecode = pts.count();
+        pipeline->setContentInfo(MEDIA_CUSTOM_SRC_TYPE_ES, &contentInfo);
       }
-      pipeline->sendSegmentEvent();
     }
+
+    pipeline->sendSegmentEvent();
 
     // EAGER TRIGGER: Send PLAYER_STARTED to Kodi
     SStartMsg startMsg{.timestamp = GetCurrentPts(),
@@ -2129,19 +2129,6 @@ bool CMediaPipelineWebOS::GetMaxVideoResolution(const std::string& codec,
   return fn(codec, &width, &height, &framerate);
 }
 
-mediapipeline::CustomPipeline* CMediaPipelineWebOS::GetPipeline() const
-{
-  if (!m_mediaAPIs || !m_mediaAPIs->player)
-    return nullptr;
-
-  const auto* customPlayer = static_cast<mediapipeline::CustomPlayer*>(m_mediaAPIs->player.get());
-  const auto pipelinePtr = customPlayer->getPipeline();
-  if (!pipelinePtr)
-    return nullptr;
-
-  return static_cast<mediapipeline::CustomPipeline*>(pipelinePtr.get());
-}
-
 void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, const char* strValue)
 {
   const std::string logStr = strValue != nullptr ? strValue : "";
@@ -2210,15 +2197,11 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       break;
     case PF_EVENT_TYPE_STR_STATE_UPDATE__LOADCOMPLETED:
     {
-      if (mediapipeline::CustomPipeline* pipeline = GetPipeline())
-      {
-        m_pipeline = pipeline->GetGStreamerElements(
-            {0, MIN_SRC_BUFFER_LEVEL_VIDEO, MAX_SRC_BUFFER_LEVEL_VIDEO, MAX_BUFFER_LEVEL});
-      }
-      else
-      {
-        CLog::LogF(LOGERROR, "Failed to get pipeline elements");
-      }
+      const auto player = static_cast<mediapipeline::CustomPlayer*>(m_mediaAPIs->player.get());
+      const auto pipeline =
+          static_cast<mediapipeline::CustomPipeline*>(player->getPipeline().get());
+      m_pipeline = pipeline->GetGStreamerElements(
+          {0, MIN_SRC_BUFFER_LEVEL_VIDEO, MAX_SRC_BUFFER_LEVEL_VIDEO, MAX_BUFFER_LEVEL});
 
       CLog::LogF(LOGINFO, "AcbAPI_Info: Player state LOADCOMPLETED");
       QueueTask([this]() {
