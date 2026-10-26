@@ -47,7 +47,6 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
-#include <cstdint>
 #include <exception>
 #include <map>
 #include <ranges>
@@ -65,6 +64,7 @@
 extern "C"
 {
 #include <libavcodec/defs.h>
+#include <libavutil/channel_layout.h>
 #include <libavutil/opt.h>
 }
 
@@ -298,7 +298,6 @@ void DefeatDialnorm(uint8_t* data, size_t size)
   }
 }
 
-
 auto ms_codecMap = std::map<AVCodecID, std::string_view>({{AV_CODEC_ID_VP8, "VP8"},
                                                           {AV_CODEC_ID_VP9, "VP9"},
                                                           {AV_CODEC_ID_AVS, "H264"},
@@ -320,8 +319,11 @@ const auto ms_hdrInfoMap = std::map<AVColorTransferCharacteristic, std::string_v
     {AVCOL_TRC_ARIB_STD_B67, "HLG"},
 });
 
-unsigned int SelectTranscodingSampleRate(const unsigned int sampleRate)
+unsigned int SelectTranscodingSampleRate(const unsigned int sampleRate, const bool resampleTo48k = false)
 {
+  if (resampleTo48k)
+    return 48000;
+
   switch (sampleRate)
   {
     case 11025:
@@ -429,6 +431,7 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
   m_downmixStereoDPLII = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREODPLII);
   m_bypassDialnorm = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM);
   m_bypassDialnormAtmos = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS);
+  m_resampleAudio48k = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSRESAMPLE48K);
 
   settings->RegisterCallback(this, {CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH,
                                     CSettings::SETTING_AUDIOOUTPUT_PROCESSQUALITY,
@@ -439,7 +442,8 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
                                     CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71,
                                     CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREODPLII,
                                     CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM,
-                                    CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS});
+                                    CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS,
+                                    CSettings::SETTING_AUDIOOUTPUT_WEBOSRESAMPLE48K});
 }
 
 CMediaPipelineWebOS::~CMediaPipelineWebOS()
@@ -478,6 +482,8 @@ void CMediaPipelineWebOS::OnSettingChanged(const std::shared_ptr<const CSetting>
     m_bypassDialnorm = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM);
   else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS)
     m_bypassDialnormAtmos = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS);
+  else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSRESAMPLE48K)
+    m_resampleAudio48k = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSRESAMPLE48K);
 }
 
 int CMediaPipelineWebOS::GetVideoBitrate() const
@@ -609,7 +615,7 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
       if (m_audioEncoder)
       {
         m_processInfo.SetAudioSampleRate(
-            SelectTranscodingSampleRate(audioHint.samplerate));
+            SelectTranscodingSampleRate(audioHint.samplerate, m_resampleAudio48k));
         m_processInfo.SetAudioBitsPerSample(m_audioEncoder->GetBitRate());
         m_processInfo.SetAudioDecoderName((m_audioEncoder->GetCodecID() == AV_CODEC_ID_EAC3)
                                               ? "starfish-EAC3 (transcoding)"
@@ -1119,7 +1125,7 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
     if (m_audioEncoder)
     {
       m_processInfo.SetAudioSampleRate(
-          SelectTranscodingSampleRate(audioHint.samplerate));
+          SelectTranscodingSampleRate(audioHint.samplerate, m_resampleAudio48k));
       m_processInfo.SetAudioBitsPerSample(m_audioEncoder->GetBitRate());
       m_processInfo.SetAudioDecoderName((m_audioEncoder->GetCodecID() == AV_CODEC_ID_EAC3)
                                             ? "starfish-EAC3 (transcoding)"
@@ -1233,6 +1239,19 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
   m_audioResample = nullptr;
   m_encoderBuffers = nullptr;
 
+  if (audioHint.codec == AV_CODEC_ID_AAC || audioHint.codec == AV_CODEC_ID_AAC_LATM)
+  {
+    const uint8_t* data = audioHint.extradata.GetData();
+    const size_t size = audioHint.extradata.GetSize();
+
+    if (data && size > 0)
+    {
+      const unsigned int parsedRate = ParseAACSampleRate(data, size);
+      if (parsedRate > 0)
+        audioHint.samplerate = parsedRate;
+    }
+  }
+
   auto setAC3PlusInfo = [&](const CDVDStreamInfo& hint, CVariant& optInfo)
   {
     optInfo["ac3PlusInfo"]["channels"] = hint.channels;
@@ -1252,7 +1271,10 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
     return "";
   }
 
-  if (!supported || !allowPassthrough)
+  const bool needsResample48k =
+      m_resampleAudio48k && audioHint.samplerate != 48000 && !audioHint.cryptoSession;
+
+  if (!supported || !allowPassthrough || needsResample48k)
   {
     m_audioCodec = std::make_unique<CDVDAudioCodecFFmpeg>(m_processInfo);
     if (CDVDCodecOptions options; !m_audioCodec->Open(audioHint, options))
@@ -1286,14 +1308,14 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
       codecName = "AC3 PLUS";
       optInfo["ac3PlusInfo"]["channels"] = std::min(transcodedChannels, 6);
       optInfo["ac3PlusInfo"]["frequency"] =
-          SelectTranscodingSampleRate(sampleRate) / 1000.0;
+          SelectTranscodingSampleRate(sampleRate, m_resampleAudio48k) / 1000.0;
     }
     else
     {
       // AC3 maximum is 6 channels
       optInfo["ac3Info"]["channels"] = std::min(transcodedChannels, 6);
       optInfo["ac3Info"]["frequency"] =
-          SelectTranscodingSampleRate(sampleRate) / 1000.0;
+          SelectTranscodingSampleRate(sampleRate, m_resampleAudio48k) / 1000.0;
     }
 
     return codecName;
@@ -1304,6 +1326,7 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
   {
     setAC3PlusInfo(audioHint, optInfo);
   }
+
   if (audioHint.codec == AV_CODEC_ID_AC4)
   {
     optInfo["ac4Info"]["channels"] = audioHint.channels;
@@ -1330,19 +1353,6 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
     optInfo["aacInfo"]["channels"] = audioHint.channels;
     optInfo["aacInfo"]["profile"] = audioHint.profile + 1;
     optInfo["aacInfo"]["format"] = audioHint.extradata ? "raw" : "adts";
-
-    const uint8_t* data = audioHint.extradata.GetData();
-    const size_t size = audioHint.extradata.GetSize();
-
-    if (data && size > 0)
-    {
-      // ParseAACSampleRate is used to determine the actual sample rate from extradata
-      // cannot use avpriv_mpeg4audio_get_config2 as not exposed in FFmpeg public API
-      unsigned int parsedRate = ParseAACSampleRate(data, size);
-      if (parsedRate > 0)
-        audioHint.samplerate = parsedRate;
-    }
-
     optInfo["aacInfo"]["frequency"] = audioHint.samplerate / 1000.0;
   }
 
@@ -1640,7 +1650,6 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
 
   if (data && size)
   {
-    const auto feedPts = pts - std::chrono::milliseconds(m_renderManager.GetDelay());
     CVariant payload;
     payload["bufferAddr"] = fmt::format("{:#x}", reinterpret_cast<std::uintptr_t>(data));
     payload["bufferSize"] = size;
@@ -1810,6 +1819,7 @@ void CMediaPipelineWebOS::Process()
     m_videoGate.Checkpoint();
     ProcessTasks();
 
+
     std::shared_ptr<CDVDMsg> msg = nullptr;
     int priority = 0;
     m_messageQueueVideo.Get(msg, 10ms, priority);
@@ -1910,7 +1920,8 @@ void CMediaPipelineWebOS::ProcessAudio()
             if (!m_audioResample)
             {
               AEAudioFormat dstFormat = m_audioCodec->GetFormat();
-              dstFormat.m_sampleRate = SelectTranscodingSampleRate(dstFormat.m_sampleRate);
+              dstFormat.m_sampleRate =
+                  SelectTranscodingSampleRate(dstFormat.m_sampleRate, m_resampleAudio48k);
               dstFormat.m_dataFormat = AE_FMT_FLOATP;
               dstFormat.m_streamInfo.m_type = WebOSTVPlatformConfig::SupportsEAC3()
                                                   ? CAEStreamInfo::DataType::STREAM_TYPE_EAC3
@@ -1923,6 +1934,8 @@ void CMediaPipelineWebOS::ProcessAudio()
               }
               m_audioEncoder->Initialize(dstFormat, true);
               auto quality = static_cast<AEQuality>(m_processQuality.load());
+              if (m_resampleAudio48k && m_audioCodec->GetFormat().m_sampleRate != 48000)
+                quality = AE_QUALITY_HIGH;
               m_audioResample = std::make_unique<ActiveAE::CActiveAEBufferPoolResample>(
                   m_audioCodec->GetFormat(), dstFormat, quality);
               m_audioLimiter.SetSamplerate(dstFormat.m_sampleRate);

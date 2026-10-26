@@ -492,7 +492,6 @@ private:
                              int& width,
                              int& height,
                              int& framerate) const;
-
   /**
    * @brief Queues a task to be safely executed on the main video Process() thread.
    */
@@ -515,7 +514,6 @@ private:
   std::mutex m_eventMutex;
   std::mutex m_taskMutex;
   std::vector<std::function<void()>> m_tasks;
-
 
   mediapipeline::PipelineGStreamerElements* m_pipeline{nullptr};
   unsigned int m_webOSVersion{4};
@@ -569,6 +567,7 @@ private:
   std::atomic<bool> m_downmixStereoDPLII{false};
   std::atomic<bool> m_bypassDialnorm{false};
   std::atomic<bool> m_bypassDialnormAtmos{true};
+  std::atomic<bool> m_resampleAudio48k{true};
 
   std::atomic<std::chrono::nanoseconds> m_fedAudioPts{NO_PTS};
   std::atomic<std::chrono::nanoseconds> m_fedVideoPts{NO_PTS};

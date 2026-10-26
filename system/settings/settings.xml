@@ -3662,6 +3662,24 @@
           </dependencies>
           <control type="toggle" />
         </setting>
+        <setting id="audiooutput.webosdtspassthrough" type="boolean" label="39300" help="39301">
+          <visible>false</visible>
+          <level>1</level>
+          <default>false</default>
+          <dependencies>
+            <dependency type="enable" setting="audiooutput.passthrough" operator="is">true</dependency>
+          </dependencies>
+          <control type="toggle" />
+        </setting>
+        <setting id="audiooutput.webosdtshdpassthrough" type="boolean" label="39304" help="39305">
+          <visible>false</visible>
+          <level>1</level>
+          <default>false</default>
+          <dependencies>
+            <dependency type="enable" setting="audiooutput.passthrough" operator="is">true</dependency>
+          </dependencies>
+          <control type="toggle" />
+        </setting>
         <setting id="audiooutput.webosstarfisheac3" type="boolean" label="39302" help="39303">
           <visible>false</visible>
           <level>1</level>
@@ -3685,24 +3703,6 @@
           </constraints>
           <control type="spinner" format="string" />
         </setting>
-        <setting id="audiooutput.webosdtspassthrough" type="boolean" label="39300" help="39301">
-          <visible>false</visible>
-          <level>1</level>
-          <default>false</default>
-          <dependencies>
-            <dependency type="enable" setting="audiooutput.passthrough" operator="is">true</dependency>
-          </dependencies>
-          <control type="toggle" />
-        </setting>
-        <setting id="audiooutput.webosdtshdpassthrough" type="boolean" label="39304" help="39305">
-          <visible>false</visible>
-          <level>1</level>
-          <default>false</default>
-          <dependencies>
-            <dependency type="enable" setting="audiooutput.passthrough" operator="is">true</dependency>
-          </dependencies>
-          <control type="toggle" />
-        </setting>
         <setting id="audiooutput.webosstarfishdownmixstereo" type="boolean" label="39308" help="39309">
           <visible>false</visible>
           <level>1</level>
@@ -3725,6 +3725,12 @@
           <dependencies>
              <dependency type="enable" setting="audiooutput.webosstarfishdownmixstereo" operator="is">true</dependency>
           </dependencies>
+          <control type="toggle" />
+        </setting>
+        <setting id="audiooutput.webosresample48k" type="boolean" label="39320" help="39321">
+          <visible>false</visible>
+          <level>1</level>
+          <default>true</default>
           <control type="toggle" />
         </setting>
         <setting id="audiooutput.dtspassthrough" type="boolean" label="254" help="36366">
