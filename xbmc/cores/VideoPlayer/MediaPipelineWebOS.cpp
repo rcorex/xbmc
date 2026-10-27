@@ -2223,17 +2223,7 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
         buffer->InvalidateDisplayWindow();
 
       m_renderManager.ShowVideo(true);
-      if (m_speed.load(std::memory_order_acquire) == DVD_PLAYSPEED_PAUSE)
-      {
-        if (m_apiPlayState.load(std::memory_order_acquire) != APIPlayState::Paused)
-        {
-          if (!m_mediaAPIs->Pause())
-            CLog::LogF(LOGERROR, "Failed to pause");
-          else
-            m_apiPlayState.store(APIPlayState::Paused, std::memory_order_release);
-        }
-      }
-      else if (m_apiPlayState.load(std::memory_order_acquire) != APIPlayState::Playing)
+      if (m_apiPlayState.load(std::memory_order_acquire) != APIPlayState::Playing)
       {
         if (!m_mediaAPIs->Play())
           CLog::LogF(LOGERROR, "Failed to play");
@@ -2290,22 +2280,34 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
     }
     case PF_EVENT_TYPE_STR_STATE_UPDATE__PLAYING: // received after both str_audio_info and str_video_info
     {
-      m_apiPlayState.store(APIPlayState::Playing, std::memory_order_release);
-      // REACTIVE TRIGGER: Send PLAYER_STARTED to Kodi
-      SStartMsg msg{.timestamp = GetCurrentPts(),
-                    .player = VideoPlayer_VIDEO,
-                    .cachetime = DVD_MSEC_TO_TIME(50),
-                    .cachetotal = DVD_MSEC_TO_TIME(100)};
-      m_messageQueueParent.Put(
-          std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, msg));
-      msg.player = VideoPlayer_AUDIO;
-      m_messageQueueParent.Put(
-          std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, msg));
-
-      // OS EMISSION: Only send if the OS doesn't already know we are playing
-      if (m_osPlayState.load(std::memory_order_acquire) != OSPlayState::Playing)
+      const bool isPaused = (m_speed.load(std::memory_order_acquire) == DVD_PLAYSPEED_PAUSE);
+      if (isPaused)
       {
-        m_osPlayState.store(OSPlayState::Playing, std::memory_order_release);
+        if (!m_mediaAPIs->Pause())
+          CLog::LogF(LOGERROR, "Failed to pause");
+        else
+          m_apiPlayState.store(APIPlayState::Paused, std::memory_order_release);
+      }
+      else
+      {
+        m_apiPlayState.store(APIPlayState::Playing, std::memory_order_release);
+        // REACTIVE TRIGGER: Send PLAYER_STARTED to Kodi
+        SStartMsg msg{.timestamp = GetCurrentPts(),
+                      .player = VideoPlayer_VIDEO,
+                      .cachetime = DVD_MSEC_TO_TIME(50),
+                      .cachetotal = DVD_MSEC_TO_TIME(100)};
+        m_messageQueueParent.Put(
+            std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, msg));
+        msg.player = VideoPlayer_AUDIO;
+        m_messageQueueParent.Put(
+            std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, msg));
+      }
+
+      // OS EMISSION: Only send if the OS doesn't already know we are in this state
+      const OSPlayState targetOsState = isPaused ? OSPlayState::Paused : OSPlayState::Playing;
+      if (m_osPlayState.load(std::memory_order_acquire) != targetOsState)
+      {
+        m_osPlayState.store(targetOsState, std::memory_order_release);
 
         // Atomically check and set the flag. emitLoaded will be true ONLY on the first pass.
         bool emitLoaded = !m_osMediaLoadedEmitted.exchange(true, std::memory_order_acq_rel);
@@ -2324,15 +2326,16 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
                             &acb->TaskId());
           }
 
-          // Always send the PLAYING state command
-          CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_PLAYING)", acb->Id(), acb->TaskId());
-          AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PLAYING,
+          const auto targetPlayState = isPaused ? PLAYSTATE_PAUSED : PLAYSTATE_PLAYING;
+          CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState={})",
+                     acb->Id(), acb->TaskId(), isPaused ? "PLAYSTATE_PAUSED" : "PLAYSTATE_PLAYING");
+          AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, targetPlayState,
                           &acb->TaskId());
         }
       }
       else
       {
-        CLog::LogF(LOGINFO, "Ignored duplicate PLAYING state event");
+        CLog::LogF(LOGINFO, "Ignored duplicate {} state event", isPaused ? "PAUSED" : "PLAYING");
       }
       break;
     }
