@@ -1817,7 +1817,7 @@ void CMediaPipelineWebOS::EventLoop()
       m_eventQueue.pop_front();
     }
 
-    HandleLifecycleEvent(event);
+    PlayerCallback(event.type, event.numValue, event.strValue.c_str());
   }
 }
 
@@ -2135,48 +2135,57 @@ bool CMediaPipelineWebOS::GetMaxVideoResolution(const std::string& codec,
   return fn(codec, &width, &height, &framerate);
 }
 
-void CMediaPipelineWebOS::HandleFrameReady(int64_t numValue)
+void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, const char* strValue)
 {
-  if (m_isSeeking.load(std::memory_order_acquire))
-  {
-    const int64_t target = m_seekTargetPts.load(std::memory_order_relaxed);
-    const int64_t delta = std::abs(numValue - target);
-    constexpr int64_t MAX_ACCEPTABLE_GAP = 250000000LL; // 250ms in nanoseconds
-    constexpr unsigned int MAX_IGNORED_FRAMES = 3;
+  const std::string logStr = strValue != nullptr ? strValue : "";
+  CLog::LogF(LOGDEBUG, "type: {}, numValue: {}, strValue: {}", type, numValue, logStr);
 
-    if (delta > MAX_ACCEPTABLE_GAP &&
-        m_seekIgnoredFrames.fetch_add(1, std::memory_order_relaxed) < MAX_IGNORED_FRAMES)
+  const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
+
+  // Adjust event type for older webOS versions
+  if (m_webOSVersion < 5 && type > PF_EVENT_TYPE_STR_STATE_UPDATE__ENDOFSTREAM)
+    type += 2;
+
+  switch (type)
+  {
+    case PF_EVENT_TYPE_FRAMEREADY:
     {
-      CLog::LogF(LOGINFO, "Ignored stale FRAMEREADY event (backward/forward seek guard). Stale PTS: {}, Target PTS: {}", numValue, target);
-      return;
+      if (m_isSeeking.load(std::memory_order_acquire))
+      {
+        const int64_t target = m_seekTargetPts.load(std::memory_order_relaxed);
+        const int64_t delta = std::abs(numValue - target);
+        constexpr int64_t MAX_ACCEPTABLE_GAP = 250000000LL; // 250ms in nanoseconds
+        constexpr unsigned int MAX_IGNORED_FRAMES = 3;
+
+        if (delta > MAX_ACCEPTABLE_GAP &&
+            m_seekIgnoredFrames.fetch_add(1, std::memory_order_relaxed) < MAX_IGNORED_FRAMES)
+        {
+          CLog::LogF(LOGINFO, "Ignored stale FRAMEREADY event (backward/forward seek guard). Stale PTS: {}, Target PTS: {}", numValue, target);
+          break;
+        }
+
+        m_isSeeking.store(false, std::memory_order_release);
+      }
+
+      m_pts = std::chrono::nanoseconds(numValue);
+      const double pts = GetCurrentPts();
+      ProcessOverlays(pts);
+      if (!m_flushed)
+        m_started = true;
+      m_picture.dts = pts;
+      m_picture.pts = pts;
+      std::atomic<bool> stop(false);
+      m_renderManager.AddVideoPicture(m_picture, stop, VS_INTERLACEMETHOD_AUTO, false);
+      m_clock.Discontinuity(pts);
+      break;
     }
-
-    m_isSeeking.store(false, std::memory_order_release);
-  }
-
-  m_pts = std::chrono::nanoseconds(numValue);
-  const double pts = GetCurrentPts();
-  ProcessOverlays(pts);
-  if (!m_flushed)
-    m_started = true;
-  m_picture.dts = pts;
-  m_picture.pts = pts;
-  std::atomic<bool> stop(false);
-  m_renderManager.AddVideoPicture(m_picture, stop, VS_INTERLACEMETHOD_AUTO, false);
-  m_clock.Discontinuity(pts);
-}
-
-void CMediaPipelineWebOS::HandleLifecycleEvent(const PipelineEvent& event)
-{
-  switch (event.type)
-  {
     case PF_EVENT_TYPE_STR_AUDIO_INFO:
     {
       const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
       if (const auto acb = buffer ? buffer->GetAcbHandle() : nullptr)
       {
         CLog::LogF(LOGINFO, "AcbAPI_setMediaAudioData(acbId={}, taskId={})", acb->Id(), acb->TaskId());
-        AcbAPI_setMediaAudioData(acb->Id(), event.strValue.c_str(), &acb->TaskId());
+        AcbAPI_setMediaAudioData(acb->Id(), logStr.c_str(), &acb->TaskId());
       }
       break;
     }
@@ -2186,7 +2195,7 @@ void CMediaPipelineWebOS::HandleLifecycleEvent(const PipelineEvent& event)
       if (const auto acb = buffer ? buffer->GetAcbHandle() : nullptr)
       {
         CLog::LogF(LOGINFO, "AcbAPI_setMediaVideoData(acbId={}, taskId={})", acb->Id(), acb->TaskId());
-        AcbAPI_setMediaVideoData(acb->Id(), event.strValue.c_str(), &acb->TaskId());
+        AcbAPI_setMediaVideoData(acb->Id(), logStr.c_str(), &acb->TaskId());
       }
       break;
     }
@@ -2228,11 +2237,6 @@ void CMediaPipelineWebOS::HandleLifecycleEvent(const PipelineEvent& event)
       m_flushed = true;
       Create();
       m_audioThread = std::thread([this] { ProcessAudio(); });
-
-      {
-        std::lock_guard<std::mutex> lock(m_eventMutex);
-        m_eventCondition.notify_all();
-      }
       break;
     }
     case PF_EVENT_TYPE_STR_STATE_UPDATE__UNLOADCOMPLETED:
@@ -2257,7 +2261,6 @@ void CMediaPipelineWebOS::HandleLifecycleEvent(const PipelineEvent& event)
         std::lock_guard<std::mutex> lock(m_eventMutex);
         m_loaded = false;
       }
-      m_eventCondition.notify_all();
       break;
     }
     case PF_EVENT_TYPE_STR_STATE_UPDATE__PAUSED:
@@ -2342,39 +2345,20 @@ void CMediaPipelineWebOS::HandleLifecycleEvent(const PipelineEvent& event)
           std::make_shared<CDVDMsgType<SStateMsg>>(CDVDMsg::PLAYER_REPORT_STATE, msg));
       break;
     }
+    case PF_EVENT_TYPE_DROPPED_FRAME:
+      m_droppedFrames += static_cast<unsigned long>(numValue);
+      break;
     case PF_EVENT_TYPE_INT_ERROR:
-      CLog::LogF(LOGERROR, "Pipeline INT_ERROR numValue: {}, strValue: {}", event.numValue, event.strValue);
+      CLog::LogF(LOGERROR, "Pipeline INT_ERROR numValue: {}, strValue: {}", numValue, logStr);
       break;
     case PF_EVENT_TYPE_STR_ERROR:
-      CLog::LogF(LOGERROR, "Pipeline STR_ERROR numValue: {}, strValue: {}", event.numValue, event.strValue);
+      CLog::LogF(LOGERROR, "Pipeline STR_ERROR numValue: {}, strValue: {}", numValue, logStr);
       break;
     default:
       break;
   }
-}
 
-void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, const char* strValue)
-{
-  // Adjust event type for older webOS versions
-  if (m_webOSVersion < 5 && type > PF_EVENT_TYPE_STR_STATE_UPDATE__ENDOFSTREAM)
-    type += 2;
-
-  if (type == PF_EVENT_TYPE_FRAMEREADY)
-  {
-    HandleFrameReady(numValue);
-    return;
-  }
-  if (type == PF_EVENT_TYPE_DROPPED_FRAME)
-  {
-    m_droppedFrames += static_cast<unsigned long>(numValue);
-    return;
-  }
-
-  {
-    std::lock_guard<std::mutex> lock(m_eventQueueMutex);
-    m_eventQueue.push_back({type, numValue, strValue != nullptr ? strValue : ""});
-  }
-  m_eventQueueCv.notify_one();
+  m_eventCondition.notify_all();
 }
 
 void CMediaPipelineWebOS::PlayerCallback(const int32_t type,
@@ -2382,5 +2366,10 @@ void CMediaPipelineWebOS::PlayerCallback(const int32_t type,
                                          const char* strValue,
                                          void* data)
 {
-  static_cast<CMediaPipelineWebOS*>(data)->PlayerCallback(type, numValue, strValue);
+  const auto self = static_cast<CMediaPipelineWebOS*>(data);
+  {
+    std::lock_guard<std::mutex> lock(self->m_eventQueueMutex);
+    self->m_eventQueue.push_back({type, numValue, strValue != nullptr ? strValue : ""});
+  }
+  self->m_eventQueueCv.notify_one();
 }

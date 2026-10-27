@@ -27,7 +27,6 @@
 #include <thread>
 
 #include <starfish-media-pipeline/StarfishMediaAPIs.h>
-#include <functional>
 
 namespace ActiveAE
 {
@@ -500,8 +499,6 @@ private:
   };
 
   void EventLoop();
-  void HandleLifecycleEvent(const PipelineEvent& event);
-  void HandleFrameReady(int64_t numValue);
 
   static constexpr std::chrono::nanoseconds NO_PTS{-1};
 
