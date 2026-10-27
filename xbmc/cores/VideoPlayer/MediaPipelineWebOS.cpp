@@ -2317,7 +2317,7 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       }
       else
       {
-        CLog::LogF(LOGINFO, "Ignored duplicate PAUSED state event");
+        CLog::LogF(LOGINFO, "Ignored duplicate ACB setState to PLAYSTATE_PAUSED");
       }
       break;
     }
@@ -2367,7 +2367,8 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       }
       else
       {
-        CLog::LogF(LOGINFO, "Ignored duplicate {} state event", isPaused ? "PAUSED" : "PLAYING");
+        CLog::LogF(LOGINFO, "Ignored duplicate ACB setState to {}",
+                   isPaused ? "PLAYSTATE_PAUSED" : "PLAYSTATE_PLAYING");
       }
       break;
     }
