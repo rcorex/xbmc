@@ -2214,6 +2214,8 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
         CLog::LogF(LOGINFO, "AcbAPI_setSinkType(acbId={}, taskId={}, sinkType=SINK_TYPE_MAIN)", acb->Id(), acb->TaskId());
         AcbAPI_setSinkType(acb->Id(), SINK_TYPE_MAIN);
       }
+      if (buffer)
+        buffer->InvalidateDisplayWindow();
 
       m_renderManager.ShowVideo(true);
       if (m_speed.load(std::memory_order_acquire) == DVD_PLAYSPEED_PAUSE)
@@ -2249,13 +2251,6 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       m_osPlayState.store(OSPlayState::Unloaded, std::memory_order_release);
       m_apiPlayState.store(APIPlayState::Unknown, std::memory_order_release);
       m_osMediaLoadedEmitted.store(false, std::memory_order_release);
-
-      const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
-      if (buffer)
-      {
-        CLog::LogF(LOGINFO, "Delete ACB handle (UnloadCompleted)");
-        buffer->ResetAcbHandle();
-      }
 
       {
         std::lock_guard<std::mutex> lock(m_eventMutex);

@@ -59,6 +59,7 @@ std::shared_ptr<AcbHandle> CStarfishVideoBuffer::CreateAcbHandle()
 {
   std::lock_guard<std::mutex> lock(m_acbMutex);
   m_acbHandle = std::make_shared<AcbHandle>();
+  InvalidateDisplayWindow();
   return m_acbHandle;
 }
 

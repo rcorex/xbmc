@@ -136,8 +136,9 @@ void CRendererStarfish::ManageRenderArea()
     const std::shared_ptr<AcbHandle> acbHandle =
         m_videoBuffer ? m_videoBuffer->GetAcbHandle() : nullptr;
     long currentAcbId = acbHandle ? acbHandle->Id() : 0;
+    const unsigned int windowGen = m_videoBuffer ? m_videoBuffer->DisplayWindowGen() : 0;
 
-    if ((rectsChanged || (currentAcbId && currentAcbId != m_lastAcbId)) &&
+    if ((rectsChanged || windowGen != m_lastWindowGen) &&
         !m_sourceRect.IsEmpty() && !m_destRect.IsEmpty() && currentAcbId && acbHandle)
     {
       CLog::LogF(LOGINFO, "AcbAPI_setCustomDisplayWindow - AcbId: {}, TaskId: {}, "
@@ -156,7 +157,7 @@ void CRendererStarfish::ManageRenderArea()
           static_cast<long>(m_destRect.y1), static_cast<long>(m_destRect.Width()),
           static_cast<long>(m_destRect.Height()), false, &acbHandle->TaskId());
 
-      m_lastAcbId = currentAcbId;
+      m_lastWindowGen = windowGen;
       m_exportedSourceRect = m_sourceRect;
       m_exportedDestRect = m_destRect;
     }
@@ -203,7 +204,7 @@ bool CRendererStarfish::IsGuiLayer()
 void CRendererStarfish::UnInit()
 {
   m_configured = false;
-  m_lastAcbId = 0;
+  m_lastWindowGen = 0;
 }
 
 void CRendererStarfish::Update()
