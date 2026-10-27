@@ -500,6 +500,7 @@ private:
   };
 
   void EventLoop();
+  void CheckAndEmitAcbLoaded();
 
   static constexpr std::chrono::nanoseconds NO_PTS{-1};
 
@@ -574,6 +575,8 @@ private:
   enum class APIPlayState { Unknown, Playing, Paused };
   std::atomic<APIPlayState> m_apiPlayState{APIPlayState::Unknown};
   std::atomic<bool> m_osMediaLoadedEmitted{false};
+  std::atomic<bool> m_receivedAudioInfo{false};
+  std::atomic<bool> m_receivedVideoInfo{false};
   std::atomic<int> m_speed{DVD_PLAYSPEED_NORMAL};
 
   BitstreamStats m_audioStats{};
