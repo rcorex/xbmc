@@ -204,7 +204,6 @@ bool CRendererStarfish::IsGuiLayer()
 void CRendererStarfish::UnInit()
 {
   m_configured = false;
-  m_lastWindowGen = 0;
 }
 
 void CRendererStarfish::Update()

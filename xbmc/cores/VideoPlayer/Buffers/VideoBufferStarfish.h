@@ -42,8 +42,14 @@ public:
   std::shared_ptr<AcbHandle> GetAcbHandle() const;
   std::shared_ptr<AcbHandle> CreateAcbHandle();
   void ResetAcbHandle();
-  void InvalidateDisplayWindow() noexcept { m_displayWindowGen.fetch_add(1, std::memory_order_relaxed); }
-  [[nodiscard]] unsigned int DisplayWindowGen() const noexcept { return m_displayWindowGen.load(std::memory_order_relaxed); }
+  void InvalidateDisplayWindow() noexcept
+  {
+    m_displayWindowGen.fetch_add(1, std::memory_order_relaxed);
+  }
+  [[nodiscard]] unsigned int DisplayWindowGen() const noexcept
+  {
+    return m_displayWindowGen.load(std::memory_order_relaxed);
+  }
 
 private:
   mutable std::mutex m_acbMutex;
