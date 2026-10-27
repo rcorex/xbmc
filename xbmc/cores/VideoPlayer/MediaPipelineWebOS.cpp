@@ -747,6 +747,7 @@ void CMediaPipelineWebOS::Flush(bool sync)
     m_bitstream->ResetStartDecode();
   m_fedAudioPts = NO_PTS;
   m_fedVideoPts = NO_PTS;
+  m_pts = NO_PTS;
   m_started = false;
   m_flushed = true;
   m_pendingStarted.store(false, std::memory_order_release);
