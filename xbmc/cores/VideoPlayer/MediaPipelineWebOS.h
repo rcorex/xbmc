@@ -408,6 +408,7 @@ private:
   std::atomic<bool> m_isSeeking{false};
   std::atomic<int64_t> m_seekTargetPts{0};
   std::atomic<unsigned int> m_seekIgnoredFrames{0};
+  std::atomic<bool> m_pendingStarted{false};
 
   /**
    * @brief Sets up audio stream parameters and transcoding if necessary.

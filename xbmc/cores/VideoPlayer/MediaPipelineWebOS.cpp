@@ -747,9 +747,9 @@ void CMediaPipelineWebOS::Flush(bool sync)
     m_bitstream->ResetStartDecode();
   m_fedAudioPts = NO_PTS;
   m_fedVideoPts = NO_PTS;
-  m_pts = NO_PTS;
   m_started = false;
   m_flushed = true;
+  m_pendingStarted.store(false, std::memory_order_release);
   m_isSeeking.store(false, std::memory_order_release);
   m_seekIgnoredFrames.store(0, std::memory_order_relaxed);
 }
@@ -910,6 +910,7 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
   m_fedVideoPts = NO_PTS;
   m_started = false;
   m_convertDovi = false;
+  m_pendingStarted.store(false, std::memory_order_release);
   m_isSeeking.store(false, std::memory_order_release);
   m_seekIgnoredFrames.store(0, std::memory_order_relaxed);
   CLog::LogF(LOGINFO, "Resetting internal play state tracking variables (Load)");
@@ -1223,6 +1224,7 @@ void CMediaPipelineWebOS::Unload(const bool sync)
   m_fedVideoPts = NO_PTS;
   m_started = false;
   m_convertDovi = false;
+  m_pendingStarted.store(false, std::memory_order_release);
   m_isSeeking.store(false, std::memory_order_release);
   m_seekIgnoredFrames.store(0, std::memory_order_relaxed);
 
@@ -1557,7 +1559,9 @@ bool CMediaPipelineWebOS::FeedAudioData(const std::shared_ptr<CDVDMsg>& msg)
 
 bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
 {
-  DemuxPacket* packet = std::static_pointer_cast<CDVDMsgDemuxerPacket>(msg)->GetPacket();
+  const auto demuxMsg = std::static_pointer_cast<CDVDMsgDemuxerPacket>(msg);
+  DemuxPacket* packet = demuxMsg->GetPacket();
+  const bool drop = demuxMsg->GetPacketDrop();
 
   auto pts = std::chrono::duration_cast<std::chrono::nanoseconds>(
       std::chrono::duration<double, std::ratio<1, DVD_TIME_BASE>>(packet->pts));
@@ -1601,21 +1605,12 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
 
   if (m_flushed)
   {
-    // Prepare all state variables FIRST
-    m_pts = pts;
-    m_seekTargetPts.store(feedPts.count(), std::memory_order_relaxed);
-    m_seekIgnoredFrames.store(0, std::memory_order_relaxed);
-    m_isSeeking.store(true, std::memory_order_release);
     m_fedVideoPts = NO_PTS;
     m_fedAudioPts = NO_PTS;
-
-    // Explicitly reset started here as a defensive guarantee
     m_started = false;
-    // Clear the flushed flag BEFORE triggering the API
     m_flushed = false;
+    m_pendingStarted.store(true, std::memory_order_release);
 
-    // NOW safely interact with the API. Any async callbacks fired
-    // from this point forward will see the correct internal state.
     CVariant time;
     time["position"] = pts.count();
     std::string payload;
@@ -1636,6 +1631,15 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
     }
 
     pipeline->sendSegmentEvent();
+  }
+
+  if (m_pendingStarted.load(std::memory_order_acquire) && !drop)
+  {
+    m_pendingStarted.store(false, std::memory_order_release);
+    m_pts = pts;
+    m_seekTargetPts.store(feedPts.count(), std::memory_order_relaxed);
+    m_seekIgnoredFrames.store(0, std::memory_order_relaxed);
+    m_isSeeking.store(true, std::memory_order_release);
 
     // EAGER TRIGGER: Send PLAYER_STARTED to Kodi
     SStartMsg startMsg{.timestamp = GetCurrentPts(),
@@ -2237,6 +2241,7 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       }
       m_loaded = true;
       m_flushed = true;
+      m_pendingStarted.store(false, std::memory_order_release);
       Create();
       m_audioThread = std::thread([this] { ProcessAudio(); });
       break;
