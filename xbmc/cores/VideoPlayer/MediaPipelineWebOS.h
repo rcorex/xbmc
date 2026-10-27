@@ -570,11 +570,11 @@ private:
   std::atomic<std::chrono::nanoseconds> m_fedAudioPts{NO_PTS};
   std::atomic<std::chrono::nanoseconds> m_fedVideoPts{NO_PTS};
   std::atomic<bool> m_started{false};
-  enum class OSPlayState { Unloaded, Playing, Paused };
-  std::atomic<OSPlayState> m_osPlayState{OSPlayState::Unloaded};
-  enum class APIPlayState { Unknown, Playing, Paused };
-  std::atomic<APIPlayState> m_apiPlayState{APIPlayState::Unknown};
-  std::atomic<bool> m_osMediaLoadedEmitted{false};
+  enum class AcbPlayState { Unloaded, Playing, Paused };
+  std::atomic<AcbPlayState> m_acbPlayState{AcbPlayState::Unloaded};
+  enum class MediaPlayState { Unknown, Playing, Paused };
+  std::atomic<MediaPlayState> m_mediaPlayState{MediaPlayState::Unknown};
+  std::atomic<bool> m_acbLoadedEmitted{false};
   std::atomic<bool> m_receivedAudioInfo{false};
   std::atomic<bool> m_receivedVideoInfo{false};
   std::atomic<int> m_speed{DVD_PLAYSPEED_NORMAL};

@@ -828,17 +828,17 @@ void CMediaPipelineWebOS::SetSpeed(const int speed)
     return;
 
   // Deduplicate redundant consecutive calls with the same speed (e.g. audio + video from VideoPlayer)
-  if (prevSpeed == speed && m_apiPlayState.load(std::memory_order_acquire) != APIPlayState::Unknown)
+  if (prevSpeed == speed && m_mediaPlayState.load(std::memory_order_acquire) != MediaPlayState::Unknown)
     return;
 
   if (speed == DVD_PLAYSPEED_PAUSE)
   {
-    if (m_apiPlayState.load(std::memory_order_acquire) != APIPlayState::Paused)
+    if (m_mediaPlayState.load(std::memory_order_acquire) != MediaPlayState::Paused)
     {
       if (!m_mediaAPIs->Pause())
         CLog::LogF(LOGERROR, "Pause failed");
       else
-        m_apiPlayState.store(APIPlayState::Paused, std::memory_order_release);
+        m_mediaPlayState.store(MediaPlayState::Paused, std::memory_order_release);
     }
     return;
   }
@@ -847,7 +847,7 @@ void CMediaPipelineWebOS::SetSpeed(const int speed)
 
   if (speed == DVD_PLAYSPEED_NORMAL)
   {
-    if (m_apiPlayState.load(std::memory_order_acquire) != APIPlayState::Playing)
+    if (m_mediaPlayState.load(std::memory_order_acquire) != MediaPlayState::Playing)
     {
       if (!m_mediaAPIs->Play())
       {
@@ -856,7 +856,7 @@ void CMediaPipelineWebOS::SetSpeed(const int speed)
       }
       else
       {
-        m_apiPlayState.store(APIPlayState::Playing, std::memory_order_release);
+        m_mediaPlayState.store(MediaPlayState::Playing, std::memory_order_release);
       }
     }
   }
@@ -904,9 +904,9 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
     m_eventQueue.clear();
   }
 
-  m_osPlayState.store(OSPlayState::Unloaded, std::memory_order_release);
-  m_apiPlayState.store(APIPlayState::Unknown, std::memory_order_release);
-  m_osMediaLoadedEmitted.store(false, std::memory_order_release);
+  m_acbPlayState.store(AcbPlayState::Unloaded, std::memory_order_release);
+  m_mediaPlayState.store(MediaPlayState::Unknown, std::memory_order_release);
+  m_acbLoadedEmitted.store(false, std::memory_order_release);
   m_receivedAudioInfo.store(false, std::memory_order_release);
   m_receivedVideoInfo.store(false, std::memory_order_release);
   m_fedAudioPts = NO_PTS;
@@ -1205,9 +1205,9 @@ bool CMediaPipelineWebOS::ConfigureRenderer(const CDVDStreamInfo& videoHint, con
 
 void CMediaPipelineWebOS::Unload(const bool sync)
 {
-  m_osPlayState.store(OSPlayState::Unloaded, std::memory_order_release);
-  m_apiPlayState.store(APIPlayState::Unknown, std::memory_order_release);
-  m_osMediaLoadedEmitted.store(false, std::memory_order_release);
+  m_acbPlayState.store(AcbPlayState::Unloaded, std::memory_order_release);
+  m_mediaPlayState.store(MediaPlayState::Unknown, std::memory_order_release);
+  m_acbLoadedEmitted.store(false, std::memory_order_release);
   m_receivedAudioInfo.store(false, std::memory_order_release);
   m_receivedVideoInfo.store(false, std::memory_order_release);
 
@@ -1819,7 +1819,7 @@ void CMediaPipelineWebOS::CheckAndEmitAcbLoaded()
   if (!audioReady || !videoReady)
     return;
 
-  bool emitLoaded = !m_osMediaLoadedEmitted.exchange(true, std::memory_order_acq_rel);
+  bool emitLoaded = !m_acbLoadedEmitted.exchange(true, std::memory_order_acq_rel);
   if (!emitLoaded)
     return;
 
@@ -2264,12 +2264,12 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
         buffer->InvalidateDisplayWindow();
 
       m_renderManager.ShowVideo(true);
-      if (m_apiPlayState.load(std::memory_order_acquire) != APIPlayState::Playing)
+      if (m_mediaPlayState.load(std::memory_order_acquire) != MediaPlayState::Playing)
       {
         if (!m_mediaAPIs->Play())
           CLog::LogF(LOGERROR, "Failed to play");
         else
-          m_apiPlayState.store(APIPlayState::Playing, std::memory_order_release);
+          m_mediaPlayState.store(MediaPlayState::Playing, std::memory_order_release);
       }
       m_loaded = true;
       m_flushed = true;
@@ -2285,9 +2285,9 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
         m_audioThread.join();
       m_pipeline = nullptr;
       RequestAudioDevice(false);
-      m_osPlayState.store(OSPlayState::Unloaded, std::memory_order_release);
-      m_apiPlayState.store(APIPlayState::Unknown, std::memory_order_release);
-      m_osMediaLoadedEmitted.store(false, std::memory_order_release);
+      m_acbPlayState.store(AcbPlayState::Unloaded, std::memory_order_release);
+      m_mediaPlayState.store(MediaPlayState::Unknown, std::memory_order_release);
+      m_acbLoadedEmitted.store(false, std::memory_order_release);
       m_receivedAudioInfo.store(false, std::memory_order_release);
       m_receivedVideoInfo.store(false, std::memory_order_release);
 
@@ -2299,13 +2299,13 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
     }
     case PF_EVENT_TYPE_STR_STATE_UPDATE__PAUSED:
     {
-      m_apiPlayState.store(APIPlayState::Paused, std::memory_order_release);
+      m_mediaPlayState.store(MediaPlayState::Paused, std::memory_order_release);
       RequestAudioDevice(false);
 
       // OS EMISSION: Only send if the OS doesn't already know we are paused
-      if (m_osPlayState.load(std::memory_order_acquire) != OSPlayState::Paused)
+      if (m_acbPlayState.load(std::memory_order_acquire) != AcbPlayState::Paused)
       {
-        m_osPlayState.store(OSPlayState::Paused, std::memory_order_release);
+        m_acbPlayState.store(AcbPlayState::Paused, std::memory_order_release);
 
         const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
         if (const auto acb = buffer ? buffer->GetAcbHandle() : nullptr)
@@ -2329,11 +2329,11 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
         if (!m_mediaAPIs->Pause())
           CLog::LogF(LOGERROR, "Failed to pause");
         else
-          m_apiPlayState.store(APIPlayState::Paused, std::memory_order_release);
+          m_mediaPlayState.store(MediaPlayState::Paused, std::memory_order_release);
       }
       else
       {
-        m_apiPlayState.store(APIPlayState::Playing, std::memory_order_release);
+        m_mediaPlayState.store(MediaPlayState::Playing, std::memory_order_release);
         // REACTIVE TRIGGER: Send PLAYER_STARTED to Kodi
         SStartMsg msg{.timestamp = GetCurrentPts(),
                       .player = VideoPlayer_VIDEO,
@@ -2350,10 +2350,10 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       CheckAndEmitAcbLoaded();
 
       // OS EMISSION: Transition ACB to target state (PLAYSTATE_PAUSED or PLAYSTATE_PLAYING)
-      const OSPlayState targetOsState = isPaused ? OSPlayState::Paused : OSPlayState::Playing;
-      if (m_osPlayState.load(std::memory_order_acquire) != targetOsState)
+      const AcbPlayState targetAcbState = isPaused ? AcbPlayState::Paused : AcbPlayState::Playing;
+      if (m_acbPlayState.load(std::memory_order_acquire) != targetAcbState)
       {
-        m_osPlayState.store(targetOsState, std::memory_order_release);
+        m_acbPlayState.store(targetAcbState, std::memory_order_release);
 
         const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
         if (const auto acb = buffer ? buffer->GetAcbHandle() : nullptr)
