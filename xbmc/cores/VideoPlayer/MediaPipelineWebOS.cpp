@@ -828,7 +828,7 @@ void CMediaPipelineWebOS::SetSpeed(const int speed)
     return;
 
   // Deduplicate redundant consecutive calls with the same speed (e.g. audio + video from VideoPlayer)
-  if (prevSpeed == speed && m_mediaPlayState.load(std::memory_order_acquire) != MediaPlayState::Unknown)
+  if (prevSpeed == speed && m_mediaPlayState.load(std::memory_order_acquire) == MediaPlayState::Playing)
     return;
 
   if (speed == DVD_PLAYSPEED_PAUSE)
