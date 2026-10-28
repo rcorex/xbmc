@@ -570,23 +570,6 @@ private:
   std::atomic<std::chrono::nanoseconds> m_fedAudioPts{NO_PTS};
   std::atomic<std::chrono::nanoseconds> m_fedVideoPts{NO_PTS};
   std::atomic<bool> m_started{false};
-  enum class AcbPlayState { Unloaded, Loaded, Playing, Paused };
-  static constexpr const char* AcbPlayStateToString(const AcbPlayState state)
-  {
-    switch (state)
-    {
-      case AcbPlayState::Unloaded:
-        return "PLAYSTATE_UNLOADED";
-      case AcbPlayState::Loaded:
-        return "PLAYSTATE_LOADED";
-      case AcbPlayState::Playing:
-        return "PLAYSTATE_PLAYING";
-      case AcbPlayState::Paused:
-        return "PLAYSTATE_PAUSED";
-    }
-    return "UNKNOWN";
-  }
-  std::atomic<AcbPlayState> m_acbPlayState{AcbPlayState::Unloaded};
   enum class MediaPlayState { Unknown, Playing, Paused };
   std::atomic<MediaPlayState> m_mediaPlayState{MediaPlayState::Unknown};
   std::atomic<bool> m_receivedAudioInfo{false};
