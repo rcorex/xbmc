@@ -574,6 +574,8 @@ private:
   std::atomic<MediaPlayState> m_mediaPlayState{MediaPlayState::Unknown};
   std::atomic<bool> m_receivedAudioInfo{false};
   std::atomic<bool> m_receivedVideoInfo{false};
+  std::string m_audioDataStr;
+  std::string m_videoDataStr;
   std::atomic<int> m_speed{DVD_PLAYSPEED_NORMAL};
 
   BitstreamStats m_audioStats{};
