@@ -86,7 +86,7 @@ constexpr unsigned int MIN_SRC_BUFFER_LEVEL_AUDIO = 0 * 1024 * 1024; // 0 MB
 constexpr unsigned int MIN_SRC_BUFFER_LEVEL_VIDEO = 0 * 1024 * 1024; // 0 MB
 constexpr unsigned int MAX_SRC_BUFFER_LEVEL_AUDIO = 2 * 1024 * 1024; // 2 MB
 constexpr unsigned int MAX_SRC_BUFFER_LEVEL_VIDEO = 8 * 1024 * 1024; // 8 MB
-constexpr std::chrono::nanoseconds MAX_FEED_AHEAD_TIME = 2000ms;
+constexpr std::chrono::nanoseconds MAX_FEED_AHEAD_TIME = 1600ms;
 
 constexpr unsigned int SVP_VERSION_30 = 30;
 constexpr unsigned int SVP_VERSION_40 = 40;
