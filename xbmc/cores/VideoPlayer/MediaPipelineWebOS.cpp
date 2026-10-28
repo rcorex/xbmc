@@ -827,21 +827,22 @@ void CMediaPipelineWebOS::SetSpeed(const int speed)
   if (!m_loaded)
     return;
 
-  // Deduplicate redundant consecutive calls with the same speed (e.g. audio + video from VideoPlayer)
-  if (prevSpeed == speed && m_mediaPlayState.load(std::memory_order_acquire) == MediaPlayState::Playing)
-    return;
-
   if (speed == DVD_PLAYSPEED_PAUSE)
   {
-    if (m_mediaPlayState.load(std::memory_order_acquire) != MediaPlayState::Paused)
-    {
-      if (!m_mediaAPIs->Pause())
-        CLog::LogF(LOGERROR, "Pause failed");
-      else
-        m_mediaPlayState.store(MediaPlayState::Paused, std::memory_order_release);
-    }
+    if (m_mediaPlayState.load(std::memory_order_acquire) == MediaPlayState::Paused)
+      return;
+
+    if (!m_mediaAPIs->Pause())
+      CLog::LogF(LOGERROR, "Pause failed");
+    else
+      m_mediaPlayState.store(MediaPlayState::Paused, std::memory_order_release);
+
     return;
   }
+
+  // Deduplicate redundant consecutive calls when already playing at the requested speed
+  if (prevSpeed == speed && m_mediaPlayState.load(std::memory_order_acquire) == MediaPlayState::Playing)
+    return;
 
   RequestAudioDevice(true);
 
@@ -853,6 +854,7 @@ void CMediaPipelineWebOS::SetSpeed(const int speed)
       {
         CLog::LogF(LOGERROR, "Play failed");
         RequestAudioDevice(false);
+        return;
       }
       else
       {
