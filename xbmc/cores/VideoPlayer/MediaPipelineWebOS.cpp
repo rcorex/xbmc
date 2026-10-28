@@ -2228,6 +2228,10 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
       if (const auto acb = buffer ? buffer->GetAcbHandle() : nullptr)
       {
+        CLog::LogF(LOGINFO, "AcbAPI_setMediaId(acbId={}, taskId={}, mediaId={})", acb->Id(),
+                   acb->TaskId(), m_mediaAPIs->getMediaID());
+        AcbAPI_setMediaId(acb->Id(), m_mediaAPIs->getMediaID());
+
         CLog::LogF(LOGINFO, "AcbAPI_setMediaVideoData(acbId={}, taskId={})", acb->Id(), acb->TaskId());
         AcbAPI_setMediaVideoData(acb->Id(), logStr.c_str(), &acb->TaskId());
       }
@@ -2249,9 +2253,6 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       {
         CLog::LogF(LOGINFO, "AcbAPI_setSinkType(acbId={}, taskId={}, sinkType=SINK_TYPE_MAIN)", acb->Id(), acb->TaskId());
         AcbAPI_setSinkType(acb->Id(), SINK_TYPE_MAIN);
-        CLog::LogF(LOGINFO, "AcbAPI_setMediaId(acbId={}, taskId={}, mediaId={})", acb->Id(),
-                   acb->TaskId(), m_mediaAPIs->getMediaID());
-        AcbAPI_setMediaId(acb->Id(), m_mediaAPIs->getMediaID());
       }
       if (buffer)
         buffer->InvalidateDisplayWindow();
