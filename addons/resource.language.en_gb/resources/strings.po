@@ -25393,7 +25393,7 @@ msgstr ""
 # Description of setting with label #39318 "Use alternate method for audio track change"
 #: system/settings/settings.xml
 msgctxt "#39319"
-msgid "Does a full player restart when changing audio tracks. Enable this if you have issues changing audio tracks."
+msgid "Restarts the media pipeline when changing audio tracks. Enable this if you have issues changing audio tracks."
 msgstr ""
 
 #. Setting "Optimally resample audio to 48 kHz"

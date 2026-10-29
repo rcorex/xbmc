@@ -3308,7 +3308,7 @@ void CVideoPlayer::HandleMessages()
 #if defined(TARGET_WEBOS)
     else if (pMsg->IsType(CDVDMsg::PLAYER_RESTART_AUDIO_STREAM))
     {
-      if (m_CurrentAudio.source != STREAM_SOURCE_NONE)
+      if (m_CurrentAudio.source != STREAM_SOURCE_NONE && m_CurrentAudio.id >= 0)
       {
         const int64_t demuxerId = m_CurrentAudio.demuxerId;
         const int id = m_CurrentAudio.id;
@@ -3316,7 +3316,6 @@ void CVideoPlayer::HandleMessages()
 
         CloseStream(m_CurrentAudio, false);
         OpenStream(m_CurrentAudio, demuxerId, id, source);
-        AdaptForcedSubtitles();
 
         CDVDMsgPlayerSeek::CMode mode;
         mode.time = (int)GetUpdatedTime();
