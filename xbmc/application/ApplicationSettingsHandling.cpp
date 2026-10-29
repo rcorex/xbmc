@@ -135,11 +135,11 @@ void CApplicationSettingsHandling::OnSettingChanged(const std::shared_ptr<const 
   else if (settingId == CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH)
   {
 #if defined(TARGET_WEBOS)
-    const auto appPlayer = CServiceBroker::GetAppComponents().GetComponent<CApplicationPlayer>();
-    if (appPlayer && appPlayer->IsPlayingVideo() && appPlayer->RestartAudioStream())
-    {
-      return;
-    }
+    // const auto appPlayer = CServiceBroker::GetAppComponents().GetComponent<CApplicationPlayer>();
+    // if (appPlayer && appPlayer->IsPlayingVideo() && appPlayer->RestartAudioStream())
+    // {
+    //   return;
+    // }
 #endif
     CServiceBroker::GetAppMessenger()->PostMsg(TMSG_MEDIA_RESTART);
   }
