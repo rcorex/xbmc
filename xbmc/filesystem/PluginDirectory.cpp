@@ -34,16 +34,15 @@ using namespace XFILE;
 using namespace ADDON;
 using namespace KODI::MESSAGING;
 
-namespace
+std::string CPluginDirectory::GetOriginalPluginPath(const CFileItem& item)
 {
-/*!
-  \brief Get the plugin path from a CFileItem.
+  if (item.HasProperty("plugin_url"))
+  {
+    const std::string pluginUrl = item.GetProperty("plugin_url").asString();
+    if (URIUtils::IsPlugin(pluginUrl))
+      return pluginUrl;
+  }
 
-  \param item CFileItem where to get the path.
-  \return The plugin path if found otherwise an empty string.
-*/
-std::string GetOriginalPluginPath(const CFileItem& item)
-{
   std::string currentPath = item.GetPath();
   if (URIUtils::IsPlugin(currentPath))
     return currentPath;
@@ -52,9 +51,19 @@ std::string GetOriginalPluginPath(const CFileItem& item)
   if (URIUtils::IsPlugin(currentPath))
     return currentPath;
 
+  if (item.HasProperty(KODI::ITEM::PROPERTY::ORIGINAL_LISTITEM_URL))
+  {
+    const std::string orig =
+        item.GetProperty(KODI::ITEM::PROPERTY::ORIGINAL_LISTITEM_URL).asString();
+    if (URIUtils::IsPlugin(orig))
+      return orig;
+  }
+
+  if (item.HasVideoInfoTag() && URIUtils::IsPlugin(item.GetVideoInfoTag()->m_strFileNameAndPath))
+    return item.GetVideoInfoTag()->m_strFileNameAndPath;
+
   return std::string();
 }
-} // unnamed namespace
 
 CPluginDirectory::CPluginDirectory()
   : m_listItems(new CFileItemList), m_fileResult(new CFileItem), m_cancelled(false)
@@ -151,6 +160,8 @@ bool CPluginDirectory::GetPluginResult(const std::string& strPath, CFileItem &re
   { // update the play path and metadata, saving the old one as needed
     if (!resultItem.HasProperty(KODI::ITEM::PROPERTY::ORIGINAL_LISTITEM_URL))
       resultItem.SetProperty(KODI::ITEM::PROPERTY::ORIGINAL_LISTITEM_URL, resultItem.GetPath());
+    if (!resultItem.HasProperty("plugin_url"))
+      resultItem.SetProperty("plugin_url", strPath);
     resultItem.SetDynPath(newDir.m_fileResult->GetPath());
     resultItem.SetMimeType(newDir.m_fileResult->GetMimeType());
     resultItem.SetContentLookup(newDir.m_fileResult->ContentLookup());
@@ -161,7 +172,8 @@ bool CPluginDirectory::GetPluginResult(const std::string& strPath, CFileItem &re
     else
       resultItem.MergeInfo(*newDir.m_fileResult);
 
-    if (newDir.m_fileResult->HasVideoInfoTag() && newDir.m_fileResult->GetVideoInfoTag()->GetResumePoint().IsSet())
+    if (resultItem.GetStartOffset() <= 0 && newDir.m_fileResult->HasVideoInfoTag() &&
+        newDir.m_fileResult->GetVideoInfoTag()->GetResumePoint().IsSet())
       resultItem.SetStartOffset(
           STARTOFFSET_RESUME); // resume point set in the resume item, so force resume
   }

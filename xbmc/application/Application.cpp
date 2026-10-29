@@ -2374,6 +2374,13 @@ void CApplication::Restart(bool bSamePosition)
   if (!appPlayer->HasPlayer())
     return ;
 
+  const std::string origPluginPath = XFILE::CPluginDirectory::GetOriginalPluginPath(*m_itemCurrentFile);
+  if (!origPluginPath.empty())
+  {
+    m_itemCurrentFile->SetDynPath(origPluginPath);
+    m_itemCurrentFile->SetProperty("ForceResolvePlugin", true);
+  }
+
   // do we want to return to the current position in the file
   if (!bSamePosition)
   {

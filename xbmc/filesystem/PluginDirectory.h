@@ -43,6 +43,7 @@ public:
   */
   static bool GetResolvedPluginResult(CFileItem& resultItem);
   static bool GetPluginResult(const std::string& strPath, CFileItem &resultItem, bool resume);
+  static std::string GetOriginalPluginPath(const CFileItem& item);
 
   /*! \brief Check whether a plugin supports media library scanning.
   \param content content type - movies, tvshows, musicvideos.
