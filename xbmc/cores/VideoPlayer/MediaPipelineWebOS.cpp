@@ -647,6 +647,7 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
     }
     // API introduced in webOS 6.0, so we need to handle older versions differently
     Unload(true);
+    // Purge here so stale packets are not fed by Load before the seek can flush
     FlushAudioMessages();
     FlushVideoMessages();
 
@@ -739,6 +740,7 @@ void CMediaPipelineWebOS::Flush(bool sync)
   CWorkerGate::Lock videoLock(m_videoGate);
   CWorkerGate::Lock audioLock(m_audioGate);
 
+  // Avoid flushing media APIs if already flushed (e.g. after Load) to preserve video extradata
   if (!m_flushed && !m_mediaAPIs->flush())
     CLog::LogF(LOGDEBUG, "Failed to flush media APIs");
   FlushAudioMessages();
