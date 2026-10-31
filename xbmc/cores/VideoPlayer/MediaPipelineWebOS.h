@@ -402,6 +402,15 @@ private:
    * @param sync If true, wait for unload to complete.
    */
   void Unload(bool sync);
+  std::atomic<bool> m_isSeeking{false};
+  std::atomic<int64_t> m_seekMinimumPts{0};
+  std::atomic<int64_t> m_seekTargetPts{0};
+  std::atomic<unsigned int> m_seekIgnoredFrames{0};
+  std::atomic<bool> m_pendingStarted{false};
+  std::atomic<bool> m_eos{false};
+  std::atomic<bool> m_draining{false};
+  std::atomic<bool> m_pushedEOS{false};
+  std::atomic<unsigned int> m_queuedVideoPackets{0};
 
   /**
    * @brief Sets up audio stream parameters and transcoding if necessary.
@@ -551,10 +560,14 @@ private:
   std::atomic<std::chrono::nanoseconds> m_fedAudioPts{NO_PTS};
   std::atomic<std::chrono::nanoseconds> m_fedVideoPts{NO_PTS};
   std::atomic<bool> m_started{false};
+  enum class MediaPlayState { Unknown, Playing, Paused };
+  std::atomic<MediaPlayState> m_mediaPlayState{MediaPlayState::Unknown};
   std::atomic<bool> m_receivedAudioInfo{false};
   std::atomic<bool> m_receivedVideoInfo{false};
   std::string m_audioDataStr;
   std::string m_videoDataStr;
+  std::atomic<int> m_speed{DVD_PLAYSPEED_NORMAL};
+  std::atomic<int> m_playRate{DVD_PLAYSPEED_NORMAL};
 
   BitstreamStats m_audioStats{};
   BitstreamStats m_videoStats{};
