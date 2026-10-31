@@ -359,16 +359,27 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
       RequestAudioDevice(true);
 
       m_processInfo.SetAudioChannels(CAEUtil::GetAEChannelLayout(audioHint.channellayout));
-      m_processInfo.SetAudioSampleRate(audioHint.samplerate);
-      m_processInfo.SetAudioBitsPerSample(audioHint.bitspersample);
-      if (Supports(audioHint))
-        m_processInfo.SetAudioDecoderName("starfish-" +
-                                          std::string(ms_codecMap.at(audioHint.codec).data()));
-      else if (m_audioEncoder)
+      if (m_audioEncoder)
       {
+        m_processInfo.SetAudioSampleRate(SelectTranscodingSampleRate(audioHint.samplerate));
+        m_processInfo.SetAudioBitsPerSample(m_audioEncoder->GetBitRate());
         m_processInfo.SetAudioDecoderName((m_audioEncoder->GetCodecID() == AV_CODEC_ID_EAC3)
                                               ? "starfish-EAC3 (transcoding)"
                                               : "starfish-AC3 (transcoding)");
+      }
+      else
+      {
+        m_processInfo.SetAudioSampleRate(audioHint.samplerate);
+        if (Supports(audioHint))
+        {
+          m_processInfo.SetAudioBitsPerSample(audioHint.bitspersample);
+          m_processInfo.SetAudioDecoderName("starfish-" +
+                                            std::string(ms_codecMap.at(audioHint.codec).data()));
+        }
+        else
+        {
+          m_processInfo.SetAudioBitsPerSample(audioHint.bitspersample);
+        }
       }
       m_audioClosed = false;
       return true;
@@ -897,16 +908,27 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
       m_processInfo.SetAudioChannels(CAEUtil::GetAEChannelLayout(audioHint.channellayout));
     else
       m_processInfo.SetAudioChannels(CAEUtil::GuessChLayout(audioHint.channels));
-    m_processInfo.SetAudioSampleRate(audioHint.samplerate);
-    m_processInfo.SetAudioBitsPerSample(audioHint.bitspersample);
-    if (Supports(audioHint))
-      m_processInfo.SetAudioDecoderName(std::string("starfish-") +
-                                        ms_codecMap.at(audioHint.codec).data());
-    else if (m_audioEncoder)
+    if (m_audioEncoder)
     {
+      m_processInfo.SetAudioSampleRate(SelectTranscodingSampleRate(audioHint.samplerate));
+      m_processInfo.SetAudioBitsPerSample(m_audioEncoder->GetBitRate());
       m_processInfo.SetAudioDecoderName((m_audioEncoder->GetCodecID() == AV_CODEC_ID_EAC3)
                                             ? "starfish-EAC3 (transcoding)"
                                             : "starfish-AC3 (transcoding)");
+    }
+    else
+    {
+      m_processInfo.SetAudioSampleRate(audioHint.samplerate);
+      if (Supports(audioHint))
+      {
+        m_processInfo.SetAudioBitsPerSample(audioHint.bitspersample);
+        m_processInfo.SetAudioDecoderName(std::string("starfish-") +
+                                          ms_codecMap.at(audioHint.codec).data());
+      }
+      else
+      {
+        m_processInfo.SetAudioBitsPerSample(audioHint.bitspersample);
+      }
     }
   }
 
@@ -1041,10 +1063,26 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
     }
     m_audioEncoder = std::make_unique<CAEEncoderFFmpeg>();
 
+    int transcodedChannels = m_audioCodec->GetFormat().m_channelLayout.Count();
+    if (transcodedChannels == 0)
+      transcodedChannels = audioHint.channels;
+
+    const unsigned int sampleRate = m_audioCodec->GetFormat().m_sampleRate > 0
+                                        ? m_audioCodec->GetFormat().m_sampleRate
+                                        : audioHint.samplerate;
+
     if (WebOSTVPlatformConfig::SupportsEAC3())
     {
+      // EAC3 maximum is 6 channels
       codecName = "AC3 PLUS";
-      setAC3PlusInfo(audioHint, optInfo);
+      optInfo["ac3PlusInfo"]["channels"] = std::min(transcodedChannels, 6);
+      optInfo["ac3PlusInfo"]["frequency"] = SelectTranscodingSampleRate(sampleRate) / 1000.0;
+    }
+    else
+    {
+      // AC3 maximum is 6 channels
+      optInfo["ac3Info"]["channels"] = std::min(transcodedChannels, 6);
+      optInfo["ac3Info"]["frequency"] = SelectTranscodingSampleRate(sampleRate) / 1000.0;
     }
 
     return codecName;
@@ -1746,9 +1784,11 @@ void CMediaPipelineWebOS::ProcessAudio()
               m_processInfo.SetAudioDecoderName((m_audioEncoder->GetCodecID() == AV_CODEC_ID_EAC3)
                                                     ? "starfish-EAC3 (transcoding)"
                                                     : "starfish-AC3 (transcoding)");
-              m_processInfo.SetAudioChannels(frame.format.m_channelLayout);
-              m_processInfo.SetAudioSampleRate(frame.format.m_sampleRate);
-              m_processInfo.SetAudioBitsPerSample(frame.bits_per_sample);
+              m_processInfo.SetAudioChannels(dstFormat.m_channelLayout);
+              m_processInfo.SetAudioSampleRate(dstFormat.m_sampleRate);
+              m_processInfo.SetAudioBitsPerSample(
+                  m_audioEncoder ? m_audioEncoder->GetBitRate()
+                                 : CAEUtil::DataFormatToBits(dstFormat.m_dataFormat));
             }
 
             using dvdTime = std::ratio<1, DVD_TIME_BASE>;
