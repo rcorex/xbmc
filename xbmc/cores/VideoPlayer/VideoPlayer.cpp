@@ -3539,11 +3539,12 @@ void CVideoPlayer::HandleMessages()
             m_messenger.Put(std::make_shared<CDVDMsgPlayerSeek>(mode));
           }
         }
-        else if (!st.IsCurrent(m_CurrentAudio))
+        else if (!st.IsCurrent(m_CurrentAudio) || pMsg2->ForceRestart())
         {
+          const bool streamChanged = !st.IsCurrent(m_CurrentAudio);
 #if defined(HAVE_LIBBLURAY)
-          if (STREAM_SOURCE_MASK(st.source) == STREAM_SOURCE_DEMUX && m_pDemuxer &&
-              m_pInputStream && m_pInputStream->IsStreamType(DVDSTREAM_TYPE_BLURAY))
+          if (streamChanged && STREAM_SOURCE_MASK(st.source) == STREAM_SOURCE_DEMUX &&
+              m_pDemuxer && m_pInputStream && m_pInputStream->IsStreamType(DVDSTREAM_TYPE_BLURAY))
           {
             CDemuxStream* stream = m_pDemuxer->GetStream(st.demuxerId, st.id);
             if (stream && std::static_pointer_cast<CDVDInputStreamBluray>(m_pInputStream)
@@ -3553,7 +3554,9 @@ void CVideoPlayer::HandleMessages()
 #endif
           CloseStream(m_CurrentAudio, false);
           OpenStream(m_CurrentAudio, st.demuxerId, st.id, st.source);
-          AdaptForcedSubtitles();
+          // Preserve current subtitle state when reopening the same track in-place
+          if (streamChanged)
+            AdaptForcedSubtitles();
 
           CDVDMsgPlayerSeek::CMode mode;
           mode.time = (int)GetUpdatedTime();

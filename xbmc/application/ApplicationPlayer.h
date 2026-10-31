@@ -161,6 +161,7 @@ public:
   void OnNothingToQueueNotify();
   void Pause();
   bool QueueNextFile(const CFileItem &file);
+  bool RestartAudioStream();
   void Seek(bool bPlus = true, bool bLargeStep = false, bool bChapterOverride = false);
   int SeekChapter(int iChapter);
   void SeekPercentage(float fPercent = 0);
