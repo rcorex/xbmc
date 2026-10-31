@@ -148,12 +148,19 @@ typedef CDVDMsgType<double> CDVDMsgDouble;
 class CDVDMsgPlayerSetAudioStream : public CDVDMsg
 {
 public:
-  explicit CDVDMsgPlayerSetAudioStream(int streamId) : CDVDMsg(PLAYER_SET_AUDIOSTREAM) { m_streamId = streamId; }
+  // forceRestart reopens the stream even when streamId is already the active audio stream
+  explicit CDVDMsgPlayerSetAudioStream(int streamId, bool forceRestart = false)
+    : CDVDMsg(PLAYER_SET_AUDIOSTREAM), m_streamId(streamId), m_forceRestart(forceRestart)
+  {
+  }
   ~CDVDMsgPlayerSetAudioStream() override = default;
 
-  int GetStreamId() { return m_streamId; }
+  int GetStreamId() const { return m_streamId; }
+  bool ForceRestart() const { return m_forceRestart; }
+
 private:
   int m_streamId;
+  bool m_forceRestart;
 };
 
 class CDVDMsgPlayerSetVideoStream : public CDVDMsg
