@@ -2217,7 +2217,7 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
             m_seekIgnoredFrames.fetch_add(1, std::memory_order_relaxed) < MAX_IGNORED_FRAMES)
         {
           CLog::LogF(LOGINFO, "Ignored stale FRAMEREADY event (backward/forward seek guard). Stale PTS: {}, Target PTS: {}", numValue, target);
-          break;
+          return;
         }
 
         m_isSeeking.store(false, std::memory_order_release);
@@ -2233,7 +2233,7 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       std::atomic<bool> stop(false);
       m_renderManager.AddVideoPicture(m_picture, stop, VS_INTERLACEMETHOD_AUTO, false);
       m_clock.Discontinuity(pts);
-      break;
+      return;
     }
     case PF_EVENT_TYPE_STR_AUDIO_INFO:
     {
@@ -2410,6 +2410,12 @@ void CMediaPipelineWebOS::PlayerCallback(const int32_t type,
                                          void* data)
 {
   const auto self = static_cast<CMediaPipelineWebOS*>(data);
+  if (type == PF_EVENT_TYPE_FRAMEREADY)
+  {
+    self->PlayerCallback(type, numValue, strValue);
+    return;
+  }
+
   {
     std::lock_guard<std::mutex> lock(self->m_eventQueueMutex);
     self->m_eventQueue.push_back({type, numValue, strValue != nullptr ? strValue : ""});
