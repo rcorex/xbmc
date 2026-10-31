@@ -484,10 +484,13 @@ private:
                              int& height,
                              int& framerate) const;
 
+  void CheckAndEmitAcbLoaded();
+
   static constexpr std::chrono::nanoseconds NO_PTS{-1};
 
   std::condition_variable m_eventCondition;
   std::mutex m_eventMutex;
+  std::mutex m_callbackMutex;
 
   mediapipeline::PipelineGStreamerElements* m_pipeline{nullptr};
   unsigned int m_webOSVersion{4};
@@ -522,6 +525,7 @@ private:
   CDVDClock& m_clock;
   CDVDOverlayContainer& m_overlayContainer;
   std::atomic<bool> m_hasAudio{true};
+  std::atomic<bool> m_acbLoaded{false};
 
   std::mutex m_audioDeviceMutex;
   bool m_ownsAudioDevice{false};
@@ -532,6 +536,8 @@ private:
   std::atomic<std::chrono::nanoseconds> m_fedAudioPts{NO_PTS};
   std::atomic<std::chrono::nanoseconds> m_fedVideoPts{NO_PTS};
   std::atomic<bool> m_started{false};
+  std::atomic<bool> m_receivedAudioInfo{false};
+  std::atomic<bool> m_receivedVideoInfo{false};
 
   BitstreamStats m_audioStats{};
   BitstreamStats m_videoStats{};
