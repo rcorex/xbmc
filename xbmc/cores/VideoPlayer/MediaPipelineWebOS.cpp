@@ -324,7 +324,10 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
     m_fedAudioPts = NO_PTS;
     m_started = false;
 
-    if (m_webOSVersion >= 6)
+    const bool altMethod = CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
+        CSettings::SETTING_AUDIOOUTPUT_WEBOS_ALT_AUDIOTRACK_CHANGE);
+
+    if (m_webOSVersion >= 6 && !altMethod)
     {
       CWorkerGate::Lock audioLock(m_audioGate);
       CVariant optInfo = CVariant::VariantTypeObject;
@@ -359,6 +362,9 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
     }
     // API introduced in webOS 6.0, so we need to handle older versions differently
     Unload(true);
+    // Purge here so stale packets are not fed by Load before the seek can flush
+    FlushAudioMessages();
+    FlushVideoMessages();
 
     m_mediaAPIs = std::make_unique<StarfishMediaAPIs>();
     m_audioClosed = false;
@@ -454,8 +460,9 @@ void CMediaPipelineWebOS::Flush(bool sync)
   CWorkerGate::Lock videoLock(m_videoGate);
   CWorkerGate::Lock audioLock(m_audioGate);
 
-  m_flushed.store(true, std::memory_order_release);
-  if (!m_mediaAPIs->flush())
+  const bool wasFlushed = m_flushed.exchange(true, std::memory_order_acq_rel);
+  // Avoid flushing media APIs if already flushed (e.g. after Load) to preserve video extradata
+  if (!wasFlushed && !m_mediaAPIs->flush())
     CLog::LogF(LOGDEBUG, "Failed to flush media APIs");
   FlushAudioMessages();
   FlushVideoMessages();
