@@ -19,6 +19,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <deque>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -484,10 +485,26 @@ private:
                              int& height,
                              int& framerate) const;
 
+  struct PipelineEvent
+  {
+    int32_t type{0};
+    int64_t numValue{0};
+    std::string strValue;
+  };
+
+  void EventLoop();
+  void CheckAndEmitAcbLoaded();
+
   static constexpr std::chrono::nanoseconds NO_PTS{-1};
 
   std::condition_variable m_eventCondition;
   std::mutex m_eventMutex;
+
+  std::mutex m_eventQueueMutex;
+  std::condition_variable m_eventQueueCv;
+  std::deque<PipelineEvent> m_eventQueue;
+  std::atomic<bool> m_stopEventThread{false};
+  std::thread m_eventThread;
 
   mediapipeline::PipelineGStreamerElements* m_pipeline{nullptr};
   unsigned int m_webOSVersion{4};
@@ -522,6 +539,7 @@ private:
   CDVDClock& m_clock;
   CDVDOverlayContainer& m_overlayContainer;
   std::atomic<bool> m_hasAudio{true};
+  std::atomic<bool> m_acbLoaded{false};
 
   std::mutex m_audioDeviceMutex;
   bool m_ownsAudioDevice{false};
@@ -532,6 +550,8 @@ private:
   std::atomic<std::chrono::nanoseconds> m_fedAudioPts{NO_PTS};
   std::atomic<std::chrono::nanoseconds> m_fedVideoPts{NO_PTS};
   std::atomic<bool> m_started{false};
+  std::atomic<bool> m_receivedAudioInfo{false};
+  std::atomic<bool> m_receivedVideoInfo{false};
 
   BitstreamStats m_audioStats{};
   BitstreamStats m_videoStats{};
