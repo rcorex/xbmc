@@ -676,7 +676,8 @@ bool CMediaPipelineWebOS::OpenVideoStream(CDVDStreamInfo hint)
     if (m_videoHint.codec == hint.codec && m_videoHint.hdrType == hint.hdrType)
     {
       CWorkerGate::Lock videoLock(m_videoGate);
-      SetupBitstreamConverter(hint);
+      CDVDStreamInfo videoHint = hint;
+      SetupBitstreamConverter(videoHint);
       m_videoHint = hint;
 
       m_processInfo.SetVideoInterlaced(hint.interlaced);
@@ -916,7 +917,7 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
   m_fedAudioPts = NO_PTS;
   m_fedVideoPts = NO_PTS;
   m_started = false;
-  m_convertDovi = false;
+  m_acbLoaded.store(false, std::memory_order_release);
   m_pendingStarted.store(false, std::memory_order_release);
   m_isSeeking.store(false, std::memory_order_release);
   m_seekIgnoredFrames.store(0, std::memory_order_relaxed);
@@ -1231,7 +1232,7 @@ void CMediaPipelineWebOS::Unload(const bool sync)
   m_fedAudioPts = NO_PTS;
   m_fedVideoPts = NO_PTS;
   m_started = false;
-  m_convertDovi = false;
+  m_acbLoaded.store(false, std::memory_order_release);
   m_pendingStarted.store(false, std::memory_order_release);
   m_isSeeking.store(false, std::memory_order_release);
   m_seekIgnoredFrames.store(0, std::memory_order_relaxed);
@@ -1405,9 +1406,8 @@ void CMediaPipelineWebOS::SetupBitstreamConverter(CDVDStreamInfo& hint)
 
           // Only set for profile 7, container hint allows to skip parsing unnecessarily
           // set profile 8 and single layer when converting
-          if (!removeDovi && (m_convertDovi || (hint.dovi.dv_profile == 7 && convertDovi)))
+          if (!removeDovi && convertDovi && hint.dovi.dv_profile == 7)
           {
-            m_convertDovi = true;
             m_bitstream->SetConvertDovi(true);
             hint.dovi.dv_profile = 8;
             hint.dovi.el_present_flag = false;
@@ -1813,6 +1813,9 @@ void CMediaPipelineWebOS::SetDynamicRangeCompression(const long drc)
 
 void CMediaPipelineWebOS::CheckAndEmitAcbLoaded()
 {
+  if (m_acbLoaded.load(std::memory_order_acquire))
+    return;
+
   const bool audioReady =
       !m_hasAudio.load(std::memory_order_acquire) ||
       m_receivedAudioInfo.load(std::memory_order_acquire);
@@ -1843,6 +1846,7 @@ void CMediaPipelineWebOS::CheckAndEmitAcbLoaded()
                "playState=PLAYSTATE_LOADED)",
                acb->Id(), acb->TaskId());
     AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_LOADED, &acb->TaskId());
+    m_acbLoaded.store(true, std::memory_order_release);
   }
 
   m_audioDataStr.clear();
@@ -2235,6 +2239,18 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
     case PF_EVENT_TYPE_STR_AUDIO_INFO:
     {
       CLog::LogF(LOGINFO, "Received audio info: {}", logStr);
+      if (m_acbLoaded.load(std::memory_order_acquire))
+      {
+        const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
+        if (const auto acb = buffer ? buffer->GetAcbHandle() : nullptr)
+        {
+          CLog::LogF(LOGINFO, "AcbAPI_setMediaAudioData(acbId={}, taskId={})", acb->Id(),
+                     acb->TaskId());
+          AcbAPI_setMediaAudioData(acb->Id(), logStr.c_str(), &acb->TaskId());
+        }
+        break;
+      }
+
       m_audioDataStr = logStr;
       m_receivedAudioInfo.store(true, std::memory_order_release);
       CheckAndEmitAcbLoaded();
@@ -2243,6 +2259,18 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
     case PF_EVENT_TYPE_STR_VIDEO_INFO:
     {
       CLog::LogF(LOGINFO, "Received video info: {}", logStr);
+      if (m_acbLoaded.load(std::memory_order_acquire))
+      {
+        const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
+        if (const auto acb = buffer ? buffer->GetAcbHandle() : nullptr)
+        {
+          CLog::LogF(LOGINFO, "AcbAPI_setMediaVideoData(acbId={}, taskId={})", acb->Id(),
+                     acb->TaskId());
+          AcbAPI_setMediaVideoData(acb->Id(), logStr.c_str(), &acb->TaskId());
+        }
+        break;
+      }
+
       m_videoDataStr = logStr;
       m_receivedVideoInfo.store(true, std::memory_order_release);
       CheckAndEmitAcbLoaded();
@@ -2288,6 +2316,7 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
         m_audioThread.join();
       m_pipeline = nullptr;
       RequestAudioDevice(false);
+      m_acbLoaded.store(false, std::memory_order_release);
       m_mediaPlayState.store(MediaPlayState::Unknown, std::memory_order_release);
       m_receivedAudioInfo.store(false, std::memory_order_release);
       m_receivedVideoInfo.store(false, std::memory_order_release);

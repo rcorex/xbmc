@@ -547,7 +547,7 @@ private:
   CDVDClock& m_clock;
   CDVDOverlayContainer& m_overlayContainer;
   std::atomic<bool> m_hasAudio{true};
-  std::atomic<bool> m_convertDovi{false};
+  std::atomic<bool> m_acbLoaded{false};
 
   std::mutex m_audioDeviceMutex;
   bool m_ownsAudioDevice{false};
