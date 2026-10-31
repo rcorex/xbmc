@@ -912,8 +912,6 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
   m_mediaPlayState.store(MediaPlayState::Unknown, std::memory_order_release);
   m_receivedAudioInfo.store(false, std::memory_order_release);
   m_receivedVideoInfo.store(false, std::memory_order_release);
-  m_audioDataStr.clear();
-  m_videoDataStr.clear();
   m_fedAudioPts = NO_PTS;
   m_fedVideoPts = NO_PTS;
   m_started = false;
@@ -1221,9 +1219,10 @@ void CMediaPipelineWebOS::Unload(const bool sync)
   const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
   if (const auto acb = buffer ? buffer->GetAcbHandle() : nullptr)
   {
-    CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_UNLOADED)", acb->Id(), acb->TaskId());
+    long taskId = 0;
+    CLog::LogF(LOGINFO, "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_UNLOADED)", acb->Id(), taskId);
     AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_UNLOADED,
-                    &acb->TaskId());
+                    &taskId);
   }
 
   if (!m_mediaAPIs->Unload())
@@ -2320,6 +2319,8 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       m_mediaPlayState.store(MediaPlayState::Unknown, std::memory_order_release);
       m_receivedAudioInfo.store(false, std::memory_order_release);
       m_receivedVideoInfo.store(false, std::memory_order_release);
+      m_audioDataStr.clear();
+      m_videoDataStr.clear();
 
       {
         std::lock_guard<std::mutex> lock(m_eventMutex);

@@ -141,10 +141,11 @@ void CRendererStarfish::ManageRenderArea()
     if ((rectsChanged || windowGen != m_lastWindowGen) &&
         !m_sourceRect.IsEmpty() && !m_destRect.IsEmpty() && currentAcbId && acbHandle)
     {
+      long taskId = 0;
       CLog::LogF(LOGINFO, "AcbAPI_setCustomDisplayWindow - AcbId: {}, TaskId: {}, "
                           "SourceRect: [x:{}, y:{}, w:{}, h:{}], "
                           "DestRect: [x:{}, y:{}, w:{}, h:{}]",
-                 currentAcbId, acbHandle->TaskId(),
+                 currentAcbId, taskId,
                  static_cast<long>(m_sourceRect.x1), static_cast<long>(m_sourceRect.y1),
                  static_cast<long>(m_sourceRect.Width()), static_cast<long>(m_sourceRect.Height()),
                  static_cast<long>(m_destRect.x1), static_cast<long>(m_destRect.y1),
@@ -155,7 +156,7 @@ void CRendererStarfish::ManageRenderArea()
           static_cast<long>(m_sourceRect.y1), static_cast<long>(m_sourceRect.Width()),
           static_cast<long>(m_sourceRect.Height()), static_cast<long>(m_destRect.x1),
           static_cast<long>(m_destRect.y1), static_cast<long>(m_destRect.Width()),
-          static_cast<long>(m_destRect.Height()), false, &acbHandle->TaskId());
+          static_cast<long>(m_destRect.Height()), false, &taskId);
 
       m_lastWindowGen = windowGen;
       m_exportedSourceRect = m_sourceRect;

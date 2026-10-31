@@ -507,11 +507,11 @@ private:
   std::condition_variable m_eventCondition;
   std::mutex m_eventMutex;
 
-  std::thread m_eventThread;
   std::mutex m_eventQueueMutex;
   std::condition_variable m_eventQueueCv;
   std::deque<PipelineEvent> m_eventQueue;
   std::atomic<bool> m_stopEventThread{false};
+  std::thread m_eventThread;
 
   mediapipeline::PipelineGStreamerElements* m_pipeline{nullptr};
   unsigned int m_webOSVersion{4};
