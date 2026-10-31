@@ -1584,6 +1584,8 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
   if (pts < 0ns)
     return true;
 
+  const auto feedPts = pts - std::chrono::milliseconds(m_renderManager.GetDelay());
+
   uint8_t* data = packet->pData;
   size_t size = packet->iSize;
 
@@ -1599,7 +1601,7 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
 
     if (!m_bitstream->CanStartDecode())
     {
-      m_pts = pts;
+      m_pts = feedPts;
       CLog::LogF(LOGDEBUG, "Waiting for keyframe (bitstream)");
       return true;
     }
@@ -1607,8 +1609,6 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
     size = m_bitstream->GetConvertSize();
     data = m_bitstream->GetConvertBuffer();
   }
-
-  const auto feedPts = pts - std::chrono::milliseconds(m_renderManager.GetDelay());
 
   if (m_flushed)
   {
@@ -1643,7 +1643,7 @@ bool CMediaPipelineWebOS::FeedVideoData(const std::shared_ptr<CDVDMsg>& msg)
   if (m_pendingStarted.load(std::memory_order_acquire) && !drop)
   {
     m_pendingStarted.store(false, std::memory_order_release);
-    m_pts = pts;
+    m_pts = feedPts;
     m_seekTargetPts.store(feedPts.count(), std::memory_order_relaxed);
     m_seekIgnoredFrames.store(0, std::memory_order_relaxed);
     m_isSeeking.store(true, std::memory_order_release);
