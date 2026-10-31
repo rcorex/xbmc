@@ -10,6 +10,10 @@
 
 #include "VideoBuffer.h"
 
+#include <atomic>
+#include <memory>
+#include <mutex>
+
 class AcbHandle
 {
 public:
@@ -34,10 +38,21 @@ class CStarfishVideoBuffer final : public CVideoBuffer
 public:
   explicit CStarfishVideoBuffer();
   AVPixelFormat GetFormat() override;
-  std::unique_ptr<AcbHandle>& GetAcbHandle() noexcept;
-  std::unique_ptr<AcbHandle>& CreateAcbHandle();
+  // Thread-safe handle access to prevent use-after-free across threads
+  std::shared_ptr<AcbHandle> GetAcbHandle() const;
+  std::shared_ptr<AcbHandle> CreateAcbHandle();
   void ResetAcbHandle();
+  void InvalidateDisplayWindow() noexcept
+  {
+    m_displayWindowGen.fetch_add(1, std::memory_order_relaxed);
+  }
+  [[nodiscard]] unsigned int DisplayWindowGen() const noexcept
+  {
+    return m_displayWindowGen.load(std::memory_order_relaxed);
+  }
 
 private:
-  std::unique_ptr<AcbHandle> m_acbHandle{nullptr};
+  mutable std::mutex m_acbMutex;
+  std::shared_ptr<AcbHandle> m_acbHandle{nullptr};
+  std::atomic<unsigned int> m_displayWindowGen{1};
 };
