@@ -3199,6 +3199,9 @@ bool CActiveAE::IsSettingVisible(const std::string &settingId)
   }
   else if (settingId == CSettings::SETTING_AUDIOOUTPUT_DTSPASSTHROUGH)
   {
+#if defined(TARGET_WEBOS)
+    return false;
+#endif
     AEAudioFormat format;
     format.m_dataFormat = AE_FMT_RAW;
     format.m_streamInfo.m_type = CAEStreamInfo::STREAM_TYPE_DTS_512;
@@ -3207,6 +3210,22 @@ bool CActiveAE::IsSettingVisible(const std::string &settingId)
     if (m_sink.SupportsFormat(settings->GetString(CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGHDEVICE), format) &&
         settings->GetInt(CSettings::SETTING_AUDIOOUTPUT_CONFIG) != AE_CONFIG_FIXED)
       return true;
+  }
+  else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSDTSHDPASSTHROUGH)
+  {
+#if !defined(TARGET_WEBOS)
+    return false;
+#else
+    return true;
+#endif
+  }
+  else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSDTSPASSTHROUGH)
+  {
+#if !defined(TARGET_WEBOS)
+    return false;
+#else
+    return true;
+#endif
   }
   else if (settingId == CSettings::SETTING_AUDIOOUTPUT_TRUEHDPASSTHROUGH)
   {
@@ -3221,6 +3240,9 @@ bool CActiveAE::IsSettingVisible(const std::string &settingId)
   }
   else if (settingId == CSettings::SETTING_AUDIOOUTPUT_DTSHDPASSTHROUGH)
   {
+#if defined(TARGET_WEBOS)
+    return false;
+#endif
     AEAudioFormat format;
     format.m_dataFormat = AE_FMT_RAW;
     format.m_streamInfo.m_type = CAEStreamInfo::STREAM_TYPE_DTSHD;
