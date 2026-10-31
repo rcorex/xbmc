@@ -308,8 +308,12 @@ const auto ms_hdrInfoMap = std::map<AVColorTransferCharacteristic, std::string_v
     {AVCOL_TRC_ARIB_STD_B67, "HLG"},
 });
 
-unsigned int SelectTranscodingSampleRate(const unsigned int sampleRate)
+unsigned int SelectTranscodingSampleRate(const unsigned int sampleRate,
+                                         const bool resampleTo48k = false)
 {
+  if (resampleTo48k)
+    return 48000;
+
   switch (sampleRate)
   {
     case 11025:
@@ -584,7 +588,8 @@ bool CMediaPipelineWebOS::OpenAudioStream(CDVDStreamInfo& audioHint)
       m_processInfo.SetAudioChannels(CAEUtil::GetAEChannelLayout(audioHint.channellayout));
       if (m_audioEncoder)
       {
-        m_processInfo.SetAudioSampleRate(SelectTranscodingSampleRate(audioHint.samplerate));
+        m_processInfo.SetAudioSampleRate(
+            SelectTranscodingSampleRate(audioHint.samplerate, m_resampleAudio48k));
         m_processInfo.SetAudioBitsPerSample(m_audioEncoder->GetBitRate());
         m_processInfo.SetAudioDecoderName((m_audioEncoder->GetCodecID() == AV_CODEC_ID_EAC3)
                                               ? "starfish-EAC3 (transcoding)"
@@ -1133,7 +1138,8 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
       m_processInfo.SetAudioChannels(CAEUtil::GuessChLayout(audioHint.channels));
     if (m_audioEncoder)
     {
-      m_processInfo.SetAudioSampleRate(SelectTranscodingSampleRate(audioHint.samplerate));
+      m_processInfo.SetAudioSampleRate(
+          SelectTranscodingSampleRate(audioHint.samplerate, m_resampleAudio48k));
       m_processInfo.SetAudioBitsPerSample(m_audioEncoder->GetBitRate());
       m_processInfo.SetAudioDecoderName((m_audioEncoder->GetCodecID() == AV_CODEC_ID_EAC3)
                                             ? "starfish-EAC3 (transcoding)"
@@ -1252,6 +1258,21 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
   m_audioResample = nullptr;
   m_encoderBuffers = nullptr;
 
+  if (audioHint.codec == AV_CODEC_ID_AAC || audioHint.codec == AV_CODEC_ID_AAC_LATM)
+  {
+    const uint8_t* data = audioHint.extradata.GetData();
+    const size_t size = audioHint.extradata.GetSize();
+
+    if (data && size > 0)
+    {
+      // ParseAACSampleRate is used to determine the actual sample rate from extradata
+      // cannot use avpriv_mpeg4audio_get_config2 as not exposed in FFmpeg public API
+      const unsigned int parsedRate = ParseAACSampleRate(data, size);
+      if (parsedRate > 0)
+        audioHint.samplerate = parsedRate;
+    }
+  }
+
   auto setAC3PlusInfo = [&](const CDVDStreamInfo& hint, CVariant& optInfo)
   {
     optInfo["ac3PlusInfo"]["channels"] = hint.channels;
@@ -1270,6 +1291,7 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
   m_downmixStereo = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREO);
   m_downmixStereoOnly71 =
       settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREOONLY71);
+  m_resampleAudio48k = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSRESAMPLE48K);
   const bool supported = Supports(audioHint);
 
   if (!supported && audioHint.cryptoSession)
@@ -1278,7 +1300,10 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
     return "";
   }
 
-  if (!supported || !allowPassthrough)
+  const bool needsResample48k =
+      m_resampleAudio48k && audioHint.samplerate != 48000 && !audioHint.cryptoSession;
+
+  if (!supported || !allowPassthrough || needsResample48k)
   {
     m_audioCodec = std::make_unique<CDVDAudioCodecFFmpeg>(m_processInfo);
     if (CDVDCodecOptions options; !m_audioCodec->Open(audioHint, options))
@@ -1305,13 +1330,15 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
       // EAC3 maximum is 6 channels
       codecName = "AC3 PLUS";
       optInfo["ac3PlusInfo"]["channels"] = std::min(transcodedChannels, 6);
-      optInfo["ac3PlusInfo"]["frequency"] = SelectTranscodingSampleRate(sampleRate) / 1000.0;
+      optInfo["ac3PlusInfo"]["frequency"] =
+          SelectTranscodingSampleRate(sampleRate, m_resampleAudio48k) / 1000.0;
     }
     else
     {
       // AC3 maximum is 6 channels
       optInfo["ac3Info"]["channels"] = std::min(transcodedChannels, 6);
-      optInfo["ac3Info"]["frequency"] = SelectTranscodingSampleRate(sampleRate) / 1000.0;
+      optInfo["ac3Info"]["frequency"] =
+          SelectTranscodingSampleRate(sampleRate, m_resampleAudio48k) / 1000.0;
     }
 
     return codecName;
@@ -1349,19 +1376,6 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
     optInfo["aacInfo"]["channels"] = audioHint.channels;
     optInfo["aacInfo"]["profile"] = audioHint.profile + 1;
     optInfo["aacInfo"]["format"] = audioHint.extradata ? "raw" : "adts";
-
-    const uint8_t* data = audioHint.extradata.GetData();
-    const size_t size = audioHint.extradata.GetSize();
-
-    if (data && size > 0)
-    {
-      // ParseAACSampleRate is used to determine the actual sample rate from extradata
-      // cannot use avpriv_mpeg4audio_get_config2 as not exposed in FFmpeg public API
-      unsigned int parsedRate = ParseAACSampleRate(data, size);
-      if (parsedRate > 0)
-        audioHint.samplerate = parsedRate;
-    }
-
     optInfo["aacInfo"]["frequency"] = audioHint.samplerate / 1000.0;
   }
 
@@ -2005,7 +2019,8 @@ void CMediaPipelineWebOS::ProcessAudio()
             if (!m_audioResample)
             {
               AEAudioFormat dstFormat = m_audioCodec->GetFormat();
-              dstFormat.m_sampleRate = SelectTranscodingSampleRate(dstFormat.m_sampleRate);
+              dstFormat.m_sampleRate =
+                  SelectTranscodingSampleRate(dstFormat.m_sampleRate, m_resampleAudio48k);
               dstFormat.m_dataFormat = AE_FMT_FLOATP;
               dstFormat.m_streamInfo.m_type = WebOSTVPlatformConfig::SupportsEAC3()
                                                   ? CAEStreamInfo::DataType::STREAM_TYPE_EAC3
@@ -2018,6 +2033,8 @@ void CMediaPipelineWebOS::ProcessAudio()
                   CServiceBroker::GetSettingsComponent()->GetSettings();
               auto quality = static_cast<AEQuality>(
                   settings->GetInt(CSettings::SETTING_AUDIOOUTPUT_PROCESSQUALITY));
+              if (m_resampleAudio48k && m_audioCodec->GetFormat().m_sampleRate != 48000)
+                quality = AE_QUALITY_HIGH;
               m_audioResample = std::make_unique<ActiveAE::CActiveAEBufferPoolResample>(
                   m_audioCodec->GetFormat(), dstFormat, quality);
               m_audioLimiter.SetSamplerate(dstFormat.m_sampleRate);
