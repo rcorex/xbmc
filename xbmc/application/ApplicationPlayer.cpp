@@ -915,6 +915,12 @@ void CApplicationPlayer::SetAudioStream(int iStream)
   }
 }
 
+bool CApplicationPlayer::RestartAudioStream()
+{
+  std::shared_ptr<IPlayer> player = GetInternal();
+  return player && player->RestartAudioStream();
+}
+
 void CApplicationPlayer::GetSubtitleStreamInfo(int index, SubtitleStreamInfo& info) const
 {
   const std::shared_ptr<const IPlayer> player = GetInternal();

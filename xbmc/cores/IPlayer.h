@@ -165,6 +165,11 @@ public:
   virtual int GetAudioStreamCount() const { return 0; }
   virtual int  GetAudioStream()       { return -1; }
   virtual void SetAudioStream(int iStream) {}
+  /*!
+   * \brief Reopen the active audio stream in-place (e.g. after a passthrough toggle).
+   * \return True if handled in-place by the player, false if a full media restart is required.
+   */
+  virtual bool RestartAudioStream() { return false; }
   virtual void GetAudioStreamInfo(int index, AudioStreamInfo& info) const {}
 
   virtual int GetVideoStream() const { return -1; }
