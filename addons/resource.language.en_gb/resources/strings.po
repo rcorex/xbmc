@@ -25406,7 +25406,31 @@ msgctxt "#39219"
 msgid "Use the system Dolby Vision extensions to correctly display Dolby Vision profile 5, 7 (excludes FEL reconstruction), 8 and 10 video."
 msgstr ""
 
-#empty strings from id 39220 to 39317
+#empty strings from id 39220 to 39299
+
+#. Title of webOS DTS passthrough setting
+msgctxt "#39300"
+msgid "Enable DTS Passthrough"
+msgstr ""
+
+#. Help text for setting "Enable DTS Passthrough" of label #39300
+msgctxt "#39301"
+msgid "Enable DTS audio passthrough on webOS. Turn this off if your TV or receiver does not support DTS."
+msgstr ""
+
+#empty strings from id 39302 to 39303
+
+#. Title of webOS DTS-HD passthrough setting
+msgctxt "#39304"
+msgid "Enable DTS-HD Passthrough"
+msgstr ""
+
+#. Help text for setting "Enable DTS-HD Passthrough" of label #39304
+msgctxt "#39305"
+msgid "Enable DTS-HD audio passthrough on webOS. Turn this off if your TV or receiver does not support DTS-HD."
+msgstr ""
+
+#empty strings from id 39306 to 39317
 
 # Use alternate method for audio track change
 #: system/settings/settings.xml
