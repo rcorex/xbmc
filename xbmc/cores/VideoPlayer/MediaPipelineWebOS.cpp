@@ -996,9 +996,12 @@ std::string CMediaPipelineWebOS::SetupAudio(CDVDStreamInfo& audioHint, CVariant&
   };
 
   std::string codecName = "AC3";
-  const bool allowPassthrough = CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
-                                    CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH) ||
-                                audioHint.cryptoSession;
+  const std::shared_ptr<CSettings> settings =
+      CServiceBroker::GetSettingsComponent()->GetSettings();
+  const bool allowPassthrough =
+      settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH) || audioHint.cryptoSession;
+  // Snapshot stream-scoped settings for ProcessAudio()
+  m_allowPassthrough = allowPassthrough;
   const bool supported = Supports(audioHint);
 
   if (!supported && audioHint.cryptoSession)
@@ -1756,9 +1759,7 @@ void CMediaPipelineWebOS::ProcessAudio()
                 auto p = std::make_shared<CDVDMsgDemuxerPacket>(
                     CDVDDemuxUtils::AllocateDemuxPacket(maxSize));
 
-                const bool passthrough =
-                    CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
-                        CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH);
+                const bool passthrough = m_allowPassthrough;
                 if (!passthrough && buf->pkt->config.fmt == AV_SAMPLE_FMT_FLTP)
                 {
                   float volume = CServiceBroker::GetAppComponents()
