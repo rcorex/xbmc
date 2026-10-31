@@ -49,4 +49,5 @@ private:
   CRect m_exportedDestRect;
   bool m_configured{false};
   CStarfishVideoBuffer* m_videoBuffer{nullptr};
+  unsigned int m_lastWindowGen{0};
 };
