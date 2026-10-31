@@ -155,6 +155,12 @@ void CApplicationSettingsHandling::OnSettingChanged(const std::shared_ptr<const 
   }
   else if (settingId == CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH)
   {
+    // Allow players that manage their own audio pipeline to reconfigure in-place
+    // instead of tearing down and reopening the media item.
+    const auto appPlayer = CServiceBroker::GetAppComponents().GetComponent<CApplicationPlayer>();
+    if (appPlayer && appPlayer->IsPlayingVideo() && appPlayer->RestartAudioStream())
+      return;
+
     CServiceBroker::GetAppMessenger()->PostMsg(TMSG_MEDIA_RESTART);
   }
   else if (settingId == CSettings::SETTING_VIDEOLIBRARY_FLATTENVERSIONS)
