@@ -206,14 +206,22 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
   if (WebOSTVPlatformConfig::SupportsDTS())
     ms_codecMap.emplace(AV_CODEC_ID_DTS, "DTS");
   m_processInfo.GetVideoBufferManager().ReleasePools();
+
+  m_eventThread = std::thread([this] { EventLoop(); });
 }
 
 CMediaPipelineWebOS::~CMediaPipelineWebOS()
 {
-  Unload(false);
+  // Synchronously wait for UNLOADCOMPLETED callback before destroying members
+  Unload(true);
   RequestAudioDevice(false);
   if (const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer))
     buffer->ResetAcbHandle();
+
+  m_stopEventThread.store(true, std::memory_order_release);
+  m_eventQueueCv.notify_all();
+  if (m_eventThread.joinable())
+    m_eventThread.join();
 }
 
 int CMediaPipelineWebOS::GetVideoBitrate() const
@@ -294,7 +302,7 @@ bool CMediaPipelineWebOS::Supports(const CDVDStreamInfo& hint)
 void CMediaPipelineWebOS::AcbCallback(
     long acbId, long taskId, long eventType, long appState, long playState, const char* reply)
 {
-  CLog::LogF(LOGDEBUG, "acbId={}, taskId={}, eventType={}, appState={}, playState={}, reply={}",
+  CLog::LogF(LOGINFO, "acbId={}, taskId={}, eventType={}, appState={}, playState={}, reply={}",
              acbId, taskId, eventType, appState, playState, reply);
 }
 
@@ -582,6 +590,18 @@ void CMediaPipelineWebOS::SetSubtitleDelay(const double delay)
 
 bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHint)
 {
+  {
+    std::lock_guard<std::mutex> lock(m_eventQueueMutex);
+    m_eventQueue.clear();
+  }
+
+  m_receivedAudioInfo.store(false, std::memory_order_release);
+  m_receivedVideoInfo.store(false, std::memory_order_release);
+  m_fedAudioPts = NO_PTS;
+  m_fedVideoPts = NO_PTS;
+  m_started = false;
+  m_acbLoaded.store(false, std::memory_order_release);
+
   CWorkerGate::Lock videoLock(m_videoGate);
   CWorkerGate::Lock audioLock(m_audioGate);
 
@@ -661,9 +681,10 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
     auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
     if (!buffer->GetAcbHandle())
     {
-      const std::unique_ptr<AcbHandle>& acb = buffer->CreateAcbHandle();
+      const std::shared_ptr<AcbHandle> acb = buffer->CreateAcbHandle();
       if (acb->Id())
       {
+        CLog::LogF(LOGINFO, "AcbAPI_initialize(acbId={})", acb->Id());
         if (!AcbAPI_initialize(acb->Id(), PLAYER_TYPE_MSE, getenv("APPID"), &AcbCallback))
         {
           buffer->ResetAcbHandle();
@@ -813,10 +834,6 @@ bool CMediaPipelineWebOS::Load(CDVDStreamInfo videoHint, CDVDStreamInfo audioHin
     }
   }
 
-  m_fedAudioPts = NO_PTS;
-  m_fedVideoPts = NO_PTS;
-  m_started = false;
-
   m_videoClosed = false;
   if (m_hasAudio)
     m_audioClosed = false;
@@ -860,9 +877,23 @@ bool CMediaPipelineWebOS::ConfigureRenderer(const CDVDStreamInfo& videoHint, con
 
 void CMediaPipelineWebOS::Unload(const bool sync)
 {
+  m_receivedAudioInfo.store(false, std::memory_order_release);
+  m_receivedVideoInfo.store(false, std::memory_order_release);
+
   CThread::StopThread(true);
   if (m_audioThread.joinable())
     m_audioThread.join();
+
+  const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
+  if (const auto acb = buffer ? buffer->GetAcbHandle() : nullptr)
+  {
+    long taskId = 0;
+    CLog::LogF(LOGINFO,
+               "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, "
+               "playState=PLAYSTATE_UNLOADED)",
+               acb->Id(), taskId);
+    AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_UNLOADED, &taskId);
+  }
 
   if (!m_mediaAPIs->Unload())
     CLog::LogF(LOGERROR, "Unload failed");
@@ -870,6 +901,7 @@ void CMediaPipelineWebOS::Unload(const bool sync)
   m_fedAudioPts = NO_PTS;
   m_fedVideoPts = NO_PTS;
   m_started = false;
+  m_acbLoaded.store(false, std::memory_order_release);
 
   if (sync)
   {
@@ -1393,6 +1425,53 @@ void CMediaPipelineWebOS::SetDynamicRangeCompression(const long drc)
   m_audioLimiter.SetAmplification(std::pow(10.0f, static_cast<float>(drc) / 2000.0f));
 }
 
+void CMediaPipelineWebOS::CheckAndEmitAcbLoaded()
+{
+  if (m_acbLoaded.load(std::memory_order_acquire))
+    return;
+
+  // Defer PLAYSTATE_LOADED until all active streams have registered metadata
+  const bool audioReady = !m_hasAudio.load(std::memory_order_acquire) ||
+                          m_receivedAudioInfo.load(std::memory_order_acquire);
+  const bool videoReady = m_receivedVideoInfo.load(std::memory_order_acquire);
+
+  if (!audioReady || !videoReady)
+    return;
+
+  const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
+  if (const auto acb = buffer ? buffer->GetAcbHandle() : nullptr)
+  {
+    CLog::LogF(LOGINFO,
+               "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, "
+               "playState=PLAYSTATE_LOADED)",
+               acb->Id(), acb->TaskId());
+    AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_LOADED, &acb->TaskId());
+    m_acbLoaded.store(true, std::memory_order_release);
+  }
+}
+
+void CMediaPipelineWebOS::EventLoop()
+{
+  while (true)
+  {
+    PipelineEvent event;
+    {
+      std::unique_lock<std::mutex> lock(m_eventQueueMutex);
+      m_eventQueueCv.wait(lock, [this] {
+        return m_stopEventThread.load(std::memory_order_acquire) || !m_eventQueue.empty();
+      });
+
+      if (m_stopEventThread.load(std::memory_order_acquire) && m_eventQueue.empty())
+        break;
+
+      event = std::move(m_eventQueue.front());
+      m_eventQueue.pop_front();
+    }
+
+    PlayerCallback(event.type, event.numValue, event.strValue.c_str());
+  }
+}
+
 void CMediaPipelineWebOS::Process()
 {
   m_videoGate.SetRunning(true);
@@ -1667,13 +1746,10 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
   const std::string logStr = strValue != nullptr ? strValue : "";
   CLog::LogF(LOGDEBUG, "type: {}, numValue: {}, strValue: {}", type, numValue, logStr);
 
-  const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
-
   // Adjust event type for older webOS versions
   if (m_webOSVersion < 5 && type > PF_EVENT_TYPE_STR_STATE_UPDATE__ENDOFSTREAM)
     type += 2;
 
-  const std::unique_ptr<AcbHandle>& acb = buffer->GetAcbHandle();
   switch (type)
   {
     case PF_EVENT_TYPE_FRAMEREADY:
@@ -1688,16 +1764,48 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       std::atomic<bool> stop(false);
       m_renderManager.AddVideoPicture(m_picture, stop, VS_INTERLACEMETHOD_AUTO, false);
       m_clock.Discontinuity(pts);
-      break;
+      return;
     }
     case PF_EVENT_TYPE_STR_AUDIO_INFO:
-      if (acb)
+    {
+      CLog::LogF(LOGINFO, "Received audio info: {}", logStr);
+      const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
+      if (const auto acb = buffer ? buffer->GetAcbHandle() : nullptr)
+      {
+        // Set media ID before stream metadata so ACB establishes the media session
+        CLog::LogF(LOGINFO, "AcbAPI_setMediaId(acbId={}, taskId={}, mediaId={})", acb->Id(),
+                   acb->TaskId(), m_mediaAPIs->getMediaID());
+        AcbAPI_setMediaId(acb->Id(), m_mediaAPIs->getMediaID());
+
+        CLog::LogF(LOGINFO, "AcbAPI_setMediaAudioData(acbId={}, taskId={})", acb->Id(),
+                   acb->TaskId());
         AcbAPI_setMediaAudioData(acb->Id(), logStr.c_str(), &acb->TaskId());
+      }
+
+      m_receivedAudioInfo.store(true, std::memory_order_release);
+      CheckAndEmitAcbLoaded();
       break;
+    }
     case PF_EVENT_TYPE_STR_VIDEO_INFO:
-      if (acb)
+    {
+      CLog::LogF(LOGINFO, "Received video info: {}", logStr);
+      const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
+      if (const auto acb = buffer ? buffer->GetAcbHandle() : nullptr)
+      {
+        // Set media ID before stream metadata so ACB establishes the media session
+        CLog::LogF(LOGINFO, "AcbAPI_setMediaId(acbId={}, taskId={}, mediaId={})", acb->Id(),
+                   acb->TaskId(), m_mediaAPIs->getMediaID());
+        AcbAPI_setMediaId(acb->Id(), m_mediaAPIs->getMediaID());
+
+        CLog::LogF(LOGINFO, "AcbAPI_setMediaVideoData(acbId={}, taskId={})", acb->Id(),
+                   acb->TaskId());
         AcbAPI_setMediaVideoData(acb->Id(), logStr.c_str(), &acb->TaskId());
+      }
+
+      m_receivedVideoInfo.store(true, std::memory_order_release);
+      CheckAndEmitAcbLoaded();
       break;
+    }
     case PF_EVENT_TYPE_STR_STATE_UPDATE__LOADCOMPLETED:
     {
       const auto player = static_cast<mediapipeline::CustomPlayer*>(m_mediaAPIs->player.get());
@@ -1706,36 +1814,61 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       m_pipeline = pipeline->GetGStreamerElements(
           {0, MIN_SRC_BUFFER_LEVEL_VIDEO, MAX_SRC_BUFFER_LEVEL_VIDEO, MAX_BUFFER_LEVEL});
 
-      if (acb)
+      CLog::LogF(LOGINFO, "AcbAPI_Info: Player state LOADCOMPLETED");
+      const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
+      if (const auto acb = buffer ? buffer->GetAcbHandle() : nullptr)
       {
+        CLog::LogF(LOGINFO, "AcbAPI_setSinkType(acbId={}, taskId={}, sinkType=SINK_TYPE_MAIN)",
+                   acb->Id(), acb->TaskId());
         AcbAPI_setSinkType(acb->Id(), SINK_TYPE_MAIN);
-        AcbAPI_setMediaId(acb->Id(), m_mediaAPIs->getMediaID());
-        AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_LOADED, &acb->TaskId());
       }
+      if (buffer)
+        buffer->InvalidateDisplayWindow();
+
       m_renderManager.ShowVideo(true);
       if (!m_mediaAPIs->Play())
         CLog::LogF(LOGERROR, "Failed to play");
-      m_loaded = true;
       m_flushed = true;
       Create();
       m_audioThread = std::thread([this] { ProcessAudio(); });
+      {
+        std::lock_guard<std::mutex> lock(m_eventMutex);
+        m_loaded = true;
+      }
       break;
     }
     case PF_EVENT_TYPE_STR_STATE_UPDATE__UNLOADCOMPLETED:
-      if (acb)
-        AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_UNLOADED, &acb->TaskId());
+    {
       StopThread(true);
       if (m_audioThread.joinable())
         m_audioThread.join();
-      m_loaded = false;
       m_pipeline = nullptr;
       RequestAudioDevice(false);
+      m_acbLoaded.store(false, std::memory_order_release);
+      m_receivedAudioInfo.store(false, std::memory_order_release);
+      m_receivedVideoInfo.store(false, std::memory_order_release);
+
+      {
+        std::lock_guard<std::mutex> lock(m_eventMutex);
+        m_loaded = false;
+      }
       break;
+    }
     case PF_EVENT_TYPE_STR_STATE_UPDATE__PAUSED:
-      if (acb)
-        AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PAUSED, &acb->TaskId());
+    {
       RequestAudioDevice(false);
+
+      const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
+      if (const auto acb = buffer ? buffer->GetAcbHandle() : nullptr)
+      {
+        CLog::LogF(
+            LOGINFO,
+            "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_PAUSED)",
+            acb->Id(), acb->TaskId());
+        AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PAUSED, &acb->TaskId());
+      }
       break;
+    }
     case PF_EVENT_TYPE_STR_STATE_UPDATE__PLAYING:
     {
       SStartMsg msg{.timestamp = GetCurrentPts(),
@@ -1747,8 +1880,16 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
       msg.player = VideoPlayer_AUDIO;
       m_messageQueueParent.Put(
           std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, msg));
-      if (acb)
+
+      const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
+      if (const auto acb = buffer ? buffer->GetAcbHandle() : nullptr)
+      {
+        CLog::LogF(
+            LOGINFO,
+            "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_PLAYING)",
+            acb->Id(), acb->TaskId());
         AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PLAYING, &acb->TaskId());
+      }
       break;
     }
     case PF_EVENT_TYPE_STR_BUFFERFULL:
@@ -1782,5 +1923,19 @@ void CMediaPipelineWebOS::PlayerCallback(const int32_t type,
                                          const char* strValue,
                                          void* data)
 {
-  static_cast<CMediaPipelineWebOS*>(data)->PlayerCallback(type, numValue, strValue);
+  const auto self = static_cast<CMediaPipelineWebOS*>(data);
+  const int32_t adjustedType =
+      (self->m_webOSVersion < 5 && type > PF_EVENT_TYPE_STR_STATE_UPDATE__ENDOFSTREAM) ? type + 2
+                                                                                       : type;
+  if (adjustedType == PF_EVENT_TYPE_FRAMEREADY)
+  {
+    self->PlayerCallback(type, numValue, strValue);
+    return;
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(self->m_eventQueueMutex);
+    self->m_eventQueue.push_back({type, numValue, strValue != nullptr ? strValue : ""});
+  }
+  self->m_eventQueueCv.notify_one();
 }
