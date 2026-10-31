@@ -3407,11 +3407,14 @@ void CVideoPlayer::HandleMessages()
             m_messenger.Put(std::make_shared<CDVDMsgPlayerSeek>(mode));
           }
         }
-        else if (!st.IsCurrent(m_CurrentAudio))
+        else if (!st.IsCurrent(m_CurrentAudio) || pMsg2->ForceRestart())
         {
+          const bool streamChanged = !st.IsCurrent(m_CurrentAudio);
           CloseStream(m_CurrentAudio, false);
           OpenStream(m_CurrentAudio, st.demuxerId, st.id, st.source);
-          AdaptForcedSubtitles();
+          // Preserve current subtitle state when reopening the same track in-place
+          if (streamChanged)
+            AdaptForcedSubtitles();
 
           CDVDMsgPlayerSeek::CMode mode;
           mode.time = (int)GetUpdatedTime();
