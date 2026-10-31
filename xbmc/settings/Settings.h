@@ -446,6 +446,7 @@ public:
       "audiooutput.webosstarfishdownmixstereoonly71";
   static constexpr auto SETTING_AUDIOOUTPUT_WEBOSSTARFISHDOWNMIXSTEREODPLII =
       "audiooutput.webosstarfishdownmixstereodplii";
+  static constexpr auto SETTING_AUDIOOUTPUT_WEBOSRESAMPLE48K = "audiooutput.webosresample48k";
   static constexpr auto SETTING_AUDIOOUTPUT_DTSHDCOREFALLBACK = "audiooutput.dtshdcorefallback";
   static constexpr auto SETTING_AUDIOOUTPUT_VOLUMESTEPS = "audiooutput.volumesteps";
   static constexpr auto SETTING_AUDIOOUTPUT_LOWLATENCY = "audiooutput.lowlatency";
