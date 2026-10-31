@@ -555,6 +555,7 @@ private:
 
   std::atomic<bool> m_videoClosed{true};
   std::atomic<bool> m_audioClosed{true};
+  std::atomic<bool> m_allowPassthrough{false};
 
   std::atomic<std::chrono::nanoseconds> m_fedAudioPts{NO_PTS};
   std::atomic<std::chrono::nanoseconds> m_fedVideoPts{NO_PTS};
