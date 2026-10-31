@@ -43,8 +43,10 @@
 #include "platform/linux/WebOSTVPlatformConfig.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <exception>
 #include <map>
 #include <ranges>
@@ -88,6 +90,202 @@ constexpr std::chrono::nanoseconds MAX_FEED_AHEAD_TIME = 1600ms;
 
 constexpr unsigned int SVP_VERSION_30 = 30;
 constexpr unsigned int SVP_VERSION_40 = 40;
+
+// ATSC A/52 Table 5.13: Frame Size Code Table (words -> bytes requires * 2)
+constexpr uint16_t ac3_frame_size_tab[38][3] = {
+    {64, 69, 96},       {64, 70, 96},       {80, 87, 120},      {80, 88, 120},
+    {96, 104, 144},     {96, 105, 144},     {112, 121, 168},    {112, 122, 168},
+    {128, 139, 192},    {128, 140, 192},    {160, 174, 240},    {160, 175, 240},
+    {192, 208, 288},    {192, 209, 288},    {224, 243, 336},    {224, 244, 336},
+    {256, 278, 384},    {256, 279, 384},    {320, 348, 480},    {320, 349, 480},
+    {384, 417, 576},    {384, 418, 576},    {448, 487, 672},    {448, 488, 672},
+    {512, 557, 768},    {512, 558, 768},    {640, 696, 960},    {640, 697, 960},
+    {768, 835, 1152},   {768, 836, 1152},   {896, 975, 1344},   {896, 976, 1344},
+    {1024, 1114, 1536}, {1024, 1115, 1536}, {1152, 1253, 1728}, {1152, 1254, 1728},
+    {1280, 1393, 1920}, {1280, 1394, 1920}};
+
+constexpr std::array<uint16_t, 256> GenerateAC3CRCTable()
+{
+  std::array<uint16_t, 256> table{};
+  for (int i = 0; i < 256; i++)
+  {
+    uint16_t crc = i << 8;
+    for (int j = 0; j < 8; j++)
+    {
+      if (crc & 0x8000)
+        crc = (crc << 1) ^ 0x8005;
+      else
+        crc <<= 1;
+    }
+    table[i] = crc;
+  }
+  return table;
+}
+
+constexpr auto ac3_crc_tab = GenerateAC3CRCTable();
+
+uint16_t CalculateAC3CRC(const uint8_t* data, size_t size)
+{
+  uint16_t crc = 0;
+  for (size_t i = 0; i < size; i++)
+    crc = (crc << 8) ^ ac3_crc_tab[(crc >> 8) ^ data[i]];
+  return crc;
+}
+
+// GF(2^16) polynomial helpers for AC-3 CRC1 inversion (P(x) = x^16 + x^15 + x^2 + 1 = 0x18005)
+constexpr uint32_t MulPolyAC3(uint32_t a, uint32_t b)
+{
+  constexpr uint32_t poly = 0x18005;
+  uint32_t c = 0;
+  while (a)
+  {
+    if (a & 1)
+      c ^= b;
+    a >>= 1;
+    b <<= 1;
+    if (b & 0x10000)
+      b ^= poly;
+  }
+  return c & 0xFFFF;
+}
+
+constexpr uint32_t PowPolyAC3(uint32_t a, unsigned int n)
+{
+  uint32_t r = 1;
+  while (n)
+  {
+    if (n & 1)
+      r = MulPolyAC3(r, a);
+    a = MulPolyAC3(a, a);
+    n >>= 1;
+  }
+  return r;
+}
+
+int GetDialnormOffsetAC3(uint8_t acmod)
+{
+  int offset = 16 + 16 + 2 + 6 + 5 + 3 + 3;
+  if ((acmod & 1) && (acmod != 1))
+    offset += 2;
+  if (acmod & 4)
+    offset += 2;
+  if (acmod == 2)
+    offset += 2;
+  offset += 1;
+  return offset;
+}
+
+void DefeatDialnorm(uint8_t* data, size_t size)
+{
+  if (size < 8)
+    return;
+
+  size_t i = 0;
+
+  while (i <= size - 8)
+  {
+    if (data[i] == 0x0B && data[i + 1] == 0x77)
+    {
+      uint8_t bsid = data[i + 5] >> 3;
+      int offset = -1;
+      size_t frame_size = 0;
+
+      if (bsid <= 10)
+      {
+        uint8_t fscod = data[i + 4] >> 6;
+        uint8_t frmsizcod = (data[i + 4] & 0x3F);
+        if (fscod < 3 && frmsizcod < 38)
+        {
+          frame_size = ac3_frame_size_tab[frmsizcod][fscod] * 2;
+          uint8_t acmod = data[i + 6] >> 5;
+          if (acmod == 0) // AC-3 Dual Mono (1+1)
+          {
+            i += frame_size;
+            continue;
+          }
+          offset = GetDialnormOffsetAC3(acmod);
+        }
+      }
+      else if (bsid == 16)
+      {
+        uint16_t frmsiz = ((data[i + 2] & 0x07) << 8) | data[i + 3];
+        frame_size = (frmsiz + 1) * 2;
+
+        uint8_t strmtyp = data[i + 2] >> 6;
+        if (strmtyp == 1 || strmtyp == 3)
+        {
+          i += frame_size;
+          continue;
+        }
+
+        offset = 45; // E-AC-3 dialnorm bit offset
+      }
+
+      if (offset != -1 && frame_size > 0)
+      {
+        if (i + frame_size > size)
+          break;
+
+        size_t byte_idx = i + offset / 8;
+        int bit_idx = offset % 8;
+
+        int bits_in_first = 8 - bit_idx;
+        if (bits_in_first >= 5)
+        {
+          data[byte_idx] |= (0x1F << (bits_in_first - 5));
+        }
+        else
+        {
+          data[byte_idx] |= ((1 << bits_in_first) - 1);
+          int bits_in_second = 5 - bits_in_first;
+          data[byte_idx + 1] |= (((1 << bits_in_second) - 1) << (8 - bits_in_second));
+        }
+
+        if (bsid <= 10)
+        {
+          // AC-3 CRC1 covers the first 5/8 of the frame and must self-verify to 0
+          size_t frame_size_58 = ((frame_size >> 2) + (frame_size >> 4)) << 1;
+
+          if (frame_size_58 > 4 && i + frame_size_58 <= size)
+          {
+            data[i + 2] = 0;
+            data[i + 3] = 0;
+            const uint16_t raw_crc1 = CalculateAC3CRC(data + i + 2, frame_size_58 - 2);
+
+            const unsigned int power = static_cast<unsigned int>(8 * (frame_size_58 - 2));
+            const unsigned int inv_power = 32767 - (power % 32767);
+            const uint16_t crc1 =
+                static_cast<uint16_t>(MulPolyAC3(PowPolyAC3(2, inv_power), raw_crc1));
+
+            data[i + 2] = (crc1 >> 8) & 0xFF;
+            data[i + 3] = crc1 & 0xFF;
+          }
+
+          if (frame_size > 4 && i + frame_size <= size)
+          {
+            const uint16_t new_crc2 = CalculateAC3CRC(data + i + 2, frame_size - 4);
+            data[i + frame_size - 2] = (new_crc2 >> 8) & 0xFF;
+            data[i + frame_size - 1] = new_crc2 & 0xFF;
+          }
+        }
+        else
+        {
+          if (frame_size > 4 && i + frame_size <= size)
+          {
+            const uint16_t new_eac3_crc = CalculateAC3CRC(data + i + 2, frame_size - 4);
+            data[i + frame_size - 2] = (new_eac3_crc >> 8) & 0xFF;
+            data[i + frame_size - 1] = new_eac3_crc & 0xFF;
+          }
+        }
+
+        i += frame_size;
+        continue;
+      }
+    }
+
+    i++;
+  }
+}
 
 auto ms_codecMap = std::map<AVCodecID, std::string_view>({{AV_CODEC_ID_VP8, "VP8"},
                                                           {AV_CODEC_ID_VP9, "VP9"},
@@ -206,6 +404,15 @@ CMediaPipelineWebOS::CMediaPipelineWebOS(CProcessInfo& processInfo,
 
   m_webOSVersion = WebOSTVPlatformConfig::GetWebOSVersion();
   m_processInfo.GetVideoBufferManager().ReleasePools();
+
+  // Cache per-packet dialnorm settings via ISettingCallback for live toggling
+  const std::shared_ptr<CSettings> settings =
+      CServiceBroker::GetSettingsComponent()->GetSettings();
+  m_bypassDialnorm = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM);
+  m_bypassDialnormAtmos =
+      settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS);
+  settings->RegisterCallback(this, {CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM,
+                                    CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS});
 }
 
 CMediaPipelineWebOS::~CMediaPipelineWebOS()
@@ -215,6 +422,21 @@ CMediaPipelineWebOS::~CMediaPipelineWebOS()
   RequestAudioDevice(false);
   if (const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer))
     buffer->ResetAcbHandle();
+
+  CServiceBroker::GetSettingsComponent()->GetSettings()->UnregisterCallback(this);
+}
+
+void CMediaPipelineWebOS::OnSettingChanged(const std::shared_ptr<const CSetting>& setting)
+{
+  const std::string& settingId = setting->GetId();
+  const std::shared_ptr<CSettings> settings =
+      CServiceBroker::GetSettingsComponent()->GetSettings();
+
+  if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM)
+    m_bypassDialnorm = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORM);
+  else if (settingId == CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS)
+    m_bypassDialnormAtmos =
+        settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_WEBOSBYPASSDIALNORMATMOS);
 }
 
 int CMediaPipelineWebOS::GetVideoBitrate() const
@@ -1743,8 +1965,29 @@ void CMediaPipelineWebOS::ProcessAudio()
     {
       if (msg->IsType(CDVDMsg::DEMUXER_PACKET))
       {
-        const DemuxPacket* packet =
+        DemuxPacket* packet =
             std::static_pointer_cast<CDVDMsgDemuxerPacket>(msg)->GetPacket();
+
+        if (packet->iStreamId != RESAMPLED_STREAM_ID && packet->iStreamId != CONVERTED_STREAM_ID)
+        {
+          if (!m_audioHint.cryptoSession &&
+              (m_audioHint.codec == AV_CODEC_ID_AC3 || m_audioHint.codec == AV_CODEC_ID_EAC3))
+          {
+            if (m_bypassDialnorm)
+            {
+              bool shouldDefeat = true;
+              if (m_audioHint.profile == AV_PROFILE_EAC3_DDP_ATMOS && !m_bypassDialnormAtmos)
+                shouldDefeat = false;
+
+              if (shouldDefeat)
+              {
+                DefeatDialnorm(packet->pData, packet->iSize);
+                packet->iStreamId = CONVERTED_STREAM_ID;
+              }
+            }
+          }
+        }
+
         if (m_audioCodec && packet->iStreamId != RESAMPLED_STREAM_ID)
         {
           if (!m_audioCodec->AddData(*packet))
