@@ -13,6 +13,7 @@
 #include "DVDStreamInfo.h"
 #include "IVideoPlayer.h"
 #include "cores/AudioEngine/Utils/AELimiter.h"
+#include "settings/lib/ISettingCallback.h"
 #include "threads/Thread.h"
 #include "utils/BitstreamStats.h"
 
@@ -131,7 +132,7 @@ private:
  * @class CMediaPipelineWebOS
  * @brief WebOS media pipeline for audio/video playback.
  */
-class CMediaPipelineWebOS final : public CThread
+class CMediaPipelineWebOS final : public CThread, public ISettingCallback
 {
 public:
   /**
@@ -337,6 +338,8 @@ public:
    */
   void GetVideoResolution(unsigned int& width, unsigned int& height) const;
 
+  void OnSettingChanged(const std::shared_ptr<const CSetting>& setting) override;
+
 protected:
   /**
    * @brief Video processing thread loop.
@@ -536,6 +539,8 @@ private:
   std::atomic<bool> m_allowPassthrough{false};
   std::atomic<bool> m_downmixStereo{false};
   std::atomic<bool> m_downmixStereoOnly71{false};
+  std::atomic<bool> m_bypassDialnorm{false};
+  std::atomic<bool> m_bypassDialnormAtmos{true};
 
   std::atomic<std::chrono::nanoseconds> m_fedAudioPts{NO_PTS};
   std::atomic<std::chrono::nanoseconds> m_fedVideoPts{NO_PTS};
