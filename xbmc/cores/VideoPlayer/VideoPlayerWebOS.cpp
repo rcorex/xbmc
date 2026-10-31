@@ -8,6 +8,7 @@
 
 #include "VideoPlayerWebOS.h"
 
+#include "DVDMessage.h"
 #include "MediaPipelineWebOS.h"
 #include "ServiceBroker.h"
 #include "VideoPlayerAudioWebOS.h"
@@ -103,4 +104,18 @@ void CVideoPlayerWebOS::UpdateContent()
 bool CVideoPlayerWebOS::CanTempo()
 {
   return m_mediaPipelineWebOS || CVideoPlayer::CanTempo();
+}
+
+bool CVideoPlayerWebOS::RestartAudioStream()
+{
+  // Fall back to full media restart when using the software ActiveAE audio player
+  if (!m_mediaPipelineWebOS)
+    return false;
+
+  // Reopen the active audio stream so SetupAudio reconfigures passthrough vs transcoding
+  const int stream = GetAudioStream();
+  if (stream >= 0)
+    m_messenger.Put(std::make_shared<CDVDMsgPlayerSetAudioStream>(stream, true));
+
+  return true;
 }
