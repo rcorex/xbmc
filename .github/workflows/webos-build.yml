@@ -1,0 +1,78 @@
+name: webOS Build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Free Disk Space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          android: true
+          dotnet: true
+          haskell: true
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ runner.os }}-
+
+      - name: Cache Kodi dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/kodi-deps
+          key: depends-${{ runner.os }}-${{ hashFiles('tools/depends/**/*.txt', 'tools/depends/**/*.mk') }}
+          restore-keys: |
+            depends-${{ runner.os }}-
+
+      - name: Download and extract toolchain
+        run: |
+          curl -L -o toolchain.tar.gz https://github.com/openlgtv/buildroot-nc4/releases/latest/download/arm-webos-linux-gnueabi_sdk-buildroot-x86_64.tar.gz
+          mkdir -p $HOME/kodi-dev
+          tar xzvf toolchain.tar.gz -C $HOME/kodi-dev
+
+      - name: Install Ubuntu dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ccache cmake gperf npm default-jdk libcurl4-openssl-dev
+          wget -q https://downloads.apache.org/ant/binaries/apache-ant-1.10.15-bin.tar.gz
+          sudo tar xzf apache-ant-1.10.15-bin.tar.gz -C /opt
+          echo "/opt/apache-ant-1.10.15/bin" >> $GITHUB_PATH
+
+      - name: Install LG webOS CLI
+        run: sudo npm install -g @webos-tools/cli
+
+      - name: Build Kodi dependencies
+        run: |
+          export PATH="/usr/lib/ccache:$PATH"
+          cd tools/depends
+          ./bootstrap
+          ./configure --prefix=$HOME/kodi-deps --with-toolchain=$HOME/kodi-dev/arm-webos-linux-gnueabi_sdk-buildroot --host=arm-webos-linux-gnueabi --enable-debug=no
+          make -j$(nproc)
+
+      - name: Generate Kodi build system
+        run: make -C tools/depends/target/cmakebuildsys
+
+      - name: Compile Kodi
+        run: |
+          cd build
+          make -j$(nproc)
+
+      - name: Package Kodi app
+        run: |
+          cd build
+          make ipk
+
+      - name: Upload IPK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kodi-webos-ipk
+          path: "**/*.ipk"

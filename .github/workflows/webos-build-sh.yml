@@ -1,0 +1,140 @@
+name: webOS Build Self-Hosted
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        description: 'Which branch should I build?'
+        required: true
+        type: string
+        default: ''
+      include_binary_addons:
+        description: 'Include binary addons?'
+        required: true
+        type: boolean
+        default: false
+      build_binary_addons:
+        description: 'Recompile binary addons?'
+        required: true
+        type: boolean
+        default: false
+        
+jobs:
+  build:
+    runs-on: self-hosted
+    steps:
+      - name: Sync WSL Clock
+        run: |
+          for i in 1 2 3; do
+            sudo hwclock -s && break || echo "Clock locked, retrying..." && sleep 3
+          done
+    
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target_branch }}
+
+      # Sets up ccache globally for the entire job
+      - name: Setup local persistent ccache
+        run: |
+          echo "/usr/lib/ccache" >> $GITHUB_PATH
+          echo "CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
+          echo "CCACHE_MAXSIZE=10G" >> $GITHUB_ENV
+
+      # Prints the path to the compiler to prove ccache is handling it
+      - name: Verify ccache routing
+        run: |
+          echo "Compiler path for gcc:"
+          which gcc
+          echo "Compiler path for g++:"
+          which g++
+
+      - name: Download and extract toolchain
+        run: |
+          if [ ! -d "$HOME/kodi-dev/arm-webos-linux-gnueabi_sdk-buildroot" ]; then
+            echo "Toolchain not found. Downloading..."
+            curl -L -o toolchain.tar.gz https://github.com/openlgtv/buildroot-nc4/releases/latest/download/arm-webos-linux-gnueabi_sdk-buildroot-x86_64.tar.gz
+            mkdir -p $HOME/kodi-dev
+            tar xzvf toolchain.tar.gz -C $HOME/kodi-dev
+          else
+            echo "Toolchain already exists, skipping download."
+          fi
+
+#      - name: Install Ubuntu dependencies
+#        run: |
+#          sudo apt-get update
+#          sudo apt-get install -y ccache cmake gperf npm default-jdk libcurl4-openssl-dev flex unzip perl automake autoconf m4 libtool
+#          
+#          if [ ! -d "/opt/apache-ant-1.10.15" ]; then
+#            echo "Apache Ant not found. Downloading..."
+#            wget -q https://downloads.apache.org/ant/binaries/apache-ant-1.10.15-bin.tar.gz
+#            sudo tar xzf apache-ant-1.10.15-bin.tar.gz -C /opt
+#          else
+#            echo "Apache Ant already installed, skipping download."
+#          fi
+#          echo "/opt/apache-ant-1.10.15/bin" >> $GITHUB_PATH
+
+#      - name: Install LG webOS CLI
+#        run: sudo npm install -g @webos-tools/cli
+
+      - name: Install Perl dependencies for Samba PIDL
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libparse-yapp-perl
+
+      - name: Configure Kodi dependencies
+        working-directory: tools/depends
+        run: |
+          ./bootstrap
+          ./configure --prefix=$HOME/kodi-deps --with-toolchain=$HOME/kodi-dev/arm-webos-linux-gnueabi_sdk-buildroot --host=arm-webos-linux-gnueabi --enable-debug=no --with-target-cflags="-D_GNU_SOURCE"
+          
+      # ALWAYS compile dependencies to ensure linking paths are generated
+      - name: Compile Kodi dependencies
+        working-directory: tools/depends
+        run: make -j4
+
+      - name: Generate Kodi build system
+        run: make -C tools/depends/target/cmakebuildsys
+
+      - name: Compile Kodi
+        working-directory: build
+        run: make -j4
+
+      - name: Build or Restore Binary Addons
+        working-directory: build
+        run: |
+          if [ "${{ inputs.include_binary_addons }}" == "false" ]; then
+            echo "Skipping binary addons. They will not be compiled or restored."
+          elif [ "${{ inputs.build_binary_addons }}" == "true" ]; then
+            echo "Building PVR, InputStream, and VFS binary addons..."
+            make -j4 -C ../tools/depends/target/binary-addons PREFIX=$PWD/tools/webOS/packaging TARBALLS_LOCATION=$HOME/kodi-deps/tarballs ADDONS="pvr.* inputstream.*"
+            
+            echo "Wiping old backup directory to ensure a clean state..."
+            rm -rf $HOME/kodi-addons-backup
+            
+            echo "Backing up fresh addons to $HOME/kodi-addons-backup..."
+            mkdir -p $HOME/kodi-addons-backup
+            cp -a $PWD/tools/webOS/packaging/. $HOME/kodi-addons-backup/
+          else
+            echo "Restoring previously built addons from $HOME/kodi-addons-backup..."
+            mkdir -p $PWD/tools/webOS/packaging
+            if [ -d "$HOME/kodi-addons-backup" ] && [ "$(ls -A $HOME/kodi-addons-backup)" ]; then
+              cp -a $HOME/kodi-addons-backup/. $PWD/tools/webOS/packaging/
+              echo "Restore complete."
+            else
+              echo "WARNING: No backup found in $HOME/kodi-addons-backup. Addons will be missing!"
+            fi
+          fi
+
+#      - name: Patch webosbrew verify-symbols script (Fix WSL pipe)
+#        run: sed -i 's/grep -q/grep > \/dev\/null/g' tools/webOS/verify-symbols.sh
+
+      - name: Package Kodi app
+        working-directory: build
+        run: make ipk
+
+      - name: Upload IPK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kodi-webos-ipk
+          path: "**/*.ipk"
