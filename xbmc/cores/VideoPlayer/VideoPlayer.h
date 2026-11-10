@@ -132,6 +132,7 @@ public:
   int changes; // remembered counter from stream to track codec changes
   bool inited;
   bool demuxDisabled; // disabled in the demuxer since it was opened
+  bool replaying; // Demuxer re-reads what was already delivered, up to dts
   unsigned int packets;
   IDVDStreamPlayer::ESyncState syncState;
   double starttime;
@@ -171,6 +172,7 @@ public:
     changes = 0;
     inited = false;
     demuxDisabled = false;
+    replaying = false;
     packets = 0;
     syncState = IDVDStreamPlayer::SYNC_STARTING;
     starttime = DVD_NOPTS_VALUE;
@@ -429,6 +431,7 @@ protected:
   void Prepare();
   void ForgetSubtitleSelection();
   bool ShouldDeferSync(bool ready, std::chrono::steady_clock::time_point now);
+  bool ShouldWaitForSync(std::chrono::steady_clock::time_point now);
   bool OpenStream(CCurrentStream& current, int64_t demuxerId, int iStream, int source, bool reset = true);
   bool OpenAudioStream(CDVDStreamInfo& hint, bool reset = true);
   bool OpenVideoStream(CDVDStreamInfo& hint, bool reset = true);
@@ -444,6 +447,7 @@ protected:
   bool CloseStream(CCurrentStream& current, bool bWaitForBuffers);
 
   bool CheckIsCurrent(const CCurrentStream& current, CDemuxStream* stream, DemuxPacket* pkg);
+  bool IsReplayedPacket(CDemuxStream* stream, DemuxPacket* packet);
   void ProcessPacket(CDemuxStream* pStream, DemuxPacket* pPacket);
   void ProcessAudioData(CDemuxStream* pStream, DemuxPacket* pPacket);
   void ProcessVideoData(CDemuxStream* pStream, DemuxPacket* pPacket);
@@ -463,6 +467,7 @@ protected:
 
   void SetSubtitleVisibleInternal(bool bVisible);
   void ReopenSubtitleStream(const SelectionStream& stream);
+  bool RereadSubtitleData();
 
   enum SubtitleChange
   {
@@ -696,6 +701,8 @@ protected:
   XbmcThreads::EndTime<> m_syncTimer;
 
   std::optional<std::chrono::steady_clock::time_point> m_syncStartPtsWait;
+
+  std::optional<std::chrono::steady_clock::time_point> m_syncWait;
 
   CEdl m_Edl;
   bool m_SkipCommercials;
