@@ -759,9 +759,29 @@ void CActiveAE::StateMachine(int signal, Protocol *port, Message *msg)
           stream = *(CActiveAEStream**)msg->data;
           if (!stream->m_paused && m_streams.size() == 1)
           {
-            FlushEngine();
+            // A RAW AudioTrack would otherwise play its queued audio on resume, ahead of the sync
+            // correction. Discarding it makes resume start on an empty sink, as after a seek. As
+            // that lengthens the gap on resume, only where the queued audio disturbs it.
+            const CAEStreamInfo::DataType type{m_sinkFormat.m_streamInfo.m_type};
+            const bool discard =
+                m_mode == MODE_TRANSCODE ||
+                (m_mode == MODE_RAW && (type == CAEStreamInfo::STREAM_TYPE_TRUEHD ||
+                                        type == CAEStreamInfo::STREAM_TYPE_DTSHD_MA ||
+                                        type == CAEStreamInfo::STREAM_TYPE_DTSHD));
+            FlushEngine(discard);
             streaming = false;
             m_sink.m_controlPort.SendOutMessage(CSinkControlProtocol::STREAMING, &streaming, sizeof(bool));
+          }
+          stream->m_paused = true;
+          return;
+        case CActiveAEControlProtocol::HOLDSTREAM:
+          // A pause that leaves STREAMING set, so the sink keeps the wire alive for the hold.
+          stream = *(CActiveAEStream**)msg->data;
+          // The filler repeats the last burst, so only into a gap this stream alone left.
+          if (!stream->m_paused && m_streams.size() == 1)
+          {
+            FlushEngine();
+            m_sink.m_controlPort.SendOutMessage(CSinkControlProtocol::ARMFILLER);
           }
           stream->m_paused = true;
           return;
@@ -1281,6 +1301,10 @@ void CActiveAE::Configure(AEAudioFormat *desiredFmt)
     m_currentDeviceFollowsDefault =
         requestedDefaultDevice || !IsSameDevice(m_openedDriver, m_openedDevice, dev);
     initSink = true;
+    // The sink was reopened (format, device or driver), so a downstream device has to acquire
+    // the stream again.
+    for (auto* activeStream : m_streams)
+      activeStream->m_sinkFormatChanged = true;
     m_stats.Reset(m_sinkFormat.m_sampleRate, m_mode == MODE_PCM);
     m_sink.m_controlPort.SendOutMessage(CSinkControlProtocol::VOLUME, &m_volume, sizeof(float));
 
@@ -3763,6 +3787,12 @@ void CActiveAE::PauseStream(CActiveAEStream *stream, bool pause)
   else
     m_controlPort.SendOutMessage(CActiveAEControlProtocol::RESUMESTREAM,
                                    &stream, sizeof(CActiveAEStream*));
+}
+
+void CActiveAE::HoldStream(CActiveAEStream* stream)
+{
+  m_controlPort.SendOutMessage(CActiveAEControlProtocol::HOLDSTREAM, &stream,
+                               sizeof(CActiveAEStream*));
 }
 
 void CActiveAE::SetStreamAmplification(CActiveAEStream *stream, float amplify)

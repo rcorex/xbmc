@@ -10,6 +10,8 @@
 
 #include "HDRStatus.h"
 #include "ServiceBroker.h"
+#include "application/ApplicationComponents.h"
+#include "application/ApplicationContentGeometry.h"
 #include "cores/DataCacheCore.h"
 #include "cores/IPlayer.h"
 #include "cores/VideoPlayer/VideoPlayer.h"
@@ -473,6 +475,18 @@ bool CApplicationPlayer::IsCaching() const
 {
   std::shared_ptr<const IPlayer> player = GetInternal();
   return (player && player->IsCaching());
+}
+
+bool CApplicationPlayer::IsWaitingForAudio() const
+{
+  std::shared_ptr<const IPlayer> player = GetInternal();
+  return (player && player->IsWaitingForAudio());
+}
+
+int CApplicationPlayer::GetWaitingForAudioRemaining() const
+{
+  std::shared_ptr<const IPlayer> player = GetInternal();
+  return player ? player->GetWaitingForAudioRemaining() : 0;
 }
 
 bool CApplicationPlayer::IsInMenu() const
@@ -992,6 +1006,13 @@ void CApplicationPlayer::SetDynamicRangeCompression(long drc)
     player->SetDynamicRangeCompression(drc);
 }
 
+void CApplicationPlayer::NotifyAudioChainReady()
+{
+  std::shared_ptr<IPlayer> player = GetInternal();
+  if (player)
+    player->NotifyAudioChainReady();
+}
+
 void CApplicationPlayer::LoadPage(int p, int sp, unsigned char* buffer)
 {
   std::shared_ptr<IPlayer> player = GetInternal();
@@ -1259,7 +1280,8 @@ void CApplicationPlayer::SetVideoSettings(CVideoSettings& settings)
   std::shared_ptr<IPlayer> player = GetInternal();
   if (player)
   {
-    return player->SetVideoSettings(settings);
+    player->SetVideoSettings(settings);
+    CServiceBroker::GetAppComponents().GetComponent<CApplicationContentGeometry>()->Refresh();
   }
 }
 
