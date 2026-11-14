@@ -488,6 +488,7 @@ private:
                              int& framerate) const;
 
   void CheckAndEmitAcbLoaded();
+  void ApplyPlayRate(int speed);
 
   static constexpr std::chrono::nanoseconds NO_PTS{-1};
 
@@ -560,7 +561,13 @@ private:
   std::atomic<bool> m_pushedEOS{false};
   std::atomic<unsigned int> m_queuedVideoPackets{0};
 
-  enum class MediaPlayState { Unknown, Playing, Paused };
+  enum class MediaPlayState
+  {
+    Unknown,
+    Prerolling,
+    Playing,
+    Paused
+  };
   std::atomic<MediaPlayState> m_mediaPlayState{MediaPlayState::Unknown};
   std::atomic<bool> m_receivedAudioInfo{false};
   std::atomic<bool> m_receivedVideoInfo{false};

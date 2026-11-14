@@ -812,36 +812,53 @@ void CMediaPipelineWebOS::SendVideoMessage(const std::shared_ptr<CDVDMsg>& msg, 
   }
 }
 
+void CMediaPipelineWebOS::ApplyPlayRate(const int speed)
+{
+  if (m_playRate.load(std::memory_order_acquire) == speed)
+    return;
+
+  CVariant payload;
+  payload["audioOutput"] = std::abs(speed) <= 2000;
+  payload["playRate"] = speed / 1000.0;
+  std::string output;
+  CJSONVariantWriter::Write(payload, output, true);
+
+  if (!m_mediaAPIs->SetPlayRate(output.c_str()))
+    CLog::LogF(LOGERROR, "SetPlayRate failed");
+  else
+    m_playRate.store(speed, std::memory_order_release);
+}
+
 void CMediaPipelineWebOS::SetSpeed(const int speed)
 {
-  // Always record target speed (even before Load completes) so callbacks can reconcile play state
-  m_speed.store(speed, std::memory_order_release);
+  // Record target speed before reading state so PLAYING/PAUSED callbacks reconcile it
+  m_speed.store(speed, std::memory_order_seq_cst);
 
-  if (!m_loaded)
+  const MediaPlayState state = m_mediaPlayState.load(std::memory_order_seq_cst);
+  if (!m_loaded || state == MediaPlayState::Unknown || state == MediaPlayState::Prerolling)
     return;
 
   if (speed == DVD_PLAYSPEED_PAUSE)
   {
-    if (m_mediaPlayState.load(std::memory_order_acquire) == MediaPlayState::Paused)
+    if (state == MediaPlayState::Paused)
       return;
 
     if (!m_mediaAPIs->Pause())
       CLog::LogF(LOGERROR, "Pause failed");
     else
-      m_mediaPlayState.store(MediaPlayState::Paused, std::memory_order_release);
+      m_mediaPlayState.store(MediaPlayState::Paused, std::memory_order_seq_cst);
 
     return;
   }
 
   // VideoPlayer calls SetSpeed on both audio and video players; skip redundant Play/SetPlayRate IPC
-  if (m_mediaPlayState.load(std::memory_order_acquire) == MediaPlayState::Playing &&
-      m_playRate.load(std::memory_order_acquire) == speed)
+  if (state == MediaPlayState::Playing && m_playRate.load(std::memory_order_acquire) == speed)
     return;
 
   RequestAudioDevice(true);
 
   // Resume from pause regardless of target speed (e.g. normal, tempo, or FF/RW)
-  if (m_mediaPlayState.load(std::memory_order_acquire) != MediaPlayState::Playing)
+  if (state != MediaPlayState::Playing)
   {
     if (!m_mediaAPIs->Play())
     {
@@ -849,22 +866,10 @@ void CMediaPipelineWebOS::SetSpeed(const int speed)
       RequestAudioDevice(false);
       return;
     }
-    m_mediaPlayState.store(MediaPlayState::Playing, std::memory_order_release);
+    m_mediaPlayState.store(MediaPlayState::Playing, std::memory_order_seq_cst);
   }
 
-  if (m_playRate.load(std::memory_order_acquire) != speed)
-  {
-    CVariant payload;
-    payload["audioOutput"] = std::abs(speed) <= 2000;
-    payload["playRate"] = speed / 1000.0;
-    std::string output;
-    CJSONVariantWriter::Write(payload, output, true);
-
-    if (!m_mediaAPIs->SetPlayRate(output.c_str()))
-      CLog::LogF(LOGERROR, "SetPlayRate failed");
-    else
-      m_playRate.store(speed, std::memory_order_release);
-  }
+  ApplyPlayRate(speed);
 }
 
 double CMediaPipelineWebOS::GetCurrentPts() const
@@ -2383,7 +2388,7 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
         if (!m_mediaAPIs->Play())
           CLog::LogF(LOGERROR, "Failed to play");
         else
-          m_mediaPlayState.store(MediaPlayState::Playing, std::memory_order_release);
+          m_mediaPlayState.store(MediaPlayState::Prerolling, std::memory_order_seq_cst);
       }
       m_flushed = true;
       m_pendingStarted.store(false, std::memory_order_release);
@@ -2417,22 +2422,22 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
     case PF_EVENT_TYPE_STR_STATE_UPDATE__PAUSED:
     {
       // Re-issue Play() if a late PAUSED callback arrives after playback already resumed
-      if (m_speed.load(std::memory_order_acquire) != DVD_PLAYSPEED_PAUSE)
+      const int speed = m_speed.load(std::memory_order_seq_cst);
+      if (speed != DVD_PLAYSPEED_PAUSE)
       {
         RequestAudioDevice(true);
         if (!m_mediaAPIs->Play())
         {
           CLog::LogF(LOGERROR, "Failed to play");
-          m_mediaPlayState.store(MediaPlayState::Paused, std::memory_order_release);
+          m_mediaPlayState.store(MediaPlayState::Paused, std::memory_order_seq_cst);
+          break;
         }
-        else
-        {
-          m_mediaPlayState.store(MediaPlayState::Playing, std::memory_order_release);
-        }
+        m_mediaPlayState.store(MediaPlayState::Playing, std::memory_order_seq_cst);
+        ApplyPlayRate(speed);
         break;
       }
 
-      m_mediaPlayState.store(MediaPlayState::Paused, std::memory_order_release);
+      m_mediaPlayState.store(MediaPlayState::Paused, std::memory_order_seq_cst);
       RequestAudioDevice(false);
 
       const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
@@ -2448,47 +2453,48 @@ void CMediaPipelineWebOS::PlayerCallback(int32_t type, const int64_t numValue, c
     }
     case PF_EVENT_TYPE_STR_STATE_UPDATE__PLAYING:
     {
-      const bool isPaused = (m_speed.load(std::memory_order_acquire) == DVD_PLAYSPEED_PAUSE);
-      if (isPaused)
+      // Publish Playing before reading m_speed so a concurrent SetSpeed cannot see Prerolling
+      // while this callback misses the updated speed
+      m_mediaPlayState.store(MediaPlayState::Playing, std::memory_order_seq_cst);
+      const int speed = m_speed.load(std::memory_order_seq_cst);
+
+      if (speed == DVD_PLAYSPEED_PAUSE)
       {
         // LOADCOMPLETED enters Play() to preroll; pause immediately when target speed is pause
-        if (!m_mediaAPIs->Pause())
+        if (m_mediaAPIs->Pause())
         {
-          CLog::LogF(LOGERROR, "Failed to pause");
-          m_mediaPlayState.store(MediaPlayState::Playing, std::memory_order_release);
+          m_mediaPlayState.store(MediaPlayState::Paused, std::memory_order_seq_cst);
+          break;
         }
-        else
-        {
-          m_mediaPlayState.store(MediaPlayState::Paused, std::memory_order_release);
-        }
+        CLog::LogF(LOGERROR, "Failed to pause");
       }
-      else
+
+      RequestAudioDevice(true);
+      if (speed != DVD_PLAYSPEED_PAUSE)
+        ApplyPlayRate(speed);
+
+      // Defer PLAYER_STARTED while flushed/seeking so FeedVideoData anchors post-seek start
+      if (!m_flushed && !m_pendingStarted.load(std::memory_order_acquire))
       {
-        m_mediaPlayState.store(MediaPlayState::Playing, std::memory_order_release);
-        RequestAudioDevice(true);
-        // Defer PLAYER_STARTED while flushed/seeking so FeedVideoData anchors post-seek start
-        if (!m_flushed && !m_pendingStarted.load(std::memory_order_acquire))
-        {
-          SStartMsg msg{.timestamp = GetCurrentPts(),
-                        .player = VideoPlayer_VIDEO,
-                        .cachetime = DVD_MSEC_TO_TIME(50),
-                        .cachetotal = DVD_MSEC_TO_TIME(100)};
-          m_messageQueueParent.Put(
-              std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, msg));
-          msg.player = VideoPlayer_AUDIO;
-          m_messageQueueParent.Put(
-              std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, msg));
-        }
+        SStartMsg msg{.timestamp = GetCurrentPts(),
+                      .player = VideoPlayer_VIDEO,
+                      .cachetime = DVD_MSEC_TO_TIME(50),
+                      .cachetotal = DVD_MSEC_TO_TIME(100)};
+        m_messageQueueParent.Put(
+            std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, msg));
+        msg.player = VideoPlayer_AUDIO;
+        m_messageQueueParent.Put(
+            std::make_shared<CDVDMsgType<SStartMsg>>(CDVDMsg::PLAYER_STARTED, msg));
       }
 
       const auto buffer = static_cast<CStarfishVideoBuffer*>(m_picture.videoBuffer);
       if (const auto acb = buffer ? buffer->GetAcbHandle() : nullptr)
       {
-        const auto targetPlayState = isPaused ? PLAYSTATE_PAUSED : PLAYSTATE_PLAYING;
-        CLog::LogF(LOGINFO,
-                   "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState={})",
-                   acb->Id(), acb->TaskId(), isPaused ? "PLAYSTATE_PAUSED" : "PLAYSTATE_PLAYING");
-        AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, targetPlayState, &acb->TaskId());
+        CLog::LogF(
+            LOGINFO,
+            "AcbAPI_setState(acbId={}, taskId={}, appState=APPSTATE_FOREGROUND, playState=PLAYSTATE_PLAYING)",
+            acb->Id(), acb->TaskId());
+        AcbAPI_setState(acb->Id(), APPSTATE_FOREGROUND, PLAYSTATE_PLAYING, &acb->TaskId());
       }
       break;
     }
