@@ -1084,6 +1084,24 @@ TEST_F(TestVideoDatabase, GetSourcePathReadsTheSettingsOfTheSourceOfASubFolder)
   EXPECT_EQ(0, settings.recurse);
 }
 
+TEST_F(TestVideoDatabase, APathBelowAFolderWhoseScraperIsNotInstalledHasNoScraper)
+{
+  const auto setScraper{[this](const std::string& path, const std::string& scraper)
+                        {
+                          return m_db.ExecuteQuery(m_db.PrepareSQL(
+                              "UPDATE path SET strContent='movies', strScraper='%s', "
+                              "scanRecursive=2147483647 WHERE idPath=%i",
+                              scraper.c_str(), m_db.AddPath(path)));
+                        }};
+  ASSERT_TRUE(setScraper("/movies/", "metadata.local"));
+  ASSERT_TRUE(setScraper("/movies/Foreign/", "metadata.not.installed"));
+
+  EXPECT_FALSE(m_db.GetScraperForPath("/movies/Foreign/"));
+  EXPECT_FALSE(m_db.GetScraperForPath("/movies/Foreign/Film/"));
+  // Where no folder between has content, the source's scraper is found
+  EXPECT_TRUE(m_db.GetScraperForPath("/movies/Other/Film/"));
+}
+
 TEST_F(TestVideoDatabase, RemoveContentForPathRemovesDiscRips)
 {
   ASSERT_GT(m_db.AddPath("/movies/"), 0);
@@ -1097,6 +1115,33 @@ TEST_F(TestVideoDatabase, RemoveContentForPathRemovesDiscRips)
 
   EXPECT_EQ(-1, m_db.GetMovieId(folderRip));
   EXPECT_EQ(-1, m_db.GetMovieId(playlist));
+}
+
+TEST_F(TestVideoDatabase, RemoveContentForPathRemovesEachPathOfANestedMultiPath)
+{
+  const std::string inner{XFILE::CMultiPathDirectory::ConstructMultiPath(
+      std::vector<std::string>{"/other/", "/more/"})};
+  const std::string source{
+      XFILE::CMultiPathDirectory::ConstructMultiPath(std::vector<std::string>{"/movies/", inner})};
+  for (const std::string& path :
+       {source, inner, std::string{"/movies/"}, std::string{"/other/"}, std::string{"/more/"}})
+  {
+    const int idPath{m_db.AddPath(path)};
+    ASSERT_GT(idPath, 0);
+    ASSERT_TRUE(m_db.ExecuteQuery(m_db.PrepareSQL(
+        "UPDATE path SET strContent='movies', strScraper='metadata.local' WHERE idPath=%i",
+        idPath)));
+  }
+  const std::vector<std::string> files{"/movies/Film/Film.mkv", "/other/Other.mkv",
+                                       "/more/More/More.mkv"};
+  for (const auto& file : files)
+    ASSERT_GT(AddMovie(file), 0);
+
+  m_db.RemoveContentForPath(source);
+
+  for (const auto& file : files)
+    EXPECT_EQ(-1, m_db.GetMovieId(file)) << file;
+  EXPECT_EQ(0, m_db.GetSingleValueInt("SELECT COUNT(*) FROM path WHERE strContent<>''"));
 }
 
 namespace
