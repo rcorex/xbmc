@@ -90,6 +90,19 @@ bool CFileItemHandler::GetField(const std::string& field,
             *item->GetPVRChannelInfoTag());
         return true;
       }
+      else if (field == "broadcastnow" || field == "broadcastnext")
+      {
+        // Both slots are PVR.Details.Broadcast, whose label and field set only the handler supplies
+        const std::shared_ptr<const PVR::CPVRChannel> channel{item->GetPVRChannelInfoTag()};
+        const std::shared_ptr<PVR::CPVREpgInfoTag> tag{
+            field == "broadcastnow" ? channel->GetEPGNow() : channel->GetEPGNext()};
+        if (tag)
+        {
+          HandleFileItem("broadcastid", false, field.c_str(), std::make_shared<CFileItem>(tag),
+                         CVariant{CVariant::VariantTypeObject}, BroadcastFields(), result, false);
+        }
+        return true;
+      }
     }
 
     if (item->HasEPGInfoTag())
@@ -339,15 +352,8 @@ void CFileItemHandler::HandleFileItem(const char* ID,
                                       bool append /* = true */,
                                       CThumbLoader* thumbLoader /* = NULL */)
 {
-  std::set<std::string> fields;
-  if (parameterObject.isMember("properties") && parameterObject["properties"].isArray())
-  {
-    for (CVariant::const_iterator_array field = parameterObject["properties"].begin_array();
-         field != parameterObject["properties"].end_array(); ++field)
-      fields.insert(field->asString());
-  }
-
-  HandleFileItem(ID, allowFile, resultname, item, parameterObject, fields, result, append, thumbLoader);
+  HandleFileItem(ID, allowFile, resultname, item, parameterObject, FieldNames(validFields), result,
+                 append, thumbLoader);
 }
 
 void CFileItemHandler::HandleFileItem(const char* ID,

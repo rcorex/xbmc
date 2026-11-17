@@ -102,6 +102,20 @@ bool AttachmentIsFont(const AVDictionaryEntry* dict)
   }
   return false;
 }
+
+//! A language tag written inside curly braces in a track title, as "Commentary {en-GB}"
+std::optional<CLanguageTag> LanguageInTitle(std::string_view title)
+{
+  const std::size_t begin = title.find('{');
+  if (begin == std::string_view::npos)
+    return std::nullopt;
+
+  const std::size_t end = title.find('}', begin + 1);
+  if (end == std::string_view::npos)
+    return std::nullopt;
+
+  return CLanguageTag::TryParse(std::string{title.substr(begin + 1, end - begin - 1)});
+}
 } // namespace
 
 std::string CDemuxStreamAudioFFmpeg::GetStreamName()
@@ -224,11 +238,7 @@ bool CDVDDemuxFFmpeg::Aborted()
   if (m_timeout.IsTimePast())
     return true;
 
-  std::shared_ptr<CDVDInputStreamFFmpeg> input = std::dynamic_pointer_cast<CDVDInputStreamFFmpeg>(m_pInput);
-  if (input && input->Aborted())
-    return true;
-
-  return false;
+  return m_pInput && m_pInput->Aborted();
 }
 
 bool CDVDDemuxFFmpeg::IsStreaming() const
@@ -2274,7 +2284,7 @@ CDemuxStream* CDVDDemuxFFmpeg::AddStream(int streamIdx)
       AVDictionaryEntry* title = av_dict_get(pStream->metadata, "title", NULL, 0);
       if (title && title->value)
       {
-        if (const auto tag = CLanguageTag::FindInText(title->value); tag.has_value())
+        if (const auto tag = LanguageInTitle(title->value); tag.has_value())
           stream->language = *tag;
       }
     }
