@@ -206,6 +206,8 @@ bool CVideoGUIInfo::GetLabel(std::string& value,
         value = tag->m_strFileNameAndPath;
         if (value.empty())
           value = item->GetPath();
+        if (info.GetInfo() == PLAYER_FILENAME && URIUtils::IsBlurayPath(value))
+          value = URIUtils::GetDiscFile(value);
         value = GUIINFO::GetFileInfoLabelValueFromPath(info.GetInfo(), value);
         return true;
       case PLAYER_TITLE:
@@ -577,16 +579,17 @@ bool CVideoGUIInfo::GetLabel(std::string& value,
         break;
       }
       case LISTITEM_AUDIO_LANGUAGE:
-        value = tag->m_streamDetails.GetAudioLanguage(tag->GetDescribedAudioStreamIndex());
+        value =
+            tag->m_streamDetails.GetAudioLanguage(tag->GetDescribedAudioStreamIndex()).ToString();
         return true;
       case LISTITEM_SUBTITLE_LANGUAGE:
-        value = tag->m_streamDetails.GetSubtitleLanguage();
+        value = tag->m_streamDetails.GetSubtitleLanguage().ToString();
         return true;
       case LISTITEM_FIRST_AUDIO_LANGUAGE:
-        value = tag->m_streamDetails.GetFirstAudioLanguage();
+        value = tag->m_streamDetails.GetFirstAudioLanguage().ToString();
         return true;
       case LISTITEM_FIRST_SUBTITLE_LANGUAGE:
-        value = tag->m_streamDetails.GetFirstSubtitleLanguage();
+        value = tag->m_streamDetails.GetFirstSubtitleLanguage().ToString();
         return true;
       case LISTITEM_FIRST_AUDIO_CODEC:
         value = tag->m_streamDetails.GetFirstAudioCodec();
@@ -607,7 +610,11 @@ bool CVideoGUIInfo::GetLabel(std::string& value,
       case LISTITEM_FILE_EXTENSION:
       case LISTITEM_FILENAME_NO_EXTENSION:
         if (VIDEO::IsVideoDb(*item))
-          value = URIUtils::GetFileName(tag->m_strFileNameAndPath);
+        {
+          const std::string& file{tag->m_strFileNameAndPath};
+          value = URIUtils::GetFileName(URIUtils::IsBlurayPath(file) ? URIUtils::GetDiscFile(file)
+                                                                     : file);
+        }
         else if (
             item->HasMusicInfoTag()) // special handling for music videos, which have both a videotag and a musictag
           break;
@@ -727,7 +734,8 @@ bool CVideoGUIInfo::GetLabel(std::string& value,
       value = CServiceBroker::GetDataCacheCore().GetVideoStereoMode();
       return true;
     case VIDEOPLAYER_SUBTITLES_LANG:
-      value = m_subtitleInfo.language.AsIso6392B();
+      // The tag itself. The Ex sibling below is the same language named for a reader
+      value = m_subtitleInfo.language.ToString();
       return true;
     case VIDEOPLAYER_SUBTITLE_CODEC:
       value = m_subtitleInfo.codecName;
@@ -813,7 +821,8 @@ bool CVideoGUIInfo::GetLabel(std::string& value,
       break;
     }
     case VIDEOPLAYER_AUDIO_LANG:
-      value = m_audioInfo.language.AsIso6392B();
+      // The tag itself. The Ex sibling below is the same language named for a reader
+      value = m_audioInfo.language.ToString();
       return true;
     case VIDEOPLAYER_AUDIO_LANG_EX:
     {

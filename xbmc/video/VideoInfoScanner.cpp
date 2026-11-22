@@ -16,7 +16,7 @@
 #include "SetInfoTag.h"
 #include "URL.h"
 #include "Util.h"
-#include "VideoInfoDownloader.h"
+#include "addons/Scraper.h"
 #include "cores/VideoPlayer/DVDFileInfo.h"
 #include "dialogs/GUIDialogExtendedProgressBar.h"
 #include "dialogs/GUIDialogProgress.h"
@@ -32,7 +32,6 @@
 #include "guilib/GUIComponent.h"
 #include "guilib/GUIWindowManager.h"
 #include "interfaces/AnnouncementManager.h"
-#include "messaging/helpers/DialogHelper.h"
 #include "messaging/helpers/DialogOKHelper.h"
 #include "playlists/PlayListFileItemClassify.h"
 #include "resources/LocalizeStrings.h"
@@ -82,7 +81,6 @@ using namespace ADDON;
 using namespace KODI::MESSAGING;
 using namespace KODI;
 
-using KODI::MESSAGING::HELPERS::DialogResponse;
 using KODI::UTILITY::CDigest;
 
 namespace
@@ -173,9 +171,6 @@ CVideoInfoScanner::CVideoInfoScanner()
 
 CVideoInfoScanner::~CVideoInfoScanner()
 {
-  // Clear cache for all used scrapers
-  for (auto& [_, scraper] : m_scraperCache)
-    scraper->ClearCache();
 }
 
   void CVideoInfoScanner::Process()
@@ -908,6 +903,20 @@ CVideoInfoScanner::~CVideoInfoScanner()
 
     bool setUpdated{false};
     ART::Artwork movieSetArt;
+    ART::Artwork setNfoArt;
+
+    // Wherever the set's art comes from, it follows the artwork level, as a movie's does
+    const int artLevel{CServiceBroker::GetSettingsComponent()->GetSettings()->GetInt(
+        CSettings::SETTING_VIDEOLIBRARY_ARTWORK_LEVEL)};
+    const bool addAll{artLevel == CSettings::VIDEOLIBRARY_ARTWORK_LEVEL_ALL};
+    const bool exactName{artLevel == CSettings::VIDEOLIBRARY_ARTWORK_LEVEL_BASIC};
+    const std::vector<std::string> movieSetArtTypes{
+        CVideoThumbLoader::GetArtTypes(MEDIA::TYPE::VIDEO_COLLECTION)};
+    const auto isWanted = [addAll, exactName, &movieSetArtTypes](const std::string& artType) {
+      return addAll ||
+             CVideoThumbLoader::IsArtTypeInWhitelist(artType, movieSetArtTypes, exactName);
+    };
+
     const std::string movieSetInfoPath{GetMovieSetInfoFolder(tag.m_set.GetTitle())};
     if (!movieSetInfoPath.empty())
     {
@@ -927,22 +936,21 @@ CVideoInfoScanner::~CVideoInfoScanner()
             tag.m_set.SetSortTitle(setTag.GetSortTitle());
           if (!setTag.GetOverview().empty())
             tag.m_set.SetOverview(setTag.GetOverview());
-          if (setTag.HasArt())
-            tag.m_set.SetArt(setTag.GetArt());
+          setNfoArt = setTag.GetArt();
           setUpdated = true;
         }
       }
 
       // Now look for art
       // Look for local art files first
-      const std::vector<std::string> movieSetArtTypes =
-          CVideoThumbLoader::GetArtTypes(MEDIA::TYPE::VIDEO_COLLECTION);
-      ART::AddLocalItemArtwork(movieSetArt, movieSetArtTypes, movieSetInfoPath, true, false, true);
+      if (artLevel != CSettings::VIDEOLIBRARY_ARTWORK_LEVEL_NONE)
+        ART::AddLocalItemArtwork(movieSetArt, movieSetArtTypes, movieSetInfoPath, addAll, exactName,
+                                 true);
 
       // If art specified in set.nfo use that next
-      if (movieSetArt.empty() && tag.m_set.HasArt())
-        for (auto& art : tag.m_set.GetArt())
-          if (CVideoThumbLoader::IsArtTypeInWhitelist(art.first, movieSetArtTypes, false))
+      if (movieSetArt.empty())
+        for (const auto& art : setNfoArt)
+          if (isWanted(art.first))
             movieSetArt.insert(art);
     }
     else
@@ -950,7 +958,7 @@ CVideoInfoScanner::~CVideoInfoScanner()
       // No MSIF, so use the set art from the scraper (already in tag)
       tag.m_strPictureURL.Parse();
       for (const auto& url : tag.m_strPictureURL.GetUrls())
-        if (StringUtils::StartsWith(url.m_aspect, "set."))
+        if (StringUtils::StartsWith(url.m_aspect, "set.") && isWanted(url.m_aspect.substr(4)))
           movieSetArt.try_emplace(url.m_aspect.substr(4), url.m_url);
     }
     if (!movieSetArt.empty())
@@ -1253,10 +1261,10 @@ CVideoInfoScanner::~CVideoInfoScanner()
     ADDON::CScraper::UniqueIDs uniqueIDs;
     // The ids a refresh looks the show up by are those it has, which an identifier in its name
     // may contradict, and are those its details were already read by
-    if (info2->IsPython() && !m_uniqueIDs.empty() && !(pURL && pURL->HasUrls()))
+    if (!m_uniqueIDs.empty() && !(pURL && pURL->HasUrls()))
       uniqueIDs = m_uniqueIDs;
-    else if (info2->IsPython() && CFilenameAttributes(movieTitle, &m_regexpCache)
-                                      .GetIdentifier(identifierType, identifier))
+    else if (CFilenameAttributes(movieTitle, &m_regexpCache)
+                 .GetIdentifier(identifierType, identifier))
       uniqueIDs = {{identifierType, identifier}};
     if (!uniqueIDs.empty())
     {
@@ -1869,7 +1877,7 @@ CVideoInfoScanner::~CVideoInfoScanner()
     std::string identifier;
     // The ids a refresh looks the movie up by come first: an identifier in the file or folder
     // name may name another film, and the ids are those its details were already read by
-    if (info2->IsPython() && m_uniqueIDs.empty() &&
+    if (m_uniqueIDs.empty() &&
         GetMovieIdentifier(*pItem, bDirNames, filenameAttributes, identifierType, identifier))
     {
       const ADDON::CScraper::UniqueIDs uniqueIDs{{identifierType, identifier}};
@@ -1880,7 +1888,7 @@ CVideoInfoScanner::~CVideoInfoScanner()
         return HandleMovieSetAndVersions();
     }
 
-    if (info2->IsPython() && !m_uniqueIDs.empty() && !(pURL && pURL->HasUrls()) &&
+    if (!m_uniqueIDs.empty() && !(pURL && pURL->HasUrls()) &&
         GetDetails(pItem, m_uniqueIDs, url, info2,
                    (result == InfoType::COMBINED || result == InfoType::OVERRIDE) ? loader.get()
                                                                                   : nullptr,
@@ -1959,8 +1967,7 @@ CVideoInfoScanner::~CVideoInfoScanner()
 
     std::string identifierType;
     std::string identifier;
-    if (info2->IsPython() &&
-        CFilenameAttributes(movieTitle, &m_regexpCache).GetIdentifier(identifierType, identifier))
+    if (CFilenameAttributes(movieTitle, &m_regexpCache).GetIdentifier(identifierType, identifier))
     {
       const ADDON::CScraper::UniqueIDs uniqueIDs{{identifierType, identifier}};
       if (GetDetails(pItem, uniqueIDs, url, info2,
@@ -2034,15 +2041,14 @@ CVideoInfoScanner::~CVideoInfoScanner()
           std::ranges::any_of(seasonArt, [](const auto& i) { return i.second.empty(); })};
       if (updateSeasonArt)
       {
-        if (!alreadyHasArt && !item->IsPlugin() && scraper->ID() != "metadata.local")
+        if (!alreadyHasArt && !item->IsPlugin())
         {
-          CVideoInfoDownloader loader(scraper);
           CVideoInfoTag tag{showInfo};
-          loader.GetArtwork(tag); // Can alter other fields in the tag
+          scraper->GetArtwork(tag); // Can alter other fields in the tag
           showInfo.m_strPictureURL = tag.m_strPictureURL; // We only want artwork
         }
         const CVideoInfoScannerArt::UseRemoteArtWithLocalScraper useRemoteArt{
-            scraper->ID() == "metadata.local" && m_advancedSettings->m_bNoRemoteArtWithLocalScraper
+            scraper->IsLocalInformationOnly() && m_advancedSettings->m_bNoRemoteArtWithLocalScraper
                 ? CVideoInfoScannerArt::UseRemoteArtWithLocalScraper::NO
                 : CVideoInfoScannerArt::UseRemoteArtWithLocalScraper::YES};
         CVideoInfoScannerArt::GetSeasonThumbs(
@@ -2390,7 +2396,7 @@ CVideoInfoScanner::~CVideoInfoScanner()
 
     const ContentType content{
         !scraper || contentOverride != ContentType::NONE ? contentOverride : scraper->Content()};
-    const bool usingLocalScraper{!scraper || scraper->ID() == "metadata.local"};
+    const bool usingLocalScraper{!scraper || scraper->IsLocalInformationOnly()};
     const CVideoInfoScannerArt::UseRemoteArtWithLocalScraper useRemoteArt{
         usingLocalScraper && m_advancedSettings->m_bNoRemoteArtWithLocalScraper
             ? CVideoInfoScannerArt::UseRemoteArtWithLocalScraper::NO
@@ -2953,7 +2959,7 @@ CVideoInfoScanner::~CVideoInfoScanner()
       if (!hasEpisodeGuide)
       {
         // fetch episode guide
-        if (!showInfo.m_strEpisodeGuide.empty() && scraper->ID() != "metadata.local")
+        if (!showInfo.m_strEpisodeGuide.empty() && !scraper->IsLocalInformationOnly())
         {
           CScraperUrl url;
           url.ParseAndAppendUrlsFromEpisodeGuide(showInfo.m_strEpisodeGuide);
@@ -2964,8 +2970,8 @@ CVideoInfoScanner::~CVideoInfoScanner()
             pDlgProgress->Progress();
           }
 
-          CVideoInfoDownloader imdb(scraper);
-          if (!imdb.GetEpisodeList(url, episodes))
+          episodes = scraper->GetEpisodeList(url);
+          if (episodes.empty())
           {
             CLog::Log(LOGWARNING, "VideoInfoScanner: Unable to fetch the episode guide of '{}'",
                       showInfo.m_strTitle);
@@ -3019,12 +3025,6 @@ CVideoInfoScanner::~CVideoInfoScanner()
           matches.push_back(*guide);
           continue;
         }
-        if (!guide->cScraperUrl.GetTitle().empty() &&
-            StringUtils::EqualsNoCase(guide->cScraperUrl.GetTitle(), file->strTitle))
-        {
-          bFound = true;
-          break;
-        }
         if (!guide->strTitle.empty() && StringUtils::EqualsNoCase(guide->strTitle, file->strTitle))
         {
           bFound = true;
@@ -3062,13 +3062,8 @@ CVideoInfoScanner::~CVideoInfoScanner()
           std::vector<std::string> titles;
           for (guide = candidates->begin(); guide != candidates->end(); ++guide)
           {
-            auto title = guide->cScraperUrl.GetTitle();
-            if (title.empty())
-            {
-              title = guide->strTitle;
-            }
+            std::string title{guide->strTitle};
             StringUtils::ToLower(title);
-            guide->cScraperUrl.SetTitle(title);
             titles.push_back(title);
           }
 
@@ -3091,11 +3086,10 @@ CVideoInfoScanner::~CVideoInfoScanner()
 
       if (bFound)
       {
-        CVideoInfoDownloader imdb(scraper);
         CFileItem scraperItem;
         scraperItem.SetPath(file->strPath);
-        if (!imdb.GetEpisodeDetails(guide->cScraperUrl, *scraperItem.GetVideoInfoTag(),
-                                    pDlgProgress))
+        if (!scraper->GetVideoDetails({}, guide->cScraperUrl, false /*fMovie*/,
+                                      *scraperItem.GetVideoInfoTag()))
         {
           CLog::Log(LOGWARNING, "VideoInfoScanner: Unable to fetch the details of episode {}",
                     CURL::GetRedacted(file->strPath));
@@ -3149,8 +3143,7 @@ CVideoInfoScanner::~CVideoInfoScanner()
     if (m_handle && !url.GetTitle().empty())
       m_handle->SetText(url.GetTitle());
 
-    CVideoInfoDownloader imdb(scraper);
-    bool ret = imdb.GetDetails(uniqueIDs, url, movieDetails, pDialog);
+    bool ret = scraper->GetVideoDetails(uniqueIDs, url, true /*fMovie*/, movieDetails);
 
     if (ret)
     {
@@ -3247,16 +3240,15 @@ CVideoInfoScanner::~CVideoInfoScanner()
 
   bool CVideoInfoScanner::DownloadFailed(CGUIDialogProgress* pDialog)
   {
-    if (CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()->m_bVideoScannerIgnoreErrors)
+    // A scan in the background carries on without asking: the failure is counted, has its entry in
+    // the event log and its place in the notification at the end, and its folder is looked up again
+    // by the next scan
+    if (!pDialog ||
+        CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()->m_bVideoScannerIgnoreErrors)
       return true;
 
-    if (pDialog)
-    {
-      HELPERS::ShowOKDialogText(CVariant{20448}, CVariant{20449});
-      return false;
-    }
-    return HELPERS::ShowYesNoDialogText(CVariant{20448}, CVariant{20450}) ==
-           DialogResponse::CHOICE_YES;
+    HELPERS::ShowOKDialogText(CVariant{20448}, CVariant{20449});
+    return false;
   }
 
   bool CVideoInfoScanner::ProgressCancelled(CGUIDialogProgress* progress, int heading, const std::string &line1)
@@ -3273,21 +3265,23 @@ CVideoInfoScanner::~CVideoInfoScanner()
 
   int CVideoInfoScanner::FindVideo(const std::string &title, int year, const ScraperPtr &scraper, CScraperUrl &url, CGUIDialogProgress *progress)
   {
-    MOVIELIST movielist;
-    CVideoInfoDownloader imdb(scraper);
-    int returncode = imdb.FindMovie(title, year, movielist, progress);
-    // An error the scraper reported ends an interactive lookup, but a scan only stops for it when
-    // the user chooses to - as it does for any other failed lookup
-    if (returncode <= 0 && (m_bStop || (returncode < 0 && progress) || !DownloadFailed(progress)))
-    { // scraper reported an error, or we had an error and user wants to cancel the scan
-      m_bStop = true;
-      return -1; // cancelled
-    }
-    if (returncode <= 0)
-      ++m_failedLookups; // carried on past a search that failed, rather than one that found nothing
-    if (returncode > 0 && !movielist.empty())
+    std::vector<CScraperUrl> found;
+    try
     {
-      url = movielist[0];
+      found = scraper->FindMovie(title, year);
+    }
+    catch (const CScraperError&)
+    {
+      if (m_bStop || !DownloadFailed(progress))
+      { // the user wants to cancel the scan
+        m_bStop = true;
+        return -1; // cancelled
+      }
+      ++m_failedLookups; // carried on past a search that failed, rather than one that found nothing
+    }
+    if (!found.empty())
+    {
+      url = found[0];
       return 1;  // found a movie
     }
     return 0;    // didn't find anything
@@ -3485,12 +3479,16 @@ CVideoInfoScanner::~CVideoInfoScanner()
 
     if (auto* eventLog{CServiceBroker::GetEventLog()}; eventLog)
     {
-      eventLog->Add(std::make_shared<CNotificationEvent>(
-          24145,
-          StringUtils::Format(
-              CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(24190), added.size(),
-              existing.size(), unchangedDirectories, notFound.size(), failed.size()),
-          notFound.empty() && failed.empty() ? EventLevel::Basic : EventLevel::Warning));
+      // Shown when a lookup failed, as a scan in the background no longer asks about each failure
+      eventLog->Add(
+          std::make_shared<CNotificationEvent>(
+              24145,
+              StringUtils::Format(
+                  CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(24190),
+                  added.size(), existing.size(), unchangedDirectories, notFound.size(),
+                  failed.size()),
+              notFound.empty() && failed.empty() ? EventLevel::Basic : EventLevel::Warning),
+          !failed.empty(), false);
     }
   }
 

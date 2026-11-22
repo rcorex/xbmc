@@ -4099,6 +4099,8 @@ constexpr std::array<InfoMap, 46> musicplayer = {{
 ///     @return The language of the audio of the currently playing video(possible
 ///     values: see \ref ListItem_AudioLanguage "ListItem.AudioLanguage").
 ///     <p><hr>
+///     @skinning_v23 **[Infolabel Updated]** \link VideoPlayer_AudioLanguage `VideoPlayer.AudioLanguage`\endlink
+///     now the language tag itself\, where it was an ISO 639-2 three character code
 ///     @skinning_v13 **[New Infolabel]** \link VideoPlayer_AudioLanguage `VideoPlayer.AudioLanguage`\endlink
 ///     <p>
 ///   }
@@ -4126,6 +4128,8 @@ constexpr std::array<InfoMap, 46> musicplayer = {{
 ///     @note `VideoPlayer.SubtitlesLanguage` holds the language of the next available
 ///     subtitle stream if subtitles are disabled in the player
 ///     <p><hr>
+///     @skinning_v23 **[Infolabel Updated]** \link VideoPlayer_SubtitlesLanguage `VideoPlayer.SubtitlesLanguage`\endlink
+///     now the language tag itself\, where it was an ISO 639-2 three character code
 ///     @skinning_v13 **[New Infolabel]** \link VideoPlayer_SubtitlesLanguage `VideoPlayer.SubtitlesLanguage`\endlink
 ///     <p>
 ///   }
@@ -4629,6 +4633,16 @@ constexpr std::array<InfoMap, 94> videoplayer = {{
 ///     @skinning_v22 **[New Boolean Condition]** \link RetroPlayer_SupportsCheats `RetroPlayer.SupportsCheats`\endlink
 ///     <p>
 ///   }
+///   \table_row3{   <b>`RetroPlayer.SupportsSavestates`</b>,
+///                  \anchor RetroPlayer_SupportsSavestates
+///                  _boolean_,
+///     @return **True** if the currently-playing game client can save the game's
+///     state\, **False** otherwise. This controls the Save / Load OSD item's
+///     visibility.
+///     <p><hr>
+///     @skinning_v23 **[New Boolean Condition]** \link RetroPlayer_SupportsSavestates `RetroPlayer.SupportsSavestates`\endlink
+///     <p>
+///   }
 ///   \table_row3{   <b>`RetroPlayer.AchievementsHardcore`</b>,
 ///                  \anchor RetroPlayer_AchievementsHardcore
 ///                  _boolean_,
@@ -4767,7 +4781,7 @@ constexpr std::array<InfoMap, 94> videoplayer = {{
 ///
 /// -----------------------------------------------------------------------------
 // clang-format off
-constexpr std::array<InfoMap, 30> retroplayer = {{
+constexpr std::array<InfoMap, 31> retroplayer = {{
     {"title", RETROPLAYER_TITLE},
     {"platform", RETROPLAYER_PLATFORM},
     {"genres", RETROPLAYER_GENRES},
@@ -4781,6 +4795,7 @@ constexpr std::array<InfoMap, 30> retroplayer = {{
     {"achievementsloggedin", RETROPLAYER_ACHIEVEMENTS_LOGGED_IN},
     {"hascheats", RETROPLAYER_HAS_CHEATS},
     {"supportscheats", RETROPLAYER_SUPPORTS_CHEATS},
+    {"supportssavestates", RETROPLAYER_SUPPORTS_SAVESTATES},
     {"achievementsprogress", RETROPLAYER_ACHIEVEMENTS_PROGRESS},
     {"achievementschallengetitle", RETROPLAYER_ACHIEVEMENTS_CHALLENGE_TITLE},
     {"achievementschallengebadge", RETROPLAYER_ACHIEVEMENTS_CHALLENGE_BADGE},
@@ -7058,24 +7073,30 @@ constexpr std::array<InfoMap, 3> container_str = {{
 ///   \table_row3{   <b>`ListItem.AudioLanguage`</b>,
 ///                  \anchor ListItem_AudioLanguage
 ///                  _string_,
-///     @return The audio language of the currently selected video (an
-///     ISO 639-2 three character code: e.g. eng\, epo\, deu)
+///     @return The audio language of the currently selected video (a BCP 47 language tag:
+///     e.g. en\, en-GB\, pt-BR)
+///     <p><hr>
+///     @skinning_v23 **[Infolabel Updated]** \link ListItem_AudioLanguage `ListItem.AudioLanguage`\endlink
+///     now the language tag itself\, where it was an ISO 639-2 three character code
 ///     <p>
 ///   }
 ///   \table_row3{   <b>`ListItem.SubtitleLanguage`</b>,
 ///                  \anchor ListItem_SubtitleLanguage
 ///                  _string_,
-///     @return The subtitle language of the currently selected video (an
-///     ISO 639-2 three character code: e.g. eng\, epo\, deu)
+///     @return The subtitle language of the currently selected video (a BCP 47 language tag:
+///     e.g. en\, en-GB\, pt-BR)
+///     <p><hr>
+///     @skinning_v23 **[Infolabel Updated]** \link ListItem_SubtitleLanguage `ListItem.SubtitleLanguage`\endlink
+///     now the language tag itself\, where it was an ISO 639-2 three character code
 ///     <p>
 ///   }
 ///   \table_row3{   <b>`ListItem.FirstAudioLanguage`</b>,
 ///                  \anchor ListItem_FirstAudioLanguage
 ///                  _string_,
 ///     @return The language of the first audio stream of the currently selected video\, in the
-///     order the source lists them. Usually an ISO 639-2 code taken from the container and
-///     truncated to three characters\, but it is not validated as one\, and may be a BCP 47
-///     derived code where the track title carries one
+///     order the source lists them\, as a BCP 47 language tag: e.g. en\, en-GB\, pt-BR.
+///     A stream declaring no language is empty\, and one naming nothing readable as a
+///     language is und
 ///     @note Unlike \link ListItem_AudioLanguage `ListItem.AudioLanguage`\endlink this is the
 ///     stream listed first by whatever produced the stream details: a bluray playlist\, whose
 ///     streams are in stream number order so the first is the one the disc expects a player to
@@ -7154,6 +7175,8 @@ constexpr std::array<InfoMap, 3> container_str = {{
 ///     @return The audio language of the currently selected video
 ///     @param n - the number of the audiostream (values: see \ref ListItem_AudioLanguage "ListItem.AudioLanguage")
 ///     <p><hr>
+///     @skinning_v23 **[Infolabel Updated]** \link ListItem_Property_AudioLanguage `ListItem.Property(AudioLanguage.[n])`\endlink
+///     now the language tag itself\, where it was an ISO 639-2 three character code
 ///     @skinning_v16 **[New Infolabel]** \link ListItem_Property_AudioLanguage `ListItem.Property(AudioLanguage.[n])`\endlink
 ///     <p>
 ///   }
@@ -7163,6 +7186,8 @@ constexpr std::array<InfoMap, 3> container_str = {{
 ///     @return The subtitle language of the currently selected video
 ///     @param n - the number of the subtitle (values: see \ref ListItem_SubtitleLanguage "ListItem.SubtitleLanguage")
 ///     <p><hr>
+///     @skinning_v23 **[Infolabel Updated]** \link ListItem_Property_SubtitleLanguage `ListItem.Property(SubtitleLanguage.[n])`\endlink
+///     now the language tag itself\, where it was an ISO 639-2 three character code
 ///     @skinning_v16 **[New Infolabel]** \link ListItem_Property_SubtitleLanguage `ListItem.Property(SubtitleLanguage.[n])`\endlink
 ///     <p>
 ///   }
@@ -9834,16 +9859,26 @@ constexpr std::array<InfoMap, 12> pvr_times = {{
 ///   \table_row3{   <b>`RDS.AudioLanguage`</b>,
 ///                  \anchor RDS_AudioLanguage
 ///                  _string_,
-///     @return The RDS reported audio language of the channel.
+///     @return The RDS reported audio language of the channel\, as a BCP 47 language tag:
+///     e.g. en\, de\, pt-BR
+///     @note A broadcaster sends an index into the language table EBU Tech 3244 Annex J
+///     defines\, never text. An index the standard reserves leaves the label as it was.
 ///     <p><hr>
+///     @skinning_v23 **[Infolabel Updated]** \link RDS_AudioLanguage `RDS.AudioLanguage`\endlink
+///     now the language tag itself\, where it was whatever the RDS table held
 ///     @skinning_v16 **[New Infolabel]** \link RDS_AudioLanguage `RDS.AudioLanguage`\endlink
 ///     <p>
 ///   }
 ///   \table_row3{   <b>`RDS.ChannelCountry`</b>,
 ///                  \anchor RDS_ChannelCountry
 ///                  _string_,
-///     @return The country where the radio channel is broadcasted.
+///     @return The country where the radio channel is broadcast\, as an ISO 3166-1 alpha-2
+///     code: e.g. GB\, US\, DE
+///     @note A broadcaster sends a country as an index into the tables EBU Tech 3244
+///     Annex D defines\, never text\, so an index the standard reserves is empty.
 ///     <p><hr>
+///     @skinning_v23 **[Infolabel Updated]** \link RDS_ChannelCountry `RDS.ChannelCountry`\endlink
+///     empty where the table names no place\, where it was the raw table cell
 ///     @skinning_v16 **[New Infolabel]** \link RDS_ChannelCountry `RDS.ChannelCountry`\endlink
 ///     <p>
 ///   }

@@ -27,7 +27,6 @@
 #include "utils/Set.h"
 #include "utils/StringUtils.h"
 #include "utils/SystemInfo.h"
-#include "utils/URIUtils.h"
 #include "utils/XMLUtils.h"
 #include "utils/log.h"
 
@@ -277,6 +276,7 @@ void CAdvancedSettings::Initialize()
   m_DXVACheckCompatibilityPresent = false;
   m_videoFpsDetect = 1;
   m_gamesPacingMarginMs = 2.5f;
+  m_minTempo = 0.8f;
   m_maxTempo = 1.55f;
   m_videoPreferStereoStream = false;
 
@@ -305,7 +305,6 @@ void CAdvancedSettings::Initialize()
   m_handleMounting = CServiceBroker::GetAppParams()->IsStandAlone();
 
   m_fullScreenOnMovieStart = true;
-  m_cachePath = "special://temp/";
 
   m_videoFilenameAttributePairsRegExp = R"([\[{]\s*(?<key>\w+)\s*[=\-](?<value>[^\]}]+)[\]}])";
   m_videoCleanDateTimeRegExp = "(.*[^ _\\,\\.\\(\\)\\[\\]\\-])[ _\\.\\(\\)\\[\\]\\-]+(19[0-9][0-9]|20[0-9][0-9])([ _\\,\\.\\(\\)\\[\\]\\-]|[^0-9]$)?";
@@ -901,6 +900,7 @@ void CAdvancedSettings::ParseSettingsFile(const std::string &file)
 
     //0 = disable fps detect, 1 = only detect on timestamps with uniform spacing, 2 detect on all timestamps
     XMLUtils::GetInt(pElement, "fpsdetect", m_videoFpsDetect, 0, 2);
+    XMLUtils::GetFloat(pElement, "mintempo", m_minTempo, 0.5, 0.8);
     XMLUtils::GetFloat(pElement, "maxtempo", m_maxTempo, 1.5, 2.0);
     XMLUtils::GetBoolean(pElement, "preferstereostream", m_videoPreferStereoStream);
 
@@ -1166,12 +1166,7 @@ void CAdvancedSettings::ParseSettingsFile(const std::string &file)
   m_vecTokens.clear();
   CLangInfo::LoadTokens(pRootElement->FirstChild("sorttokens"), m_vecTokens);
 
-  //! @todo Should cache path be given in terms of our predefined paths??
-  //! Are we even going to have predefined paths??
   std::string tmp;
-  if (XMLUtils::GetPath(pRootElement, "cachepath", tmp))
-    m_cachePath = tmp;
-  URIUtils::AddSlashAtEnd(m_cachePath);
 
   CLangCodeExpander::LoadUserCodes(pRootElement->FirstChildElement("languagecodes"));
   LoadLanguageCodes(pRootElement->FirstChildElement("languagecodes"));

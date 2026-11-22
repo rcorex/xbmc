@@ -12,6 +12,7 @@
 #include "FileItem.h"
 #include "FileItemList.h"
 #include "ServiceBroker.h"
+#include "addons/Addon.h"
 #include "addons/AddonBuilder.h"
 #include "addons/AddonDatabase.h"
 #include "addons/AddonEvents.h"
@@ -20,6 +21,7 @@
 #include "addons/AddonSystemSettings.h"
 #include "addons/AddonUpdateRules.h"
 #include "addons/IAddon.h"
+#include "addons/Scraper.h"
 #include "addons/addoninfo/AddonInfo.h"
 #include "addons/addoninfo/AddonInfoBuilder.h"
 #include "addons/addoninfo/AddonType.h"
@@ -91,6 +93,7 @@ bool LoadManifest(std::set<std::string, std::less<>>& system,
   }
   return true;
 }
+
 } // unnamed namespace
 
 CAddonMgr::CAddonMgr()
@@ -149,6 +152,43 @@ bool CAddonMgr::Init()
   }
 
   FindAddons();
+
+  // Incompatible add-ons are disabled during startup; say why on every start
+  std::vector<AddonInfoPtr> incompatible;
+  GetIncompatibleAddonInfos(incompatible, true);
+  for (const auto& addon : incompatible)
+  {
+    if (!CScraper::IsSupported(*addon))
+      CLog::Log(LOGWARNING, "ADDON: {} v{} is incompatible: Kodi runs python scrapers only",
+                addon->ID(), addon->Version().asString());
+
+    for (const auto& dependency : addon->GetDependencies())
+    {
+      if (dependency.optional || !(StringUtils::StartsWith(dependency.id, "xbmc.") ||
+                                   StringUtils::StartsWith(dependency.id, "kodi.")))
+      {
+        continue;
+      }
+
+      const AddonInfoPtr provided = GetAddonInfo(dependency.id, AddonType::UNKNOWN);
+      if (!provided)
+      {
+        CLog::Log(LOGWARNING,
+                  "ADDON: {} v{} is incompatible: it requires {} {}, which this Kodi does not "
+                  "provide",
+                  addon->ID(), addon->Version().asString(), dependency.id,
+                  dependency.version.asString());
+      }
+      else if (!provided->MeetsVersion(dependency.versionMin, dependency.version))
+      {
+        CLog::Log(LOGWARNING,
+                  "ADDON: {} v{} is incompatible: it requires {} {}, this Kodi provides {} to {}",
+                  addon->ID(), addon->Version().asString(), dependency.id,
+                  dependency.version.asString(), provided->MinVersion().asString(),
+                  provided->Version().asString());
+      }
+    }
+  }
 
   //Ensure required add-ons are installed and enabled
   for (const auto& id : m_systemAddons)
@@ -1117,6 +1157,10 @@ void CAddonMgr::PublishInstanceRemoved(const std::string& addonId, AddonInstance
 
 bool CAddonMgr::IsCompatible(const std::shared_ptr<const IAddon>& addon) const
 {
+  if (const auto* const kodiAddon{dynamic_cast<const CAddon*>(addon.get())};
+      kodiAddon && kodiAddon->AddonInfo() && !CScraper::IsSupported(*kodiAddon->AddonInfo()))
+    return false;
+
   for (const auto& dependency : addon->GetDependencies())
   {
     if (!dependency.optional)
@@ -1139,6 +1183,9 @@ bool CAddonMgr::IsCompatible(const std::shared_ptr<const IAddon>& addon) const
 
 bool CAddonMgr::IsCompatible(const AddonInfoPtr& addonInfo) const
 {
+  if (!CScraper::IsSupported(*addonInfo))
+    return false;
+
   for (const auto& dependency : addonInfo->GetDependencies())
   {
     if (!dependency.optional)

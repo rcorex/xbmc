@@ -13,12 +13,12 @@
 #include "Util.h"
 #include "games/GameTypes.h"
 #include "games/tags/GameInfoTag.h"
+#include "language/LanguageTag.h"
 #include "music/tags/MusicInfoTag.h"
 #include "pictures/PictureInfoTag.h"
 #include "settings/AdvancedSettings.h"
 #include "settings/SettingsComponent.h"
 #include "utils/ArtTypes.h"
-#include "utils/LangCodeExpander.h"
 #include "utils/StringUtils.h"
 #include "utils/Variant.h"
 #include "utils/log.h"
@@ -820,9 +820,6 @@ namespace XBMCAddon
                                        const std::string& art_type,
                                        const std::string& preview,
                                        const std::string& referrer,
-                                       const std::string& cache,
-                                       bool post,
-                                       bool isgz,
                                        int season)
     {
       CLog::Log(LOGWARNING, "ListItem.addAvailableArtwork() is deprecated and might be removed in "
@@ -830,7 +827,7 @@ namespace XBMCAddon
 
       XBMCAddonUtils::GuiLock lock(languageHook, m_offscreen);
       xbmc::InfoTagVideo::addAvailableArtworkRaw(GetVideoInfoTag(), url, art_type, preview,
-                                                 referrer, cache, post, isgz, season);
+                                                 referrer, season);
     }
 
     void ListItem::addStreamInfo(const char* cType, const Properties& dictionary)
@@ -865,7 +862,7 @@ namespace XBMCAddon
           else if (key == "stereomode")
             video->m_strStereoMode = value;
           else if (key == "language")
-            video->m_strLanguage = CLangCodeExpander::AsISO6392B(value);
+            video->m_language = KODI::LANGUAGE::CLanguageTag::Parse(value);
         }
         xbmc::InfoTagVideo::addStreamRaw(infoTag, video);
       }
@@ -880,7 +877,7 @@ namespace XBMCAddon
           if (key == "codec")
             audio->m_strCodec = value;
           else if (key == "language")
-            audio->m_strLanguage = CLangCodeExpander::AsISO6392B(value);
+            audio->m_language = KODI::LANGUAGE::CLanguageTag::Parse(value);
           else if (key == "channels")
             audio->m_iChannels = strtol(value.c_str(), nullptr, 10);
         }
@@ -895,7 +892,7 @@ namespace XBMCAddon
           const String& value = it.second;
 
           if (key == "language")
-            subtitle->m_strLanguage = CLangCodeExpander::AsISO6392B(value);
+            subtitle->m_language = KODI::LANGUAGE::CLanguageTag::Parse(value);
         }
         xbmc::InfoTagVideo::addStreamRaw(infoTag, subtitle);
       }

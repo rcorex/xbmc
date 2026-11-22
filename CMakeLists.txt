@@ -138,9 +138,9 @@ dependent_option(ENABLE_INTERNAL_MARIADBCLIENT "Enable internal mariadb-c-connec
 dependent_option(ENABLE_INTERNAL_NLOHMANNJSON "Enable internal nlohmannjson?")
 dependent_option(ENABLE_INTERNAL_SWIG "Enable internal swig?")
 dependent_option(ENABLE_INTERNAL_UDFREAD "Enable internal libudfread?")
-dependent_option(ENABLE_INTERNAL_XSLT "Enable internal libxslt?")
 dependent_option(ENABLE_INTERNAL_ZSTD "Enable internal Zstandard?")
 dependent_option(ENABLE_INTERNAL_FRIBIDI "Enable internal fribidi?")
+dependent_option(ENABLE_INTERNAL_LIBXML2 "Enable internal libxml2?")
 
 # If ENABLE_INTERNAL_FMT is ON, we force ENABLE_INTERNAL_SPDLOG ON as it has a hard
 # dependency on fmt
@@ -296,7 +296,6 @@ set(optional_deps Alsa>=1.0.27
                   Sndio
                   UDEV
                   Udfread
-                  XSLT
                   ${PLATFORM_OPTIONAL_DEPS})
 
 # Remove excluded platform specific optional_deps
