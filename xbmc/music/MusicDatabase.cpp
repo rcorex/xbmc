@@ -39,7 +39,7 @@
 #include "guilib/guiinfo/GUIInfoLabels.h"
 #include "imagefiles/ImageFileURL.h"
 #include "interfaces/AnnouncementManager.h"
-#include "language/LangInfo.h"
+#include "language/Language.h"
 #include "messaging/helpers/DialogHelper.h"
 #include "messaging/helpers/DialogOKHelper.h"
 #include "music/MusicDbPaths.h"
@@ -8372,7 +8372,7 @@ std::string CMusicDatabase::GetIgnoreArticleSQL(const std::string& strField) con
     WHEN strArtist LIKE 'an ' OR strArtist LIKE 'an.' strArtist LIKE 'an_' ESCAPE '_'
     THEN SUBSTR(strArtist, 4)
   */
-  const CLangInfo::Tokens sortTokens = g_langInfo.GetSortTokens();
+  const auto& sortTokens = KODI::LANGUAGE::CLanguage::GetInstance().SortTokens();
   std::string sortclause;
   size_t tokenlength = 0;
   std::string strWhen;
@@ -11691,38 +11691,55 @@ bool CMusicDatabase::SetScraper(int id,
   try
   {
     BeginTransaction();
-    // Fetch current info settings for item, 0 => default is used
-    if (content == ADDON::ContentType::ARTISTS)
-      strSQL = "SELECT idInfoSetting FROM artist WHERE idArtist = %i";
-    else
-      strSQL = "SELECT idInfoSetting FROM album WHERE idAlbum = %i";
-    strSQL = PrepareSQL(strSQL, id);
-    m_pDS->query(strSQL);
-    if (m_pDS->num_rows() > 0)
-      idSetting = m_pDS->fv("idInfoSetting").get_asInt();
-    m_pDS->close();
 
-    if (idSetting < 1)
-    { // Add new info setting
-      strSQL = "INSERT INTO infosetting (strScraperPath, strSettings) values ('%s','%s')";
-      strSQL = PrepareSQL(strSQL, scraper->ID().c_str(), scraper->GetPathSettings().c_str());
-      m_pDS->exec(strSQL);
-      idSetting = static_cast<int>(m_pDS->lastinsertid());
-
+    if (!scraper)
+    {
+      // Clear any specific settings (0 => default scraper used)
       if (content == ADDON::ContentType::ARTISTS)
         strSQL = "UPDATE artist SET idInfoSetting = %i WHERE idArtist = %i";
       else
         strSQL = "UPDATE album SET idInfoSetting = %i WHERE idAlbum = %i";
-      strSQL = PrepareSQL(strSQL, idSetting, id);
+      strSQL = PrepareSQL(strSQL, 0, id);
       m_pDS->exec(strSQL);
+
+      //Remove orphaned settings
+      CleanupInfoSettings();
     }
     else
-    { // Update info setting
-      strSQL = "UPDATE infosetting SET strScraperPath = '%s', strSettings = '%s' "
-               "WHERE idSetting = %i";
-      strSQL =
-          PrepareSQL(strSQL, scraper->ID().c_str(), scraper->GetPathSettings().c_str(), idSetting);
-      m_pDS->exec(strSQL);
+    {
+      // Fetch current info settings for item, 0 => default is used
+      if (content == ADDON::ContentType::ARTISTS)
+        strSQL = "SELECT idInfoSetting FROM artist WHERE idArtist = %i";
+      else
+        strSQL = "SELECT idInfoSetting FROM album WHERE idAlbum = %i";
+      strSQL = PrepareSQL(strSQL, id);
+      m_pDS->query(strSQL);
+      if (m_pDS->num_rows() > 0)
+        idSetting = m_pDS->fv("idInfoSetting").get_asInt();
+      m_pDS->close();
+
+      if (idSetting < 1)
+      { // Add new info setting
+        strSQL = "INSERT INTO infosetting (strScraperPath, strSettings) values ('%s','%s')";
+        strSQL = PrepareSQL(strSQL, scraper->ID().c_str(), scraper->GetPathSettings().c_str());
+        m_pDS->exec(strSQL);
+        idSetting = static_cast<int>(m_pDS->lastinsertid());
+
+        if (content == ADDON::ContentType::ARTISTS)
+          strSQL = "UPDATE artist SET idInfoSetting = %i WHERE idArtist = %i";
+        else
+          strSQL = "UPDATE album SET idInfoSetting = %i WHERE idAlbum = %i";
+        strSQL = PrepareSQL(strSQL, idSetting, id);
+        m_pDS->exec(strSQL);
+      }
+      else
+      { // Update info setting
+        strSQL = "UPDATE infosetting SET strScraperPath = '%s', strSettings = '%s' "
+                 "WHERE idSetting = %i";
+        strSQL = PrepareSQL(strSQL, scraper->ID().c_str(), scraper->GetPathSettings().c_str(),
+                            idSetting);
+        m_pDS->exec(strSQL);
+      }
     }
     CommitTransaction();
     return true;
