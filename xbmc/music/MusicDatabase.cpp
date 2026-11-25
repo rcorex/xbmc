@@ -40,6 +40,7 @@
 #include "imagefiles/ImageFileURL.h"
 #include "interfaces/AnnouncementManager.h"
 #include "language/Language.h"
+#include "media/LibraryQuery.h"
 #include "messaging/helpers/DialogHelper.h"
 #include "messaging/helpers/DialogOKHelper.h"
 #include "music/MusicDbPaths.h"
@@ -52,7 +53,6 @@
 #ifdef HAS_OPTICAL_DRIVE
 #include "network/cddb.h"
 #endif // HAS_OPTICAL_DRIVE
-#include "playlists/SmartPlayList.h"
 #include "profiles/ProfileManager.h"
 #include "settings/AdvancedSettings.h"
 #include "settings/MediaSourceSettings.h"
@@ -102,24 +102,19 @@ constexpr size_t MIN_FULL_SEARCH_LENGTH = 3;
 
 void AnnounceRemove(MEDIA::TYPE content, int id)
 {
-  CVariant data;
-  data["type"] = NameOf(content);
-  data["id"] = id;
-  if (CMusicLibraryQueue::GetInstance().IsScanningLibrary())
-    data["transaction"] = true;
-  CServiceBroker::GetAnnouncementManager()->Announce(ANNOUNCEMENT::AudioLibrary, "OnRemove", data);
+  CServiceBroker::GetAnnouncementManager()->Announce(
+      ANNOUNCEMENT::AudioLibraryEvent{ANNOUNCEMENT::EVENT::LIBRARY::Remove{
+          content, id, CMusicLibraryQueue::GetInstance().IsScanningLibrary()}});
 }
 
 void AnnounceUpdate(MEDIA::TYPE content, int id, bool added = false)
 {
-  CVariant data;
-  data["type"] = NameOf(content);
-  data["id"] = id;
-  if (CMusicLibraryQueue::GetInstance().IsScanningLibrary())
-    data["transaction"] = true;
-  if (added)
-    data["added"] = true;
-  CServiceBroker::GetAnnouncementManager()->Announce(ANNOUNCEMENT::AudioLibrary, "OnUpdate", data);
+  CServiceBroker::GetAnnouncementManager()->Announce(
+      ANNOUNCEMENT::AudioLibraryEvent{ANNOUNCEMENT::EVENT::LIBRARY::Update{
+          .type = content,
+          .id = id,
+          .transaction = CMusicLibraryQueue::GetInstance().IsScanningLibrary(),
+          .added = added}});
 }
 
 class CTemporaryTable
@@ -4685,7 +4680,8 @@ int CMusicDatabase::Cleanup(CGUIDialogProgress* progressDialog /*= nullptr*/)
   std::chrono::seconds duration;
   auto time = std::chrono::steady_clock::now();
   CLog::Log(LOGINFO, "Starting musicdatabase cleanup ...");
-  CServiceBroker::GetAnnouncementManager()->Announce(ANNOUNCEMENT::AudioLibrary, "OnCleanStarted");
+  CServiceBroker::GetAnnouncementManager()->Announce(
+      ANNOUNCEMENT::AudioLibraryEvent{ANNOUNCEMENT::EVENT::LIBRARY::CleanStarted{}});
 
   BeginTransaction();
   SetLibraryLastCleaned();
@@ -4826,7 +4822,8 @@ int CMusicDatabase::Cleanup(CGUIDialogProgress* progressDialog /*= nullptr*/)
   duration =
       std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - time);
   CLog::Log(LOGINFO, "Cleaning musicdatabase done. Operation took {}s", duration.count());
-  CServiceBroker::GetAnnouncementManager()->Announce(ANNOUNCEMENT::AudioLibrary, "OnCleanFinished");
+  CServiceBroker::GetAnnouncementManager()->Announce(
+      ANNOUNCEMENT::AudioLibraryEvent{ANNOUNCEMENT::EVENT::LIBRARY::CleanFinished{}});
 
   if (!Compress(false))
   {
@@ -4838,7 +4835,8 @@ error:
   RollbackTransaction();
   // Recreate DELETE triggers on song_artist and album_artist
   CreateRemovedLinkTriggers();
-  CServiceBroker::GetAnnouncementManager()->Announce(ANNOUNCEMENT::AudioLibrary, "OnCleanFinished");
+  CServiceBroker::GetAnnouncementManager()->Announce(
+      ANNOUNCEMENT::AudioLibraryEvent{ANNOUNCEMENT::EVENT::LIBRARY::CleanFinished{}});
   return ret;
 }
 
@@ -12264,12 +12262,11 @@ void CMusicDatabase::ExportToXML(const CLibExportSettings& settings,
             strFolder, "kodi_musicdb" + CDateTime::GetCurrentDateTime().GetAsSaveString() + ".xml");
       xmlDoc.SaveFile(xmlFile);
 
-      CVariant data;
-      data["file"] = xmlFile;
+      ANNOUNCEMENT::EVENT::LIBRARY::Export exported{.file = xmlFile};
       if (iFailCount > 0)
-        data["failcount"] = iFailCount;
-      CServiceBroker::GetAnnouncementManager()->Announce(ANNOUNCEMENT::AudioLibrary, "OnExport",
-                                                         data);
+        exported.failCount = iFailCount;
+      CServiceBroker::GetAnnouncementManager()->Announce(
+          ANNOUNCEMENT::AudioLibraryEvent{std::move(exported)});
     }
   }
   catch (...)
@@ -13217,37 +13214,40 @@ bool CMusicDatabase::GetFilter(CDbUrl& musicUrl, Filter& filter, SortDescription
   std::string type = musicUrl.GetType();
   const CUrlOptions::UrlOptions& options = musicUrl.GetOptions();
 
+  const bool useOriginalDate{CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
+      CSettings::SETTING_MUSICLIBRARY_USEORIGINALDATE)};
+
   // Check for playlist rules first, they may contain role criteria
   bool hasRoleRules = false;
 
   auto option = options.find("xsp");
   if (option != options.end())
   {
-    PLAYLIST::CSmartPlaylist xsp;
+    MEDIA::CLibraryQuery xsp;
     if (!xsp.LoadFromJson(option->second.asString()))
       return false;
 
-    std::set<std::string, std::less<>> playlists;
-    std::string xspWhere;
-    xspWhere = xsp.GetWhereClause(*this, playlists);
-    hasRoleRules = xsp.GetType() == MEDIA::CONTENT::ARTISTS &&
-                   xspWhere.find("song_artist.idRole = role.idRole") != std::string::npos;
-
-    // Check if the filter playlist matches the item type
-    // Allow for grouping name like "originalyears" and type "years"
-    if (xsp.GetType() == type ||
-        (xsp.GetGroup().find(type) != std::string::npos && !xsp.IsGroupMixed()))
+    // A playlist of video items has no rules for this database
+    const std::optional<MEDIA::TYPE> xspItemType{
+        MEDIA::LIBRARY_QUERY::ItemTypeIn(xsp.GetType(), MEDIA::MediaSection::MUSIC)};
+    if (xspItemType)
     {
-      filter.AppendWhere(xspWhere);
+      const std::optional<std::string> where =
+          xsp.GetWhereClause(*this, *xspItemType, useOriginalDate);
+      if (!where)
+      {
+        return false;
+      }
+      const std::string& xspWhere = *where;
+      hasRoleRules = xsp.GetType() == MEDIA::LIBRARY_QUERY::TYPE::ARTISTS &&
+                     xspWhere.find("song_artist.idRole = role.idRole") != std::string::npos;
 
-      if (xsp.GetLimit() > 0)
-        sorting.limitEnd = xsp.GetLimit();
-      if (xsp.GetOrder() != SortBy::NONE)
-        sorting.sortBy = xsp.GetOrder();
-      sorting.sortOrder = xsp.GetOrderAscending() ? SortOrder::ASCENDING : SortOrder::DESCENDING;
-      if (CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
-              CSettings::SETTING_FILELISTS_IGNORETHEWHENSORTING))
-        sorting.sortAttributes = SortAttributeIgnoreArticle;
+      if (xsp.AppliesTo(MEDIA::MediaSection::MUSIC, type, false))
+      {
+        filter.AppendWhere(xspWhere);
+        xsp.ApplyOrder(sorting, CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
+                                    CSettings::SETTING_FILELISTS_IGNORETHEWHENSORTING));
+      }
     }
   }
 
@@ -13811,15 +13811,22 @@ bool CMusicDatabase::GetFilter(CDbUrl& musicUrl, Filter& filter, SortDescription
   option = options.find("filter");
   if (option != options.end())
   {
-    PLAYLIST::CSmartPlaylist xspFilter;
+    MEDIA::CLibraryQuery xspFilter;
     if (!xspFilter.LoadFromJson(option->second.asString()))
       return false;
 
     // check if the filter playlist matches the item type
-    if (xspFilter.GetType() == type)
+    const std::optional<MEDIA::TYPE> filterItemType{
+        MEDIA::LIBRARY_QUERY::ItemTypeIn(xspFilter.GetType(), MEDIA::MediaSection::MUSIC)};
+    if (filterItemType && xspFilter.AppliesTo(MEDIA::MediaSection::MUSIC, type, true))
     {
-      std::set<std::string, std::less<>> playlists;
-      filter.AppendWhere(xspFilter.GetWhereClause(*this, playlists));
+      const std::optional<std::string> where =
+          xspFilter.GetWhereClause(*this, *filterItemType, useOriginalDate);
+      if (!where)
+      {
+        return false;
+      }
+      filter.AppendWhere(*where);
     }
     // remove the filter if it doesn't match the item type
     else

@@ -1,4 +1,5 @@
-set(SOURCES TestAlarmClock.cpp
+set(SOURCES TestActorProtocol.cpp
+            TestAlarmClock.cpp
             TestAliasShortcutUtils.cpp
             TestArchive.cpp
             TestArtUtils.cpp
@@ -57,9 +58,12 @@ set(SOURCES TestAlarmClock.cpp
             TestSystemInfo.cpp
             TestURI.cpp
             TestURIParser.cpp
-            TestURIUtils.cpp
+            TestURIUtilsArchives.cpp
+            TestURIUtilsClassification.cpp
+            TestURIUtilsDiscPaths.cpp
+            TestURIUtilsEncoding.cpp
+            TestURIUtilsPaths.cpp
             TestUrlOptions.cpp
-            TestUrlParsing.cpp
             TestVariant.cpp
             TestXBMCTinyXML.cpp
             TestXBMCTinyXML2.cpp

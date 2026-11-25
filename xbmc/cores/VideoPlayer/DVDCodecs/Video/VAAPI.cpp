@@ -788,10 +788,28 @@ bool CDecoder::Open(AVCodecContext* avctx, AVCodecContext* mainctx, const enum A
   framesCtx->width  = avctx->coded_width;
   framesCtx->height = avctx->coded_height;
 
-  avctx->hw_frames_ctx = framesRef;
+  m_framesRef.reset(framesRef);
+  avctx->hw_frames_ctx = av_buffer_ref(framesRef);
+  m_swFormat = avctx->pix_fmt;
+  m_profile = avctx->profile;
+  m_refs = avctx->refs;
   avctx->get_buffer2 = CDecoder::FFGetBuffer;
   avctx->slice_flags = SLICE_FLAG_CODED_ORDER|SLICE_FLAG_ALLOW_FIELD;
 
+  return true;
+}
+
+bool CDecoder::Reuse(AVCodecContext* avctx, const enum AVPixelFormat fmt)
+{
+  if (fmt != AV_PIX_FMT_VAAPI || !m_vaapiConfigured || m_DisplayState != VAAPI_OPEN ||
+      avctx->pix_fmt != m_swFormat || avctx->profile != m_profile || avctx->refs != m_refs ||
+      avctx->coded_width != m_vaapiConfig.surfaceWidth ||
+      avctx->coded_height != m_vaapiConfig.surfaceHeight ||
+      avctx->width != m_vaapiConfig.vidWidth || avctx->height != m_vaapiConfig.vidHeight ||
+      av_cmp_q(avctx->sample_aspect_ratio, m_vaapiConfig.aspect) != 0)
+    return false;
+
+  avctx->hw_frames_ctx = av_buffer_ref(m_framesRef.get());
   return true;
 }
 
@@ -803,6 +821,7 @@ void CDecoder::Close()
 
   FiniVAAPIOutput();
 
+  m_framesRef.reset();
   m_deviceRef.reset();
 
   if (m_vaapiConfig.context)
@@ -2970,6 +2989,8 @@ CFFmpegPostproc::CFFmpegPostproc()
   m_pFilterFrameIn = NULL;
   m_pFilterFrameOut = NULL;
   m_pFilterGraph = NULL;
+  m_pFilterIn = nullptr;
+  m_pFilterOut = nullptr;
   m_DVDPic.pts = DVD_NOPTS_VALUE;
   m_frametime = 0;
   m_lastOutPts = DVD_NOPTS_VALUE;
@@ -3037,6 +3058,16 @@ bool CFFmpegPostproc::PreInit(CVaapiConfig &config, SDiMethods *methods)
 
 bool CFFmpegPostproc::Init(EINTERLACEMETHOD method)
 {
+  if (!m_pFilterFrameIn)
+    m_pFilterFrameIn = av_frame_alloc();
+  if (!m_pFilterFrameOut)
+    m_pFilterFrameOut = av_frame_alloc();
+  if (!m_pFilterFrameIn || !m_pFilterFrameOut)
+  {
+    CLog::LogF(LOGERROR, "unable to alloc filter frames");
+    return false;
+  }
+
   if (!(m_pFilterGraph = avfilter_graph_alloc()))
   {
     CLog::Log(LOGERROR, "VAAPI::CFFmpegPostproc::Init - unable to alloc filter graph");
@@ -3140,8 +3171,6 @@ bool CFFmpegPostproc::Init(EINTERLACEMETHOD method)
   }
   m_diMethod = method;
 
-  m_pFilterFrameIn = av_frame_alloc();
-  m_pFilterFrameOut = av_frame_alloc();
   return true;
 }
 
@@ -3205,7 +3234,7 @@ bool CFFmpegPostproc::AddPicture(CVaapiDecodedPicture &inPic)
 
   if (m_diMethod == VS_INTERLACEMETHOD_DEINTERLACE)
   {
-    if (av_buffersrc_add_frame(m_pFilterIn, m_pFilterFrameIn) < 0)
+    if (!m_pFilterIn || av_buffersrc_add_frame(m_pFilterIn, m_pFilterFrameIn) < 0)
     {
       CLog::Log(LOGERROR, "CFFmpegPostproc::AddPicture - av_buffersrc_add_frame");
       goto error;
@@ -3292,6 +3321,11 @@ void CFFmpegPostproc::Close()
   {
     avfilter_graph_free(&m_pFilterGraph);
   }
+  m_pFilterIn = nullptr;
+  m_pFilterOut = nullptr;
+
+  av_frame_unref(m_pFilterFrameIn);
+  av_frame_unref(m_pFilterFrameOut);
 }
 
 void CFFmpegPostproc::Flush()

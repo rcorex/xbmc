@@ -175,6 +175,13 @@ public:
    */
   int GetSingleValueInt(const std::string& query, dbiplus::Dataset& ds) const;
 
+  /*! \brief Get the integer in the first column of every row a query returns.
+   \param query the query in question.
+   \param values the integers, in the order of the rows.
+   \return false if the query failed.
+   */
+  bool GetIntValues(const std::string& query, std::vector<int>& values) const;
+
   /*!
    * @brief Delete values from a table.
    * @param strTable The table to delete the values from.
@@ -280,6 +287,13 @@ public:
   };
 
   ConnectionState Connect(const std::string& dbName, const DatabaseSettings& db, bool create);
+
+  /*!
+   \brief Whether this connection's writes announce the items they update
+
+   A caller that announces what it changed itself turns this off, so a change is announced once.
+   */
+  void SetAnnounceUpdates(bool announce) { m_announceUpdates = announce; }
 
   /*! \brief Sets art for a library item.
    \param mediaId the id in the item's table.
@@ -396,6 +410,7 @@ protected:
   bool BuildSQL(std::string_view strQuery, const Filter& filter, std::string& strSQL) const;
 
   bool m_sqlite{true}; ///< \brief whether we use sqlite (defaults to true)
+  bool m_announceUpdates{true};
 
   std::unique_ptr<dbiplus::Database> m_pDB;
   std::unique_ptr<dbiplus::Dataset> m_pDS;

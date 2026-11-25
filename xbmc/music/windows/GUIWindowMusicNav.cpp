@@ -65,6 +65,7 @@
 #include "video/VideoDatabase.h"
 #include "video/VideoDbPaths.h"
 #include "video/VideoFileItemClassify.h"
+#include "video/VideoLibrary.h"
 #include "video/dialogs/GUIDialogVideoInfo.h"
 #include "video/windows/GUIWindowVideoNav.h"
 #include "view/GUIViewState.h"
@@ -600,8 +601,7 @@ void CGUIWindowMusicNav::GetContextButtons(int itemNumber, CContextButtons &butt
     const std::shared_ptr<CProfileManager> profileManager = CServiceBroker::GetSettingsComponent()->GetProfileManager();
 
     // are we in the playlists location?
-    bool inPlaylists = m_vecItems->IsPath(CUtil::MusicPlaylistsLocation()) ||
-      m_vecItems->IsPath("special://musicplaylists/");
+    const bool inPlaylists{CUtil::IsPlaylistsPath(m_vecItems->GetPath(), MediaSection::MUSIC)};
 
     if (m_vecItems->IsPath(CSourcesDirectory::PathOf(MediaSection::MUSIC)))
     {
@@ -692,18 +692,17 @@ void CGUIWindowMusicNav::GetContextButtons(int itemNumber, CContextButtons &butt
         }
         if (item->HasMusicInfoTag() && !item->GetMusicInfoTag()->GetArtistString().empty())
         {
-          CVideoDatabase database;
-          database.Open();
-          if (database.GetMatchingMusicVideo(item->GetMusicInfoTag()->GetArtistString()) > -1)
+          if (VIDEO::LIBRARY::GetMatchingMusicVideo(item->GetMusicInfoTag()->GetArtistString()) >
+              -1)
             buttons.Add(CONTEXT_BUTTON_GO_TO_ARTIST, 20400);
         }
         if (item->HasMusicInfoTag() && !item->GetMusicInfoTag()->GetArtistString().empty() &&
           !item->GetMusicInfoTag()->GetAlbum().empty() &&
           !item->GetMusicInfoTag()->GetTitle().empty())
         {
-          CVideoDatabase database;
-          database.Open();
-          if (database.GetMatchingMusicVideo(item->GetMusicInfoTag()->GetArtistString(), item->GetMusicInfoTag()->GetAlbum(), item->GetMusicInfoTag()->GetTitle()) > -1)
+          if (VIDEO::LIBRARY::GetMatchingMusicVideo(item->GetMusicInfoTag()->GetArtistString(),
+                                                    item->GetMusicInfoTag()->GetAlbum(),
+                                                    item->GetMusicInfoTag()->GetTitle()) > -1)
             buttons.Add(CONTEXT_BUTTON_PLAY_OTHER, 20401);
         }
         if (item->HasVideoInfoTag() && !item->IsFolder())
@@ -820,21 +819,25 @@ bool CGUIWindowMusicNav::OnContextButton(int itemNumber, CONTEXT_BUTTON button)
   case CONTEXT_BUTTON_GO_TO_ARTIST:
     {
       std::string strPath;
-      CVideoDatabase database;
-      database.Open();
       strPath = StringUtils::Format(
           "{}{}/", VIDEO::DB_PATH::MUSICVIDEO_ARTISTS,
-          database.GetMatchingMusicVideo(item->GetMusicInfoTag()->GetArtistString()));
+          VIDEO::LIBRARY::GetMatchingMusicVideo(item->GetMusicInfoTag()->GetArtistString()));
       CServiceBroker::GetGUI()->GetWindowManager().ActivateWindow(WINDOW_VIDEO_NAV,strPath);
       return true;
     }
 
   case CONTEXT_BUTTON_PLAY_OTHER:
     {
-      CVideoDatabase database;
-      database.Open();
       CVideoInfoTag details;
-      database.GetMusicVideoInfo("", details, database.GetMatchingMusicVideo(item->GetMusicInfoTag()->GetArtistString(), item->GetMusicInfoTag()->GetAlbum(), item->GetMusicInfoTag()->GetTitle()));
+      VIDEO::LIBRARY::WithDatabase(
+          [&item, &details](CVideoDatabase& db)
+          {
+            db.GetMusicVideoInfo(
+                "", details,
+                db.GetMatchingMusicVideo(item->GetMusicInfoTag()->GetArtistString(),
+                                         item->GetMusicInfoTag()->GetAlbum(),
+                                         item->GetMusicInfoTag()->GetTitle()));
+          });
       CServiceBroker::GetAppMessenger()->PostMsg(TMSG_MEDIA_PLAY, 0, 0,
                                                  static_cast<void*>(new CFileItem(details)));
       return true;

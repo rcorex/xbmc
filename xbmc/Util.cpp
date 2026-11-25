@@ -92,9 +92,9 @@
 #include "utils/RegExp.h"
 #include "utils/StringUtils.h"
 #include "video/FilenameAttributes.h"
-#include "video/VideoDatabase.h"
 #include "video/VideoFileItemClassify.h"
 #include "video/VideoInfoTag.h"
+#include "video/VideoLibrary.h"
 #include "video/VideoManagerTypes.h"
 #include "windowing/GraphicContext.h"
 #include "windowing/WinSystem.h"
@@ -399,11 +399,11 @@ std::string CUtil::GetTitleFromPath(const CURL& url, bool bIsFolder /* = false *
     strFilename = CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(744);
 
   // Music Playlists
-  else if (StringUtils::StartsWith(path, "special://musicplaylists"))
+  else if (URIUtils::PathHasParent(path + "/", PlaylistsPathOf(KODI::MEDIA::MediaSection::MUSIC)))
     strFilename = CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(136);
 
   // Video Playlists
-  else if (StringUtils::StartsWith(path, "special://videoplaylists"))
+  else if (URIUtils::PathHasParent(path + "/", PlaylistsPathOf(KODI::MEDIA::MediaSection::VIDEO)))
     strFilename = CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(136);
 
   else if (URIUtils::HasParentInHostname(url) && strFilename.empty())
@@ -1386,9 +1386,10 @@ namespace
 std::vector<std::string> PlaylistsFoldersOf(KODI::MEDIA::MediaSection section)
 {
   const std::string path = CServiceBroker::GetSettingsComponent()->GetSettings()->GetString(CSettings::SETTING_SYSTEM_PLAYLISTSPATH);
-  return {URIUtils::AddFileToFolder(path, section == KODI::MEDIA::MediaSection::MUSIC ? "music"
-                                                                                      : "video"),
-          URIUtils::AddFileToFolder(path, "mixed")};
+  return {URIUtils::AddFileToFolder(path, section == KODI::MEDIA::MediaSection::MUSIC
+                                              ? CUtil::MUSIC_PLAYLISTS_FOLDER
+                                              : CUtil::VIDEO_PLAYLISTS_FOLDER),
+          URIUtils::AddFileToFolder(path, CUtil::MIXED_PLAYLISTS_FOLDER)};
 }
 } // namespace
 
@@ -1415,6 +1416,18 @@ std::string CUtil::PlaylistsPathOf(KODI::MEDIA::MediaSection section)
     default:
       return {};
   }
+}
+
+bool CUtil::IsPlaylistsPath(const std::string& path, KODI::MEDIA::MediaSection section)
+{
+  const std::string playlists{PlaylistsPathOf(section)};
+  if (playlists.empty())
+    return false;
+  if (URIUtils::PathEquals(path, playlists))
+    return true;
+  return URIUtils::PathEquals(path, section == KODI::MEDIA::MediaSection::MUSIC
+                                        ? MusicPlaylistsLocation()
+                                        : VideoPlaylistsLocation());
 }
 
 bool CUtil::IsInPlaylistsFolder(const std::string& path, KODI::MEDIA::MediaSection section)
@@ -2264,9 +2277,8 @@ bool CUtil::IsDiscPlaylistExtra(const std::string& videoPath, const CVideoInfoTa
 
   // A whole disc played from one of its playlists has the playlist's path in its tag, but the
   // library still holds the disc under the same file id
-  CVideoDatabase db;
   CVideoInfoTag stored;
-  return db.Open() && db.GetFileInfo("", stored, tag->m_iFileId) &&
+  return VIDEO::LIBRARY::GetFileInfo("", stored, tag->m_iFileId) &&
          URIUtils::IsBlurayPath(stored.m_strFileNameAndPath);
 }
 
@@ -2652,10 +2664,8 @@ void CUtil::ScanForExternalAudio(const std::string& videoPath,
 
   std::vector<std::string> exts = StringUtils::Split(CServiceBroker::GetFileExtensionProvider().GetMusicExtensions(), "|");
 
-  CVideoDatabase database;
-  database.Open();
   // The setting is a source's, found by the start of the video's path, which for a disc is its file
-  bool useAllExternalAudio = database.GetUseAllExternalAudioForVideo(
+  bool useAllExternalAudio = VIDEO::LIBRARY::GetUseAllExternalAudioForVideo(
       URIUtils::IsBlurayPath(videoPath) ? URIUtils::GetDiscFile(videoPath) : videoPath);
 
   if (useAllExternalAudio)

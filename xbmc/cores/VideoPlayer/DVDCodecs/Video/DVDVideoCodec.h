@@ -51,13 +51,25 @@ public:
   VideoPicture& CopyRef(const VideoPicture &pic);
   VideoPicture& SetParams(const VideoPicture &pic);
   void Reset(); // reinitialize members, videoBuffer will be released if set!
-  bool IsSameParams(const VideoPicture& pic) const;
+  /*!
+   * \brief Compare the parameters that require a renderer reconfigure.
+   * \param liveHDRMetadata true if the renderer pushes changes of the HDR mastering display
+   * metadata content (luminance, primaries, white point) live; only its presence is then compared
+   */
+  bool IsSameParams(const VideoPicture& pic, bool liveHDRMetadata = false) const;
+  /*! \brief Compare HDR light metadata (MaxCLL/MaxFALL) independently of IsSameParams() */
+  bool CompareLightMetadata(const VideoPicture& pic) const;
+  /*!
+   * \brief Compare HDR mastering display metadata.
+   * \param presenceOnly true to only compare whether both pictures have it
+   */
+  bool CompareDisplayMetadata(const VideoPicture& pic, bool presenceOnly) const;
 
   /*!
    * \brief Whether \p pic differs from this picture in nothing IsSameParams() compares but its
    * size and display size.
    */
-  bool IsSameParamsExceptSize(const VideoPicture& pic) const;
+  bool IsSameParamsExceptSize(const VideoPicture& pic, bool liveHDRMetadata = false) const;
 
   /*!
    * \brief Whether a picture of \p format is full range when its stream gives \p range. RGB with
@@ -110,8 +122,6 @@ public:
 private:
   VideoPicture(VideoPicture const&) = default;
   VideoPicture& operator=(VideoPicture const&) = default;
-
-  bool CompareDisplayMetadata(const VideoPicture& pic) const;
 };
 
 #define DVP_FLAG_TOP_FIELD_FIRST    0x00000001
@@ -282,6 +292,7 @@ public:
   IHardwareDecoder() = default;
   ~IHardwareDecoder() override = default;
   virtual bool Open(AVCodecContext* avctx, AVCodecContext* mainctx, const enum AVPixelFormat) = 0;
+  virtual bool Reuse(AVCodecContext* avctx, const enum AVPixelFormat fmt) { return false; }
   virtual CDVDVideoCodec::VCReturn Decode(AVCodecContext* avctx, AVFrame* frame) = 0;
   virtual bool GetPicture(AVCodecContext* avctx, VideoPicture* picture) = 0;
   virtual CDVDVideoCodec::VCReturn Check(AVCodecContext* avctx) = 0;
