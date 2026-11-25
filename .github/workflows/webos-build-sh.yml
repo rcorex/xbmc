@@ -131,7 +131,9 @@ jobs:
 
       - name: Package Kodi app
         working-directory: build
-        run: make ipk
+        run: |
+          make strip
+          ares-package --no-minify tools/webOS/packaging
 
       - name: Upload IPK Artifact
         uses: actions/upload-artifact@v7
